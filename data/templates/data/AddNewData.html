@@ -1,0 +1,250 @@
+{% extends 'datacollection/layout.html'%}
+
+{% block content %}
+  <nav>
+    <!-- breadcrumb -->
+    <ol style="margin-bottom: 30px;" class="flex flex-wrap pt-1 mr-12 bg-transparent rounded-lg sm:mr-16">
+      <li class="text-sm leading-normal">
+        <a class="text-white opacity-50" href="javascript:;">home</a>
+      </li>
+      <li class="text-sm pl-2 capitalize leading-normal text-white before:float-left before:pr-2 before:text-white before:content-['/']" aria-current="page">Data Collection</li>
+    </ol>
+  </nav>
+
+  <!-- row 1 -->
+  <div class="flex flex-wrap -mx-3">
+    <!-- card1 -->
+    <div class="w-full px-6 py-6 mx-auto">
+      <!-- table 1 -->
+      <div class="w-full max-w-full ">
+        <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+          <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-0">
+            <div class="flex items-center">
+              <p class="mb-0 dark:text-white/80">Noise Dataset Collection</p>
+              <button type="submit" form="noise-form" class="inline-block px-8 py-2 mb-4 ml-auto font-bold leading-normal text-center text-white align-middle transition-all ease-in bg-blue-500 border-0 rounded-lg shadow-md cursor-pointer text-xs tracking-tight-rem hover:shadow-xs hover:-translate-y-px active:opacity-85">Save Dataset</button>
+            </div>
+          </div>
+          
+          <div class="flex-auto p-6">
+            <form id="noise-form" method="post" enctype="multipart/form-data">
+              {% csrf_token %}
+              
+              <!-- Basic Information -->
+              <p class="leading-normal uppercase dark:text-white dark:opacity-60 text-sm">Basic Information</p>
+              <div class="flex flex-wrap -mx-3">
+                <div class="w-full max-w-full px-3 shrink-0 md:w-full md:flex-0">
+                  <div class="mb-4">
+                    <label for="id_description" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.description.label }}</label>
+                    {{ form.description }}
+                    {% if form.description.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.description.help_text }}</small>
+                    {% endif %}
+                    {% if form.description.errors %}
+                      <div class="text-red-500 text-xs mt-1">{{ form.description.errors }}</div>
+                    {% endif %}
+                  </div>
+                </div>
+                
+                <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0">
+                  <div class="mb-4">
+                    <label for="id_category" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.category.label }}</label>
+                    {{ form.category }}
+                    {% if form.category.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.category.help_text }}</small>
+                    {% endif %}
+                    {% if form.category.errors %}
+                      <div class="text-red-500 text-xs mt-1">{{ form.category.errors }}</div>
+                    {% endif %}
+                  </div>
+                </div>
+                
+                <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0">
+                  <div class="mb-4">
+                    <label for="id_class_name" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.class_name.label }}</label>
+                    {{ form.class_name }}
+                    {% if form.class_name.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.class_name.help_text }}</small>
+                    {% endif %}
+                    {% if form.class_name.errors %}
+                      <div class="text-red-500 text-xs mt-1">{{ form.class_name.errors }}</div>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+              
+              <hr class="h-px mx-0 my-4 bg-transparent border-0 opacity-25 bg-gradient-to-r from-transparent via-black/40 to-transparent dark:bg-gradient-to-r dark:from-transparent dark:via-white dark:to-transparent " />
+              
+              <!-- Location Information -->
+              <p class="leading-normal uppercase dark:text-white dark:opacity-60 text-sm">Location Information</p>
+              <div class="flex flex-wrap -mx-3">
+                <div class="w-full max-w-full px-3 shrink-0 md:w-4/12 md:flex-0">
+                  <div class="mb-4">
+                    <label for="id_region" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.region.label }}</label>
+                    {{ form.region }}
+                    {% if form.region.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.region.help_text }}</small>
+                    {% endif %}
+                    {% if form.region.errors %}
+                      <div class="text-red-500 text-xs mt-1">{{ form.region.errors }}</div>
+                    {% endif %}
+                  </div>
+                </div>
+                
+                <div class="w-full max-w-full px-3 shrink-0 md:w-4/12 md:flex-0">
+                  <div class="mb-4">
+                    <label for="id_community" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.community.label }}</label>
+                    {{ form.community }}
+                    {% if form.community.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.community.help_text }}</small>
+                    {% endif %}
+                    {% if form.community.errors %}
+                      <div class="text-red-500 text-xs mt-1">{{ form.community.errors }}</div>
+                    {% endif %}
+                  </div>
+                </div>
+                
+                <div class="w-full max-w-full px-3 shrink-0 md:w-4/12 md:flex-0">
+                  <div class="mb-4">
+                    <label for="id_environment_type" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.environment_type.label }}</label>
+                    {{ form.environment_type }}
+                    {% if form.environment_type.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.environment_type.help_text }}</small>
+                    {% endif %}
+                    {% if form.environment_type.errors %}
+                      <div class="text-red-500 text-xs mt-1">{{ form.environment_type.errors }}</div>
+                    {% endif %}
+                  </div>
+                </div>
+                
+                <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0">
+                  <div class="mb-4">
+                    <label for="id_specific_mix_setting" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.specific_mix_setting.label }}</label>
+                    {{ form.specific_mix_setting }}
+                    {% if form.specific_mix_setting.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.specific_mix_setting.help_text }}</small>
+                    {% endif %}
+                    {% if form.specific_mix_setting.errors %}
+                      <div class="text-red-500 text-xs mt-1">{{ form.specific_mix_setting.errors }}</div>
+                    {% endif %}
+                  </div>
+                </div>
+                
+                <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0">
+                  <div class="mb-4">
+                    <label for="id_time_of_day" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.time_of_day.label }}</label>
+                    {{ form.time_of_day }}
+                    {% if form.time_of_day.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.time_of_day.help_text }}</small>
+                    {% endif %}
+                    {% if form.time_of_day.errors %}
+                      <div class="text-red-500 text-xs mt-1">{{ form.time_of_day.errors }}</div>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+              
+              <hr class="h-px mx-0 my-4 bg-transparent border-0 opacity-25 bg-gradient-to-r from-transparent via-black/40 to-transparent dark:bg-gradient-to-r dark:from-transparent dark:via-white dark:to-transparent " />
+              
+              <!-- Recording Information -->
+              <p class="leading-normal uppercase dark:text-white dark:opacity-60 text-sm">Recording Information</p>
+              <div class="flex flex-wrap -mx-3">
+                <div class="w-full max-w-full px-3 shrink-0 md:w-full md:flex-0">
+                  <div class="mb-4">
+                    <label for="id_audio" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.audio.label }}</label>
+                    {{ form.audio }}
+                    {% if form.audio.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.audio.help_text }}</small>
+                    {% endif %}
+                    {% if form.audio.errors %}
+                      <div class="text-red-500 text-xs mt-1">{{ form.audio.errors }}</div>
+                    {% endif %}
+                  </div>
+                </div>
+                
+                <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0">
+                  <div class="mb-4">
+                    <label for="id_recording_date" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.recording_date.label }}</label>
+                    {{ form.recording_date }}
+                    {% if form.recording_date.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.recording_date.help_text }}</small>
+                    {% endif %}
+                    {% if form.recording_date.errors %}
+                      <div class="text-red-500 text-xs mt-1">{{ form.recording_date.errors }}</div>
+                    {% endif %}
+                  </div>
+                </div>
+                
+                <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0">
+                  <div class="mb-4">
+                    <label for="id_recording_device" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.recording_device.label }}</label>
+                    {{ form.recording_device }}
+                    {% if form.recording_device.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.recording_device.help_text }}</small>
+                    {% endif %}
+                    {% if form.recording_device.errors %}
+                      <div class="text-red-500 text-xs mt-1">{{ form.recording_device.errors }}</div>
+                    {% endif %}
+                  </div>
+                </div>
+                
+                <div class="w-full max-w-full px-3 shrink-0 md:w-full md:flex-0">
+                  <div class="mb-4">
+                    <label for="id_microphone_type" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.microphone_type.label }} <span class="text-slate-400">(Optional)</span></label>
+                    {{ form.microphone_type }}
+                    {% if form.microphone_type.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.microphone_type.help_text }}</small>
+                    {% endif %}
+                    {% if form.microphone_type.errors %}
+                      <div class="text-red-500 text-xs mt-1">{{ form.microphone_type.errors }}</div>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Form Errors -->
+              {% if form.non_field_errors %}
+                <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                  {{ form.non_field_errors }}
+                </div>
+              {% endif %}
+              
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Add some JavaScript for better UX
+    document.addEventListener('DOMContentLoaded', function() {
+      // Auto-populate recording date with current date/time
+      const recordingDateField = document.getElementById('id_recording_date');
+      if (recordingDateField && !recordingDateField.value) {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        recordingDateField.value = `${year}-${month}-${day}T${hours}:${minutes}`;
+      }
+      
+      // File input validation
+      const audioField = document.getElementById('id_audio');
+      if (audioField) {
+        audioField.addEventListener('change', function(e) {
+          const file = e.target.files[0];
+          if (file) {
+            const validTypes = ['audio/mp3', 'audio/wav', 'audio/ogg', 'audio/m4a', 'audio/aac'];
+            if (!validTypes.includes(file.type)) {
+              alert('Please select a valid audio file (MP3, WAV, OGG, M4A, AAC)');
+              e.target.value = '';
+            }
+          }
+        });
+      }
+    });
+  </script>
+
+{% endblock %}
