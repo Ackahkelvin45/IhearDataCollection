@@ -178,31 +178,22 @@ from django.templatetags.static import static
 
 
 # Alternative approach without lambda (simpler):
-# UNFOLD = {
-#     "SITE_TITLE": "I hear Dataset Admin Portal",
-#     "SITE_HEADER": "I hear Dataset",
-#     
-#     "DARK_MODE": True,
-#     "LOGIN": {
-#         "image": "/static/assets/img/image.png",
-#         "title": "Welcome to I hear Dataset Admin Portal",
-#         "description": "Please enter your credentials",
-#     },
-#     "SIDEBAR": {
-#         "show_search": True,
-#         "show_all_applications": False,
-#     },
-#     
-#     "COLORS": {
-#         "primary": {
-#             "50": "#eff6ff",
-#             "100": "#dbeafe", 
-#             "200": "#bfdbfe",
-#             "300": "#93c5fd",
-#             "400": "#60a5fa
-
-
-
+UNFOLD = {
+     "SITE_TITLE": "I hear Dataset Admin Portal",
+     "SITE_HEADER": "I hear Dataset",
+     
+     "DARK_MODE": True,
+     "LOGIN": {
+         "image": "/static/assets/img/image.png",
+         "title": "Welcome to I hear Dataset Admin Portal",
+       "description": "Please enter your credentials",
+     },
+     "SIDEBAR": {
+         "show_search": True,
+         "show_all_applications": False,
+     },
+     
+ }
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost",  # Your frontend URL
