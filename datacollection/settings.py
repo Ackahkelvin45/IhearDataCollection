@@ -28,8 +28,7 @@ SECRET_KEY = 'django-insecure-*_^$!#mp28jhe25iq6dok5suz(_!529k-c2hj#wnd!7@6@p%ri
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
-
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -201,3 +200,28 @@ from django.templatetags.static import static
 #             "200": "#bfdbfe",
 #             "300": "#93c5fd",
 #             "400": "#60a5fa
+
+
+
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost",  # Your frontend URL
+    "http://127.0.0.10",
+    "http://0.0.0.0",
+    "https://shalom-enterprise-1.onrender.com"
+    'iheardatacollection.onrender.com'
+    ]
+
+CORS_ALLOW_CREDENTIALS = True  # To allow cookies
+
+
+CSRF_TRUSTED_ORIGINS = [
+    'https://shalom-enterprise-1.onrender.com',
+    # Add other trusted origins if needed
+    'http://127.0.0.1',
+    "http://127.0.0.1:8000",
+    'http://localhost',
+    'http://0.0.0.0'
+    
+
+]
