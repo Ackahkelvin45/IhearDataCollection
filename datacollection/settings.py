@@ -210,14 +210,15 @@ CORS_ALLOWED_ORIGINS = [
     "http://0.0.0.0",
     "https://shalom-enterprise-1.onrender.com",
     'iheardatacollection.onrender.com'
+  'https://iheardatacollection.onrender.com',
+
     ]
 
 CORS_ALLOW_CREDENTIALS = True  # To allow cookies
 
 
 CSRF_TRUSTED_ORIGINS = [
-    'https://shalom-enterprise-1.onrender.com',
-    # Add other trusted origins if needed
+  'https://iheardatacollection.onrender.com',    # Add other trusted origins if needed
     'http://127.0.0.1',
     "http://127.0.0.1:8000",
     'http://localhost',
