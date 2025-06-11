@@ -53,43 +53,53 @@
       <hr class="h-px mt-0 bg-transparent bg-gradient-to-r from-transparent via-black/40 to-transparent dark:bg-gradient-to-r dark:from-transparent dark:via-white dark:to-transparent" />
 
       <div class="items-center block w-auto max-h-screen overflow-auto h-sidenav grow basis-full">
-        <ul class="flex flex-col pl-0 mb-0">
-          <li class="mt-0.5 w-full">
-            <a   href="{% url 'data:dashboard' %}" class="py-2.7 bg-blue-500/13 dark:text-white dark:opacity-80 text-sm ease-nav-brand my-0 mx-2 flex items-center whitespace-nowrap rounded-lg px-4 font-semibold text-slate-700 transition-colors" href="../pages/dashboard.html">
-              <div class="mr-2 flex h-8 w-8 items-center justify-center rounded-lg bg-center stroke-0 text-center xl:p-2.5">
-                <i class="relative top-0 text-sm leading-normal text-blue-500 ni ni-tv-2"></i>
-              </div>
-              <span class="ml-1 duration-300 opacity-100 pointer-events-none ease">Dashboard</span>
-            </a>
-          </li>
+      <!-- In your sidebar section -->
+<ul class="flex flex-col pl-0 mb-0">
+  <li class="mt-0.5 w-full">
+    <a href="{% url 'data:dashboard' %}" 
+       class="py-2.7 text-sm ease-nav-brand my-0 mx-2 flex items-center whitespace-nowrap px-4 transition-colors 
+              {% if request.path == '/dashboard/' or request.path == '/' %} 
+                bg-blue-500/13 dark:text-white font-semibold text-slate-700
+              {% else %} 
+                dark:text-white dark:opacity-80
+              {% endif %}">
+      <div class="mr-2 flex h-8 w-8 items-center justify-center rounded-lg bg-center stroke-0 text-center xl:p-2.5">
+        <i class="relative top-0 text-sm leading-normal {% if request.path == '/dashboard/' or request.path == '/' %}text-blue-500{% else %}text-slate-500{% endif %} ni ni-tv-2"></i>
+      </div>
+      <span class="ml-1 duration-300 opacity-100 pointer-events-none ease">Dashboard</span>
+    </a>
+  </li>
 
-      
+  <li class="mt-0.5 w-full">
+    <a href="{% url 'data:datasetlist' %}" 
+       class="py-2.7 text-sm ease-nav-brand my-0 mx-2 flex items-center whitespace-nowrap px-4 transition-colors 
+              {% if 'dataset' in request.path %} 
+                bg-blue-500/13 dark:text-white font-semibold text-slate-700
+              {% else %} 
+                dark:text-white dark:opacity-80
+              {% endif %}">
+      <div class="mr-2 flex h-8 w-8 items-center justify-center rounded-lg bg-center stroke-0 text-center xl:p-2.5">
+        <i class="relative top-0 text-sm leading-normal {% if 'dataset' in request.path %}text-orange-500{% else %}text-slate-500{% endif %} ni ni-calendar-grid-58"></i>
+      </div>
+      <span class="ml-1 duration-300 opacity-100 pointer-events-none ease">Dataset</span>
+    </a>
+  </li>
 
-          <li class="mt-0.5 w-full">
-            <a href="{% url 'data:datasetlist' %}" class=" dark:text-white dark:opacity-80 py-2.7 text-sm ease-nav-brand my-0 mx-2 flex items-center whitespace-nowrap px-4 transition-colors" href="../pages/tables.html">
-              <div class="mr-2 flex h-8 w-8 items-center justify-center rounded-lg bg-center stroke-0 text-center xl:p-2.5">
-                <i class="relative top-0 text-sm leading-normal text-orange-500 ni ni-calendar-grid-58"></i>
-              </div>
-              <span class="ml-1 duration-300 opacity-100 pointer-events-none ease">Dataset</span>
-            </a>
-          </li>
-
-
-            <li class="mt-0.5 w-full">
-            <a href="{% url 'auth:logout' %}" class=" dark:text-white dark:opacity-80 py-2.7 text-sm ease-nav-brand my-0 mx-2 flex items-center whitespace-nowrap px-4 transition-colors" href="../pages/tables.html">
-              <div class="mr-2 flex h-8 w-8 items-center justify-center rounded-lg bg-center stroke-0 text-center xl:p-2.5">
-                <i class="relative top-0 text-sm leading-normal text-red-600  fa fa-sign-out"></i>
-              </div>
-              <span class="ml-1 duration-300 opacity-100 pointer-events-none ease">logout</span>
-            </a>
-          </li>
-
-          
-
-         
-
-       
-        </ul>
+  <li class="mt-0.5 w-full">
+    <a href="{% url 'auth:logout' %}" 
+       class="py-2.7 text-sm ease-nav-brand my-0 mx-2 flex items-center whitespace-nowrap px-4 transition-colors 
+              {% if 'logout' in request.path %} 
+                bg-blue-500/13 dark:text-white font-semibold text-slate-700
+              {% else %} 
+                dark:text-white dark:opacity-80
+              {% endif %}">
+      <div class="mr-2 flex h-8 w-8 items-center justify-center rounded-lg bg-center stroke-0 text-center xl:p-2.5">
+        <i class="relative top-0 text-sm leading-normal {% if 'logout' in request.path %}text-red-600{% else %}text-slate-500{% endif %} fa fa-sign-out"></i>
+      </div>
+      <span class="ml-1 duration-300 opacity-100 pointer-events-none ease">logout</span>
+    </a>
+  </li>
+</ul>
       </div>
 
     </aside>

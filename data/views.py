@@ -13,10 +13,28 @@ from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 
 from core.models import Class,Category,SubClass
+from django.db.models import Count
 
 @login_required
 def view_dashboard(request):
-    return render(request, 'data/dashboard.html')
+    # Get total recordings count
+    total_recordings = NoiseDataset.objects.count()
+    
+    # Get recordings count by current user
+    user_recordings = NoiseDataset.objects.filter(collector=request.user).count()
+    
+    # Get most popular category
+    popular_category = NoiseDataset.objects.values('category__name').annotate(
+        count=Count('category')
+    ).order_by('-count').first()
+    
+    context = {
+        'total_recordings': total_recordings,
+        'user_recordings': user_recordings,
+       
+    }
+    return render(request, 'data/dashboard.html', context)
+
 
 
 @login_required
