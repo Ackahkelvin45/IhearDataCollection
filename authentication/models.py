@@ -7,6 +7,10 @@ import string
 from django.dispatch import receiver
 from django.db.models.signals import post_save
 import threading
+from django.core.mail import EmailMessage
+from django.template.loader import render_to_string
+from django.utils.timezone import now
+import logging
 
 def random_string(length):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
@@ -34,7 +38,7 @@ class CustomUser(AbstractUser):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._temp_password = None  # Store temp password as instance variable
+        self._temp_password = None  
     
     @property
     def full_name(self):
@@ -46,22 +50,21 @@ class CustomUser(AbstractUser):
     def save(self, *args, **kwargs):
         is_new_user = not self.pk
         
-        # Generate username if it doesn't exist
+
         if not self.username:
             if self.email:
                 self.username = self.email.split('@')[0]
             else:
                 self.username = f"user_{random_string(8)}"
         
-        # Ensure username is unique
+
         if is_new_user:
             original_username = self.username
             counter = 1
             while CustomUser.objects.filter(username=self.username).exists():
                 self.username = f"{original_username}_{counter}"
                 counter += 1
-        
-        # Generate speaker_id if it doesn't exist
+
         if not self.speaker_id:
             initials = ''
             if self.first_name:
@@ -69,14 +72,14 @@ class CustomUser(AbstractUser):
             if self.last_name:
                 initials += self.last_name[0].upper()
             
-            random_str = random_string(6).upper()
+            random_str = random_string(3).upper()
             self.speaker_id = f"{initials}{random_str}"
             
-        # Generate random password if it's a new user and password isn't set
+
         if is_new_user and not self.password:
             temp_password = random_string(12)
             self.set_password(temp_password)
-            self._temp_password = temp_password  # Store for signal
+            self._temp_password = temp_password  
             
         super().save(*args, **kwargs)
 
@@ -90,38 +93,33 @@ class CustomUser(AbstractUser):
 
 
 def send_welcome_email_async(user_email, user_first_name, username, speaker_id, password):
-    """Function to send welcome email in a separate thread"""
-    subject = 'Welcome to Our Platform'
-    message = f"""
-    Hello {user_first_name or 'User'},
-
-    Your account has been successfully created!
-
-    Here are your login details:
-    Username: {username}
-    User ID: {speaker_id}
-    Password: {password}
-
-    Please change your password after first login.
-
-    Best regards,
-    The Team
-    """
+    subject = 'Welcome to Our I Hear Dataset Collection Platform'
     
+    context = {
+        'user_first_name': user_first_name,
+        'username': username,
+        'speaker_id': speaker_id,
+        'password': password,
+        'year': now().year
+    }
+
     try:
-        send_mail(
+        html_message = render_to_string('authentication/email_template.html', context)
+        email = EmailMessage(
             subject=subject,
-            message=message,
+            body=html_message,
             from_email=settings.EMAIL_HOST_USER,
-            recipient_list=[user_email],
-            fail_silently=False,
+            to=[user_email]
         )
+        email.content_subtype = "html"
+        email.send()
         print(f"Welcome email sent successfully to {user_email}")
     except Exception as e:
-        import logging
         logger = logging.getLogger(__name__)
         logger.error(f"Failed to send welcome email to {user_email}: {str(e)}")
         print(f"Failed to send email: {str(e)}")
+
+
 
 @receiver(post_save, sender=CustomUser)
 def user_created_handler(sender, instance, created, **kwargs):

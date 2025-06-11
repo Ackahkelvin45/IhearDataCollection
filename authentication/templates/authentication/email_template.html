@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Welcome Email</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            padding: 40px 20px;
+            margin: 0;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 600px;
+            margin: auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(94, 113, 228, 0.15);
+            overflow: hidden;
+            position: relative;
+        }
+        .header-bg {
+            background: linear-gradient(135deg, #5e71e4 0%, #7b88f0 100%);
+            height: 120px;
+            position: relative;
+            overflow: hidden;
+        }
+        .header-bg::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -20px;
+            width: 200px;
+            height: 200px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+        }
+        .header-bg::after {
+            content: '';
+            position: absolute;
+            bottom: -30px;
+            left: -20px;
+            width: 150px;
+            height: 150px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 50%;
+        }
+        .header {
+            position: relative;
+            z-index: 2;
+            color: white;
+            font-size: 20px;
+            font-weight: 700;
+            text-align: center;
+            padding: 40px 30px 20px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .content {
+            padding: 40px 40px 30px;
+            line-height: 1.6;
+        }
+        .content p {
+            margin: 16px 0;
+            font-size: 13px;
+        }
+        .greeting {
+            font-size: 16px;
+            color: #5e71e4;
+            font-weight: 600;
+            margin-bottom: 24px !important;
+        }
+        .success-message {
+            background: linear-gradient(135deg, #5e71e4 0%, #7b88f0 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            font-weight: 600;
+            margin: 24px 0;
+            box-shadow: 0 4px 12px rgba(94, 113, 228, 0.3);
+        }
+        .credentials-section {
+            background: #f8f9ff;
+            border: 2px solid #e8ecff;
+            border-radius: 12px;
+            padding: 24px;
+            margin: 24px 0;
+            position: relative;
+        }
+        .credentials-section::before {
+            content: '🔐';
+            font-size: 18px;
+            position: absolute;
+            top: -12px;
+            left: 24px;
+            background: white;
+            padding: 0 8px;
+        }
+        .credentials-title {
+            color: #5e71e4;
+            font-weight: 700;
+            font-size: 16px;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+        .credential-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #e8ecff;
+        }
+        .credential-item:last-child {
+            border-bottom: none;
+        }
+        .credential-label {
+            font-weight: 600;
+            color: #666;
+        }
+        .credential-value {
+            font-weight: 700;
+            color: #5e71e4;
+            font-family: 'Courier New', monospace;
+            background: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid #e8ecff;
+        }
+        .login-instruction {
+            background: #fff8e1;
+            border-left: 4px solid #ffc107;
+            padding: 16px 20px;
+            margin: 24px 0;
+            border-radius: 0 8px 8px 0;
+            font-style: italic;
+        }
+        .signature {
+            margin-top: 32px;
+            padding-top: 24px;
+            border-top: 2px solid #f0f0f0;
+        }
+        .team-name {
+            color: #5e71e4;
+            font-weight: 600;
+        }
+        .footer {
+            background: #f8f9ff;
+            padding: 20px 40px;
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+            border-top: 1px solid #e8ecff;
+        }
+        .footer strong {
+            color: #5e71e4;
+        }
+        .decorative-line {
+            height: 4px;
+            background: linear-gradient(90deg, #5e71e4, #7b88f0, #5e71e4);
+            margin: 0;
+        }
+        
+        @media (max-width: 640px) {
+            body {
+                padding: 20px 10px;
+            }
+            .content {
+                padding: 30px 25px 20px;
+            }
+            .header {
+                font-size: 24px;
+                padding: 30px 20px 15px;
+            }
+            .credential-item {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+            .credential-value {
+                align-self: stretch;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-bg">
+            <div class="header">Welcome to I Hear Dataset Collection</div>
+        </div>
+        <div class="decorative-line"></div>
+        
+        <div class="content">
+            <p class="greeting">Hello {{ user_first_name|default:"User" }}! 👋</p>
+
+            <div class="success-message">
+                ✅ Your account has been successfully created!
+            </div>
+
+            <div class="credentials-section">
+                <div class="credentials-title">Your Login Credentials</div>
+                <div class="credential-item">
+                    <span class="credential-label">Username:</span>
+                    <span class="credential-value">{{ username }}</span>
+                </div>
+                <div class="credential-item">
+                    <span class="credential-label">Speaker ID:</span>
+                    <span class="credential-value">{{ speaker_id }}</span>
+                </div>
+                <div class="credential-item">
+                    <span class="credential-label">Password:</span>
+                    <span class="credential-value">{{ password }}</span>
+                </div>
+            </div>
+
+            <div class="login-instruction">
+                💡 Please use the credentials above to log in to our platform and start contributing to the I Hear dataset collection.
+            </div>
+
+            <div class="signature">
+                <p>Welcome aboard and thank you for joining our mission!</p>
+                <p>Best regards,<br>
+                <span class="team-name">The I Hear Project Team</span></p>
+            </div>
+        </div>
+        
+        <div class="footer">
+            &copy; {{ year }} <strong>I Hear Project</strong>. All rights reserved.<br>
+        </div>
+    </div>
+</body>
+</html>
