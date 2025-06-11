@@ -1,19 +1,19 @@
 from django.contrib import admin
 from .models import NoiseDataset
 from unfold.admin import ModelAdmin
+import pandas as pd
+
 
 @admin.register(NoiseDataset)
 class NoiseDatasetAdmin(ModelAdmin):
-    # Fields to display in the list view
-    list_display = ('noise_id', 'name', 'collector', 'category', 'region', 'community', 'recording_date', 'updated_at')
+    list_display = ('noise_id', 'name', 'collector',"subclass", 'category', 'region', 'community', 'recording_date', 'updated_at')
+  
+    list_filter = ('category', 'region', 'community', 'time_of_day', 'class_name', "subclass",'recording_date')
     
-    # Enable filtering by these fields
-    list_filter = ('category', 'region', 'community', 'environment_type', 'time_of_day', 'class_name', 'recording_date')
-    
-    # Enable search for these fields
+
     search_fields = ('noise_id', 'name', 'description', 'community__name', 'collector__username')
     
-    # Fields that can be edited directly in the list view
+  
     list_editable = ('name',)
     
     list_select_related = ('collector', 'category', 'region', 'community')
@@ -25,10 +25,10 @@ class NoiseDatasetAdmin(ModelAdmin):
             'fields': ('noise_id', 'name', 'collector', 'description', 'audio', 'duration')
         }),
         ('Location Details', {
-            'fields': ('region', 'community', 'environment_type')
+            'fields': ('region', 'community', )
         }),
         ('Classification', {
-            'fields': ('category', 'class_name', 'specific_mix_setting')
+            'fields': ('category', 'class_name','subclass')
         }),
         ('Recording Details', {
             'fields': ('time_of_day', 'recording_device', 'microphone_type', 'recording_date')

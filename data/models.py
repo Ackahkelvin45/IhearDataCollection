@@ -1,7 +1,7 @@
 from django.db import models
 
 # Create your models here.
-from core.models import Region, Category, Community, Class, Microphone_Type,Environment_Type,Time_Of_Day,Specific_Mix_Setting
+from core.models import Region, Category, Community, Class, Microphone_Type,Time_Of_Day,SubClass
 from authentication.models import CustomUser
 
 
@@ -36,12 +36,7 @@ class NoiseDataset(models.Model):
         null=True,
         help_text="Category of the data "
     )
-    environment_type = models.ForeignKey(
-        Environment_Type,
-        on_delete=models.PROTECT,
-        null=True,
-        help_text="Environment Type (Urban, Rural, Coastal, Forested, etc.)"
-    )
+
     time_of_day = models.ForeignKey(
         Time_Of_Day,
         on_delete=models.PROTECT,
@@ -60,13 +55,25 @@ class NoiseDataset(models.Model):
         null=True,
         help_text="Class of the data"
     )
-
-    specific_mix_setting = models.ForeignKey(
-        Specific_Mix_Setting,
+    subclass = models.ForeignKey(
+        SubClass,
         on_delete=models.PROTECT,
         null=True,
-        help_text="Specific Mix Setting (Roadside, Market, Residential area, etc.)"
+        blank=True,
+        help_text="Sub Class of the data"
     )
+
+    community = models.ForeignKey(
+        Community,
+        on_delete=models.PROTECT,
+        null=True,
+        help_text="Environment Type (Urban, Rural, Coastal, Forested, etc.)"
+    )
+
+
+
+
+
     microphone_type = models.ForeignKey(
         Microphone_Type,
         on_delete=models.PROTECT,
@@ -102,6 +109,8 @@ class NoiseDataset(models.Model):
         unique=True,
         help_text="the noise_id,auto generated"
     )
-
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
     def __str__(self):
         return f'{self.name}-{self.noise_id}'

@@ -1,16 +1,16 @@
 from django import forms
 from django.forms.widgets import DateTimeInput
 from .models import NoiseDataset
-from core.models import Region, Category, Community, Class, Microphone_Type, Environment_Type, Time_Of_Day, Specific_Mix_Setting
+from core.models import Region, Category, Community, Class, Microphone_Type, Time_Of_Day,SubClass
 
 
 class NoiseDatasetForm(forms.ModelForm):
     class Meta:
         model = NoiseDataset
         fields = [
-            'description', 'region', 'category', 'environment_type', 
-            'time_of_day', 'community', 'class_name', 'specific_mix_setting', 
-            'microphone_type', 'audio', 'recording_date', 'recording_device'
+            'description', 'region', 'category', 
+            'time_of_day', 'community', 'class_name',  
+            'microphone_type', 'audio', 'recording_date', 'recording_device','subclass'
         ]
         
         widgets = {
@@ -25,9 +25,7 @@ class NoiseDatasetForm(forms.ModelForm):
             'category': forms.Select(attrs={
                 'class': 'focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none'
             }),
-            'environment_type': forms.Select(attrs={
-                'class': 'focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none'
-            }),
+           
             'time_of_day': forms.Select(attrs={
                 'class': 'focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none'
             }),
@@ -37,9 +35,7 @@ class NoiseDatasetForm(forms.ModelForm):
             'class_name': forms.Select(attrs={
                 'class': 'focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none'
             }),
-            'specific_mix_setting': forms.Select(attrs={
-                'class': 'focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none'
-            }),
+            
             'microphone_type': forms.Select(attrs={
                 'class': 'focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none'
             }),
@@ -61,11 +57,9 @@ class NoiseDatasetForm(forms.ModelForm):
             'description': 'Description',
             'region': 'Region',
             'category': 'Category',
-            'environment_type': 'Environment Type',
             'time_of_day': 'Time of Day',
             'community': 'Community',
             'class_name': 'Class',
-            'specific_mix_setting': 'Specific Mix Setting',
             'microphone_type': 'Microphone Type',
             'audio': 'Audio File',
             'recording_date': 'Recording Date',
@@ -76,11 +70,9 @@ class NoiseDatasetForm(forms.ModelForm):
             'description': 'Any additional notes about this recording',
             'region': 'Select the region where recording was made (Ashanti, Central, Greater Accra, etc.)',
             'category': 'Category of the data',
-            'environment_type': 'Environment Type (Urban, Rural, Coastal, Forested, etc.)',
             'time_of_day': 'Time of Day (Day, Night, etc.)',
             'community': 'Specific community (Kotei, Adum, Ayeduase, etc.)',
             'class_name': 'Class of the data',
-            'specific_mix_setting': 'Specific Mix Setting (Roadside, Market, Residential area, etc.)',
             'microphone_type': 'Microphone Type (Omnidirectional, Directional, etc.) - Skip if using mobile phone',
             'audio': 'Upload audio file',
             'recording_date': 'Date when recording was made',
@@ -88,17 +80,54 @@ class NoiseDatasetForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        
-        # Add empty option for select fields
-        self.fields['region'].empty_label = "Select Region"
-        self.fields['category'].empty_label = "Select Category"
-        self.fields['environment_type'].empty_label = "Select Environment Type"
-        self.fields['time_of_day'].empty_label = "Select Time of Day"
-        self.fields['community'].empty_label = "Select Community"
-        self.fields['class_name'].empty_label = "Select Class"
-        self.fields['specific_mix_setting'].empty_label = "Select Mix Setting"
-        self.fields['microphone_type'].empty_label = "Select Microphone Type (Optional)"
-        
-        # Make microphone_type not required since it's optional for mobile phones
-        self.fields['microphone_type'].required = False
+            super().__init__(*args, **kwargs)
+            
+            # Set empty labels
+            self.fields['region'].empty_label = "Select Region"
+            self.fields['category'].empty_label = "Select Category"
+            self.fields['time_of_day'].empty_label = "Select Time of Day"
+            self.fields['community'].empty_label = "Select Community"
+            self.fields['class_name'].empty_label = "Select Class"
+            self.fields['microphone_type'].empty_label = "Select Microphone Type (Optional)"
+            
+            # Make microphone_type optional
+            self.fields['microphone_type'].required = False
+            
+            # If the form is bound (submitted), filter the class_name queryset
+            if 'category' in self.data:
+                try:
+                    category_id = int(self.data.get('category'))
+                    self.fields['class_name'].queryset = Class.objects.filter(category_id=category_id).order_by('name')
+                except (ValueError, TypeError):
+                    pass  # invalid input from the client; ignore and fallback to empty queryset
+            elif self.instance.pk:
+                # If editing an existing instance, show the current related classes
+                self.fields['class_name'].queryset = self.instance.category.classes.order_by('name')
+            else:
+                # If new instance, show empty class_name queryset
+                self.fields['class_name'].queryset = Class.objects.none()
+                
+            # Add subclass field to the form (if not already in fields)
+            self.fields['subclass'] = forms.ModelChoiceField(
+                queryset=SubClass.objects.none(),
+                required=False,
+                label="Sub Class",
+                help_text="Sub Class of the data",
+                widget=forms.Select(attrs={
+                    'class': 'focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none'
+                })
+            )
+            
+            # Filter subclass queryset based on class_name
+            if 'class_name' in self.data:
+                try:
+                    class_id = int(self.data.get('class_name'))
+                    self.fields['subclass'].queryset = SubClass.objects.filter(parent_class_id=class_id).order_by('name')
+                except (ValueError, TypeError):
+                    pass  # invalid input from the client; ignore and fallback to empty queryset
+            elif self.instance.pk and self.instance.class_name:
+                # If editing an existing instance with a class_name, show its subclasses
+                self.fields['subclass'].queryset = self.instance.class_name.subclasses.order_by('name')
+            else:
+                # If new instance or no class_name, show empty subclass queryset
+                self.fields['subclass'].queryset = SubClass.objects.none()

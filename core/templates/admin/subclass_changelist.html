@@ -1,0 +1,16 @@
+{% extends "admin/change_list.html" %}
+{% block object-tools %}
+{{ block.super }}
+
+    <div>
+        <form action="import-excel/" method="POST" enctype="multipart/form-data">
+            {% csrf_token %}
+            <input type="file" name="excel_file" accept=".xlsx,.xls">
+            <button type="submit" style="padding:5px 15px; background:#417690; color:white; border:none; border-radius:4px; cursor:pointer;">
+                Import Excel
+            </button>
+        </form>
+    </div>
+    <br />
+    {{ block.super }}
+{% endblock %}

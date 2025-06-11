@@ -1,0 +1,12 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<div style="margin:20px;">
+    <h1>Upload Excel File</h1>
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ form.excel_file.label_tag }}
+    {{ form.excel_file }}
+    <button type="submit">Import</button>
+</form>
+</div>
+{% endblock %}
