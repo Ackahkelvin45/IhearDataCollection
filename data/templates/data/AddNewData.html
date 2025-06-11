@@ -278,20 +278,42 @@ if (audioField) {
 
 
 
-    // In your existing script block, add this:
 document.addEventListener('DOMContentLoaded', function() {
-    // ... your existing DOMContentLoaded code ...
-    
-    // Chained dropdown for category -> class -> subclass
+    // Get all select elements
+    const regionSelect = document.getElementById('id_region');
+    const communitySelect = document.getElementById('id_community');
     const categorySelect = document.getElementById('id_category');
     const classSelect = document.getElementById('id_class_name');
     const subclassSelect = document.getElementById('id_subclass');
     
+    // Region-Community relationship
+    if (regionSelect && communitySelect) {
+        regionSelect.addEventListener('change', function() {
+            const regionId = this.value;
+            communitySelect.innerHTML = '<option value="">Select Community</option>';
+            
+            if (regionId) {
+                fetch(`/load-communities/?region_id=${regionId}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        data.forEach(item => {
+                            const option = document.createElement('option');
+                            option.value = item.id;
+                            option.textContent = item.name;
+                            communitySelect.appendChild(option);
+                        });
+                    })
+                    .catch(error => console.error('Error loading communities:', error));
+            }
+        });
+    }
+    
+    // Category-Class relationship
     if (categorySelect && classSelect) {
         categorySelect.addEventListener('change', function() {
             const categoryId = this.value;
             classSelect.innerHTML = '<option value="">Select Class</option>';
-            subclassSelect.innerHTML = '<option value="">Select Sub Class</option>';
+            if (subclassSelect) subclassSelect.innerHTML = '<option value="">Select Sub Class</option>';
             
             if (categoryId) {
                 fetch(`/load-classes/?category_id=${categoryId}`)
@@ -303,11 +325,13 @@ document.addEventListener('DOMContentLoaded', function() {
                             option.textContent = item.name;
                             classSelect.appendChild(option);
                         });
-                    });
+                    })
+                    .catch(error => console.error('Error loading classes:', error));
             }
         });
     }
     
+    // Class-Subclass relationship
     if (classSelect && subclassSelect) {
         classSelect.addEventListener('change', function() {
             const classId = this.value;
@@ -323,46 +347,49 @@ document.addEventListener('DOMContentLoaded', function() {
                             option.textContent = item.name;
                             subclassSelect.appendChild(option);
                         });
-                    });
+                    })
+                    .catch(error => console.error('Error loading subclasses:', error));
             }
         });
     }
     
-    // Trigger change event if category/class are pre-selected (when editing)
+    // Trigger change events for pre-selected values (when editing)
+    if (regionSelect && regionSelect.value) {
+        regionSelect.dispatchEvent(new Event('change'));
+    }
     if (categorySelect && categorySelect.value) {
         categorySelect.dispatchEvent(new Event('change'));
     }
     if (classSelect && classSelect.value) {
-        classSelect.dispatchEvent(new Event('change'));
+        // Add a small delay to ensure classes are loaded first
+        setTimeout(() => {
+            classSelect.dispatchEvent(new Event('change'));
+        }, 100);
     }
 });
-
-
-
   </script>
 
 
   <script>
-    // Add this to your existing script section
     document.addEventListener('DOMContentLoaded', function() {
-      // Close button functionality for alerts
       document.querySelectorAll('.close-btn').forEach(button => {
         button.addEventListener('click', (e) => {
           e.target.closest('.alert').remove();
         });
       });
       
-      // Auto-close success messages after 5 seconds
       setTimeout(() => {
         document.querySelectorAll('.alert').forEach(alert => {
           alert.remove();
         });
-      }, 5000);
+      }, 7000);
       
-      // ... rest of your existing JavaScript ...
     });
   </script>
 
+
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 
 
 

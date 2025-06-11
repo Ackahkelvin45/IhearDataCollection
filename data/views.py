@@ -12,8 +12,9 @@ import os
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 
-from core.models import Class,Category,SubClass
+from core.models import Class,SubClass,Community
 from django.db.models import Count
+
 
 @login_required
 def view_dashboard(request):
@@ -23,11 +24,7 @@ def view_dashboard(request):
     # Get recordings count by current user
     user_recordings = NoiseDataset.objects.filter(collector=request.user).count()
     
-    # Get most popular category
-    popular_category = NoiseDataset.objects.values('category__name').annotate(
-        count=Count('category')
-    ).order_by('-count').first()
-    
+   
     context = {
         'total_recordings': total_recordings,
         'user_recordings': user_recordings,
@@ -49,6 +46,9 @@ def view_datasetlist(request):
 
 
 
+import uuid
+from datetime import datetime
+
 @login_required
 def noise_dataset_create(request):
     if request.method == 'POST':
@@ -57,18 +57,27 @@ def noise_dataset_create(request):
             try:
                 noise_dataset = form.save(commit=False)
                 noise_dataset.collector = request.user
-                noise_dataset.noise_id = generate_noise_id()
+                
+                # Generate the new noise ID format
+                noise_dataset.noise_id = generate_noise_id(request.user)
+                
+                # Generate dataset name (you might want to update this too)
                 noise_dataset.name = generate_dataset_name(noise_dataset)
                 
                 # Calculate audio duration if audio file is provided
                 if 'audio' in request.FILES:
                     try:
-                        duration = get_audio_duration(request.FILES['audio'])
+                        # Rename the uploaded file to match the noise ID
+                        audio_file = request.FILES['audio']
+                        file_extension = audio_file.name.split('.')[-1]
+                        new_filename = f"{noise_dataset.noise_id}.{file_extension}"
+                        audio_file.name = new_filename
+                        
+                        duration = get_audio_duration(audio_file)
                         if duration:
                             noise_dataset.duration = duration
-                            print(f"Duration set to: {duration}")  # Debug print
                         else:
-                            print("Could not determine duration")  # Debug print
+                            print("Could not determine duration")  
                     except Exception as e:
                         print(f"Error getting audio duration: {e}")
                         noise_dataset.duration = None
@@ -88,38 +97,32 @@ def noise_dataset_create(request):
     context = {'form': form}
     return render(request, 'data/AddNewData.html', context)
 
-
-def generate_noise_id():
-    """Generate a unique noise ID"""
-    return f"NSE-{uuid.uuid4().hex[:8].upper()}"
+def generate_noise_id(user):
+    """Generate a unique noise ID with format: NSE-{speaker_id}-{timestamp}-{3 random chars}"""
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    random_chars = uuid.uuid4().hex[:5].upper()
+    
+    # Get speaker_id from user, use 'UNK' if not available
+    speaker_id = user.speaker_id if user.speaker_id else 'UNK'
+    
+    return f"NSE-{speaker_id}-{timestamp}-{random_chars}"
 
 def generate_dataset_name(noise_dataset):
     """Generate a descriptive name for the dataset based on the new fields"""
     parts = []
-    
-    # Add region if available
-    if noise_dataset.region:
-        parts.append(str(noise_dataset.region))
-    
-    # Add community if available
-    if noise_dataset.community:
-        parts.append(str(noise_dataset.community))
-    
-    # Add category if available
+
     if noise_dataset.category:
         parts.append(str(noise_dataset.category))
     
     # Add class name if available
     if noise_dataset.class_name:
         parts.append(str(noise_dataset.class_name))
+
+    if noise_dataset.subclass:
+        parts.append(str(noise_dataset.subclass))
     
-    # Add time of day if available
-    if noise_dataset.time_of_day:
-        parts.append(str(noise_dataset.time_of_day))
-    
-    # Add recording device if available
-    if noise_dataset.recording_device:
-        parts.append(str(noise_dataset.recording_device))
+ 
+
     
     # Add timestamp
     timestamp = timezone.now().strftime("%Y%m%d_%H%M")
@@ -148,11 +151,15 @@ def get_audio_duration(audio_file):
         return None
 
 
-
-def generate_noise_id():
-    """Generate a unique noise ID"""
-    return f"NSE-{uuid.uuid4().hex[:8].upper()}"
-
+def generate_noise_id(user):
+    """Generate a unique noise ID with format: NSE-{speaker_id}-{timestamp}-{3 random chars}"""
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    random_chars = uuid.uuid4().hex[:3].upper()
+    
+    # Get speaker_id from user, use 'UNK' if not available
+    speaker_id = user.speaker_id if user.speaker_id else 'UNK'
+    
+    return f"NSE-{speaker_id}-{timestamp}-{random_chars}"
 
 def generate_dataset_name(noise_dataset):
     """Generate a descriptive name for the dataset"""
@@ -241,3 +248,9 @@ def load_subclasses(request):
     class_id = request.GET.get('class_id')
     subclasses = SubClass.objects.filter(parent_class_id=class_id).order_by('name')
     return JsonResponse(list(subclasses.values('id', 'name')), safe=False)
+
+def load_communities(request):
+    region_id = request.GET.get('region_id')
+    communities = Community.objects.filter(region_id=region_id).order_by('name')
+    data = [{'id': c.id, 'name': c.name} for c in communities]
+    return JsonResponse(data, safe=False)

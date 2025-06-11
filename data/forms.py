@@ -79,55 +79,69 @@ class NoiseDatasetForm(forms.ModelForm):
             'recording_device': 'Recording Device (e.g., iPhone 16, Zoom H4n, etc.)',
         }
 
-    def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
+def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Set empty labels
+        self.fields['region'].empty_label = "Select Region"
+        self.fields['category'].empty_label = "Select Category"
+        self.fields['time_of_day'].empty_label = "Select Time of Day"
+        self.fields['community'].empty_label = "Select Community"
+        self.fields['class_name'].empty_label = "Select Class"
+        self.fields['microphone_type'].empty_label = "Select Microphone Type (Optional)"
+        
+        # Make microphone_type optional
+        self.fields['microphone_type'].required = False
+        
+        # Handle the region-community relationship
+        if 'region' in self.data:
+            try:
+                region_id = int(self.data.get('region'))
+                self.fields['community'].queryset = Community.objects.filter(region_id=region_id).order_by('name')
+            except (ValueError, TypeError):
+                pass  # invalid input from the client; ignore and fallback to empty queryset
+        elif self.instance.pk and self.instance.region:
+            # If editing an existing instance with a region, show its communities
+            self.fields['community'].queryset = self.instance.region.communities.order_by('name')
+        else:
+            # If new instance or no region, show empty community queryset
+            self.fields['community'].queryset = Community.objects.none()
+        
+        # Handle the category-class relationship
+        if 'category' in self.data:
+            try:
+                category_id = int(self.data.get('category'))
+                self.fields['class_name'].queryset = Class.objects.filter(category_id=category_id).order_by('name')
+            except (ValueError, TypeError):
+                pass  # invalid input from the client; ignore and fallback to empty queryset
+        elif self.instance.pk and self.instance.category:
+            # If editing an existing instance, show the current related classes
+            self.fields['class_name'].queryset = self.instance.category.classes.order_by('name')
+        else:
+            # If new instance, show empty class_name queryset
+            self.fields['class_name'].queryset = Class.objects.none()
             
-            # Set empty labels
-            self.fields['region'].empty_label = "Select Region"
-            self.fields['category'].empty_label = "Select Category"
-            self.fields['time_of_day'].empty_label = "Select Time of Day"
-            self.fields['community'].empty_label = "Select Community"
-            self.fields['class_name'].empty_label = "Select Class"
-            self.fields['microphone_type'].empty_label = "Select Microphone Type (Optional)"
-            
-            # Make microphone_type optional
-            self.fields['microphone_type'].required = False
-            
-            # If the form is bound (submitted), filter the class_name queryset
-            if 'category' in self.data:
-                try:
-                    category_id = int(self.data.get('category'))
-                    self.fields['class_name'].queryset = Class.objects.filter(category_id=category_id).order_by('name')
-                except (ValueError, TypeError):
-                    pass  # invalid input from the client; ignore and fallback to empty queryset
-            elif self.instance.pk:
-                # If editing an existing instance, show the current related classes
-                self.fields['class_name'].queryset = self.instance.category.classes.order_by('name')
-            else:
-                # If new instance, show empty class_name queryset
-                self.fields['class_name'].queryset = Class.objects.none()
-                
-            # Add subclass field to the form (if not already in fields)
-            self.fields['subclass'] = forms.ModelChoiceField(
-                queryset=SubClass.objects.none(),
-                required=False,
-                label="Sub Class",
-                help_text="Sub Class of the data",
-                widget=forms.Select(attrs={
-                    'class': 'focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none'
-                })
-            )
-            
-            # Filter subclass queryset based on class_name
-            if 'class_name' in self.data:
-                try:
-                    class_id = int(self.data.get('class_name'))
-                    self.fields['subclass'].queryset = SubClass.objects.filter(parent_class_id=class_id).order_by('name')
-                except (ValueError, TypeError):
-                    pass  # invalid input from the client; ignore and fallback to empty queryset
-            elif self.instance.pk and self.instance.class_name:
-                # If editing an existing instance with a class_name, show its subclasses
-                self.fields['subclass'].queryset = self.instance.class_name.subclasses.order_by('name')
-            else:
-                # If new instance or no class_name, show empty subclass queryset
-                self.fields['subclass'].queryset = SubClass.objects.none()
+        # Add subclass field to the form (if not already in fields)
+        self.fields['subclass'] = forms.ModelChoiceField(
+            queryset=SubClass.objects.none(),
+            required=False,
+            label="Sub Class",
+            help_text="Sub Class of the data",
+            widget=forms.Select(attrs={
+                'class': 'focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none'
+            })
+        )
+        
+        # Filter subclass queryset based on class_name
+        if 'class_name' in self.data:
+            try:
+                class_id = int(self.data.get('class_name'))
+                self.fields['subclass'].queryset = SubClass.objects.filter(parent_class_id=class_id).order_by('name')
+            except (ValueError, TypeError):
+                pass  # invalid input from the client; ignore and fallback to empty queryset
+        elif self.instance.pk and self.instance.class_name:
+            # If editing an existing instance with a class_name, show its subclasses
+            self.fields['subclass'].queryset = self.instance.class_name.subclasses.order_by('name')
+        else:
+            # If new instance or no class_name, show empty subclass queryset
+            self.fields['subclass'].queryset = SubClass.objects.none()
