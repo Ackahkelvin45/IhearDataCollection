@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: bash -c "python manage.py collectstatic --noinput && python manage.py migrate && gunicorn --bind 0.0.0.0:8000 --workers 4 --threads 2 --timeout 120 datacollection.wsgi:application"
+    volumes:
+      - .:/app
+      - static_volume:/app/staticfiles
+      # Add this to avoid Python bytecode files in your host
+      - /app/.pycache
+      - /app/*/__pycache__
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    # Add resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+
+  db:
+    image: postgres:15
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      # Add performance optimizations
+      - POSTGRES_HOST_AUTH_METHOD=trust
+      - PGOPTIONS=-c synchronous_commit=off
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Add resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+volumes:
+  postgres_data:
+  static_volume:
