@@ -254,3 +254,7 @@ def load_communities(request):
     communities = Community.objects.filter(region_id=region_id).order_by('name')
     data = [{'id': c.id, 'name': c.name} for c in communities]
     return JsonResponse(data, safe=False)
+
+
+def show_pages(request):
+    return render(request, 'data/datasetlist.html')
