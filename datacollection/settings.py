@@ -232,8 +232,6 @@ CSRF_TRUSTED_ORIGINS = [
     'http://localhost',
     'http://0.0.0.0',
 'http://178.128.165.1'
-'www.ihearandsee-at-rail.com',
-'ihearandsee-at-rail.com',
 'https://www.ihearandsee-at-rail.com'
 
         ]
