@@ -29,8 +29,8 @@ SECRET_KEY = 'django-insecure-*_^$!#mp28jhe25iq6dok5suz(_!529k-c2hj#wnd!7@6@p%ri
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
-ALLOWED_HOSTS = ['localhost','178.128.165.1', '127.0.0.1',]
-
+ALLOWED_HOSTS = ['localhost','178.128.165.1', '127.0.0.1','www.ihearandsee-at-rail.com','ihearandsee-at-rail.com','https://www.ihearandsee-at-rail.com']
+ 
 
 # Application definition
 
@@ -215,6 +215,9 @@ CORS_ALLOWED_ORIGINS = [
     'iheardatacollection.onrender.com',
   'https://iheardatacollection.onrender.com'
 '178.128.165.1',
+'www.ihearandsee-at-rail.com',
+'ihearandsee-at-rail.com',
+'https://www.ihearandsee-at-rail.com'
 
     ]
 
@@ -229,6 +232,9 @@ CSRF_TRUSTED_ORIGINS = [
     'http://localhost',
     'http://0.0.0.0',
 'http://178.128.165.1'
+'www.ihearandsee-at-rail.com',
+'ihearandsee-at-rail.com',
+'https://www.ihearandsee-at-rail.com'
 
         ]
 
