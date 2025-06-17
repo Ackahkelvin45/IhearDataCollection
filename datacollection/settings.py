@@ -46,7 +46,6 @@ INSTALLED_APPS = [
     "django.contrib.admin",
       'tailwind',
     'theme',
-    
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
@@ -69,7 +68,6 @@ TAILWIND_APP_NAME = 'theme'
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
         'whitenoise.middleware.WhiteNoiseMiddleware',
-
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -231,7 +229,7 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:8000",
     'http://localhost',
     'http://0.0.0.0',
-'http://178.128.165.1'
+'http://178.128.165.1',
 'https://www.ihearandsee-at-rail.com'
 
         ]
