@@ -29,7 +29,7 @@ SECRET_KEY = 'django-insecure-*_^$!#mp28jhe25iq6dok5suz(_!529k-c2hj#wnd!7@6@p%ri
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = ['localhost','178.128.165.1', '127.0.0.1',]
 
 
 # Application definition
@@ -213,9 +213,11 @@ CORS_ALLOWED_ORIGINS = [
     "http://0.0.0.0",
     "https://shalom-enterprise-1.onrender.com",
     'iheardatacollection.onrender.com',
-  'https://iheardatacollection.onrender.com',
+  'https://iheardatacollection.onrender.com'
+'178.128.165.1',
 
     ]
+
 
 CORS_ALLOW_CREDENTIALS = True  # To allow cookies
 
@@ -226,6 +228,7 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:8000",
     'http://localhost',
     'http://0.0.0.0',
-    
+'http://178.128.165.1'
 
-]
+        ]
+

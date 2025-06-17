@@ -21,11 +21,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     # Add resource limits
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 1G
+
 
   db:
     image: postgres:15
@@ -44,11 +40,7 @@ services:
       timeout: 5s
       retries: 10
     # Add resource limits
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
+
 
 volumes:
   postgres_data:
