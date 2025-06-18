@@ -19,6 +19,8 @@ services:
     restart: unless-stopped
     networks:
       - app-network
+    dns:
+      - 8.8.8.8  # Added DNS to allow external network access
 
   db:
     image: postgres:15
