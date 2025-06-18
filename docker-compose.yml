@@ -26,8 +26,7 @@ services:
     dns:
       - 8.8.8.8
       - 1.1.1.1
-    extra_hosts:
-      - "smtp.gmail.com:172.217.0.0/16"  # Google's IP range
+
 
   db:
     image: postgres:15
