@@ -116,6 +116,7 @@ def send_welcome_email_async(user_email, user_first_name, username, speaker_id, 
         print(f"Welcome email sent successfully to {user_email}")
     except Exception as e:
         logger = logging.getLogger(__name__)
+        print(e)
         logger.error(f"Failed to send welcome email to {user_email}: {str(e)}")
         print(f"Failed to send email: {str(e)}")
 
