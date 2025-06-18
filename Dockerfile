@@ -18,7 +18,7 @@ WORKDIR /app
 # Install Python dependencies first to leverage Docker cache
 COPY requirements.txt .
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install -r requirements.txt
 
 # Copy project files (with .dockerignore to exclude unnecessary files)
 COPY . .
