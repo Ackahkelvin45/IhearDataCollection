@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      command: bash -c "chown -R www-data:www-data /app/staticfiles && python manage.py collectstatic --noinput && python manage.py migrate && gunicorn --bind 0.0.0.0:8000 --workers 4 --threads 2 --timeout 120 datacollection.wsgi:application"
+    command: bash -c "python manage.py collectstatic --noinput && python manage.py migrate && gunicorn --bind 0.0.0.0:8000 --workers 4 --threads 2 --timeout 120 datacollection.wsgi:application"
     volumes:
       - .:/app
       - static_volume:/app/staticfiles
