@@ -14,8 +14,16 @@ services:
     env_file:
       - .env
     environment:
-      - EMAIL=${EMAIL}
-      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+      - EMAIL_HOST=${EMAIL_HOST}
+      - EMAIL_PORT=${EMAIL_PORT}
+      - EMAIL_USE_TLS=${EMAIL_USE_TLS:-True}  # Default to True if not set
+      - EMAIL_USE_SSL=${EMAIL_USE_SSL:-False} # Default to False if not set
+      - EMAIL_HOST_USER=${EMAIL_HOST_USER}
+      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
+    # Add these network optimizations:
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
+
     depends_on:
       db:
         condition: service_healthy
@@ -24,13 +32,9 @@ services:
       app-network:
         aliases:
           - web
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
-    sysctls:
-      - net.ipv6.conf.all.disable_ipv6=1
-    extra_hosts:
-      - "smtp.gmail.com:142.250.190.109"
+
+
+
 
   db:
     image: postgres:15
@@ -55,4 +59,4 @@ volumes:
 
 networks:
   app-network:
-    driver: bridge
+    driver: bridge  

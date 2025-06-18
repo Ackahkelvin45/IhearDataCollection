@@ -17,7 +17,9 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 import os
 load_dotenv()
+import logging
 
+logger = logging.getLogger(__name__)
 
 
 
@@ -166,13 +168,28 @@ AUTH_USER_MODEL = 'authentication.CustomUser'
 
 
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = os.getenv("EMAIL")  # Make sure this matches exactly
-EMAIL_HOST_PASSWORD =  os.getenv("EMAIL_PASSWORD")
 
+def as_bool(value: str):
+    if value is None:
+        return False
+    return value.lower() in ["true", "yes", "1", "y"]
+
+# Email Configuration
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))  # Default to TLS port
+EMAIL_USE_TLS = as_bool(os.getenv("EMAIL_USE_TLS", "True"))  # True for port 587
+EMAIL_USE_SSL = as_bool(os.getenv("EMAIL_USE_SSL", "False"))  # False for port 587
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
+EMAIL_TIMEOUT = 10
+
+# Ensure only one of USE_TLS or USE_SSL is True
+if EMAIL_USE_TLS and EMAIL_USE_SSL:
+    EMAIL_USE_SSL = False
+    logger.warning("Both EMAIL_USE_TLS and EMAIL_USE_SSL were True. Disabling SSL in favor of TLS.")
+
+# Temporarily add this before your email settings to debug
 
 # Authentication settings
 LOGIN_URL = '/auth/login/'  # URL to redirect to for login
@@ -211,7 +228,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://0.0.0.0",
     "https://shalom-enterprise-1.onrender.com",
     'iheardatacollection.onrender.com',
-  'https://iheardatacollection.onrender.com'
+  'https://iheardatacollection.onrender.com',
 '178.128.165.1',
 'www.ihearandsee-at-rail.com',
 'ihearandsee-at-rail.com',

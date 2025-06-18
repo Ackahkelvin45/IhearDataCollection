@@ -12,6 +12,8 @@ from django.template.loader import render_to_string
 from django.utils.timezone import now
 import logging
 
+logger = logging.getLogger(__name__)
+
 def random_string(length):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
@@ -90,11 +92,12 @@ class CustomUser(AbstractUser):
 
 
 
+from django.core.mail import get_connection, EmailMultiAlternatives
+from socket import gaierror
+from smtplib import SMTPException, SMTPServerDisconnected
 
-
-def send_welcome_email_async(user_email, user_first_name, username, speaker_id, password):
-    subject = 'Welcome to Our I Hear Dataset Collection Platform'
-    
+def send_welcome_email(user_email, user_first_name, username, speaker_id, password):
+    subject = 'Welcome to Our Platform'
     context = {
         'user_first_name': user_first_name,
         'username': username,
@@ -105,52 +108,72 @@ def send_welcome_email_async(user_email, user_first_name, username, speaker_id, 
 
     try:
         html_message = render_to_string('authentication/email_template.html', context)
-        email = EmailMessage(
-            subject=subject,
-            body=html_message,
-            from_email=settings.EMAIL_HOST_USER,
-            to=[user_email]
-        )
-        email.content_subtype = "html"
-        email.send()
-        print(f"Welcome email sent successfully to {user_email}")
+        
+        # Get connection with retry capability
+        connection = None
+        try:
+            connection = get_connection(
+                fail_silently=False,
+                host=settings.EMAIL_HOST,
+                port=settings.EMAIL_PORT,
+                username=settings.EMAIL_HOST_USER,
+                password=settings.EMAIL_HOST_PASSWORD,
+                use_tls=settings.EMAIL_USE_TLS,
+                use_ssl=settings.EMAIL_USE_SSL,
+                timeout=settings.EMAIL_TIMEOUT
+            )
+            
+            email = EmailMultiAlternatives(
+                subject=subject,
+                body="Please enable HTML to view this message",
+                from_email=settings.EMAIL_HOST_USER,
+                to=[user_email],
+                connection=connection
+            )
+            email.attach_alternative(html_message, "text/html")
+            email.send()
+            logger.info(f"Email successfully sent to {user_email}")
+            return True
+            
+        except (SMTPException, gaierror, SMTPServerDisconnected) as e:
+            logger.error(f"SMTP Connection Error for {user_email}: {str(e)}")
+            # Try one more time with a fresh connection
+            if connection:
+                connection.close()
+            return False
+            
     except Exception as e:
-        logger = logging.getLogger(__name__)
-        print(e)
-        logger.error(f"Failed to send welcome email to {user_email}: {str(e)}")
-        print(f"Failed to send email: {str(e)}")
-
-
-
+        logger.error(f"Unexpected error sending to {user_email}: {str(e)}", exc_info=True)
+        return False
 @receiver(post_save, sender=CustomUser)
 def user_created_handler(sender, instance, created, **kwargs):
+    """
+    Handle new user creation and send welcome email synchronously
+    """
     if not created:
         return
         
     try:
         if instance.email and hasattr(instance, '_temp_password') and instance._temp_password:
-            print(f"Sending welcome email to {instance.email}")
+            logger.info(f"Attempting to send welcome email to {instance.email}")
             
-            email_thread = threading.Thread(
-                target=send_welcome_email_async,
-                args=(
-                    instance.email,
-                    instance.first_name,
-                    instance.username,
-                    instance.speaker_id,
-                    instance._temp_password
-                ),
-                daemon=True
+            # Call the email function directly instead of using threading
+            send_welcome_email(
+                instance.email,
+                instance.first_name,
+                instance.username,
+                instance.speaker_id,
+                instance._temp_password
             )
-            email_thread.start()
         else:
-            print(f"User created but email not sent - Email: {instance.email}, Has temp password: {hasattr(instance, '_temp_password')}")
+            logger.info(
+                f"User created but email not sent - "
+                f"Email: {instance.email}, "
+                f"Has temp password: {hasattr(instance, '_temp_password')}"
+            )
             
     except Exception as e:
-        # Log the full error with traceback
-        import traceback
-        error_message = f"Failed to send welcome email: {str(e)}\n{traceback.format_exc()}"
-        print(error_message)
-        
-        # You might want to log this to a file or error monitoring service as well
-        # logger.error(error_message)
+        logger.error(
+            f"Failed to process welcome email for {instance.email}: {str(e)}", 
+            exc_info=True
+        )
