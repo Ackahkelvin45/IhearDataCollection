@@ -22,10 +22,15 @@ services:
     restart: unless-stopped
     networks:
       - app-network
-    # Enhanced DNS and network settings
+    network_mode: "host"  # ← Critical change! Uses host network directly
     dns:
       - 8.8.8.8
       - 1.1.1.1
+
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
+    extra_hosts:
+      - "smtp.gmail.com:142.250.190.109"  
 
 
   db:
