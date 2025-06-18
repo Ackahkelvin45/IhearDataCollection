@@ -124,20 +124,33 @@ def send_welcome_email_async(user_email, user_first_name, username, speaker_id, 
 
 @receiver(post_save, sender=CustomUser)
 def user_created_handler(sender, instance, created, **kwargs):
-    if created and instance.email and hasattr(instance, '_temp_password') and instance._temp_password:
-        print(f"Sending welcome email to {instance.email}")
+    if not created:
+        return
         
-        email_thread = threading.Thread(
-            target=send_welcome_email_async,
-            args=(
-                instance.email,
-                instance.first_name,
-                instance.username,
-                instance.speaker_id,
-                instance._temp_password
-            ),
-            daemon=True
-        )
-        email_thread.start()
-    elif created:
-        print(f"User created but email not sent - Email: {instance.email}, Has temp password: {hasattr(instance, '_temp_password')}")
+    try:
+        if instance.email and hasattr(instance, '_temp_password') and instance._temp_password:
+            print(f"Sending welcome email to {instance.email}")
+            
+            email_thread = threading.Thread(
+                target=send_welcome_email_async,
+                args=(
+                    instance.email,
+                    instance.first_name,
+                    instance.username,
+                    instance.speaker_id,
+                    instance._temp_password
+                ),
+                daemon=True
+            )
+            email_thread.start()
+        else:
+            print(f"User created but email not sent - Email: {instance.email}, Has temp password: {hasattr(instance, '_temp_password')}")
+            
+    except Exception as e:
+        # Log the full error with traceback
+        import traceback
+        error_message = f"Failed to send welcome email: {str(e)}\n{traceback.format_exc()}"
+        print(error_message)
+        
+        # You might want to log this to a file or error monitoring service as well
+        # logger.error(error_message)
