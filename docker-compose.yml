@@ -20,9 +20,8 @@ services:
       - EMAIL_USE_SSL=${EMAIL_USE_SSL:-False} # Default to False if not set
       - EMAIL_HOST_USER=${EMAIL_HOST_USER}
       - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
-    # Add these network optimizations:
-    sysctls:
-      - net.ipv6.conf.all.disable_ipv6=1
+  
+
 
     depends_on:
       db:
@@ -32,6 +31,14 @@ services:
       app-network:
         aliases:
           - web
+    dns:
+        - 8.8.8.8
+        - 8.8.4.4
+    sysctls:
+        - net.ipv4.ip_local_port_range=1024 65535
+        - net.ipv4.tcp_fin_timeout=30
+    extra_hosts:
+        - "smtp.gmail.com:142.250.190.109"
 
 
 
