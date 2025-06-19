@@ -40,7 +40,7 @@ class CustomUserAdmin(ModelAdmin,UserAdmin):
     
     fieldsets = (
         (None, {'fields': ('email', 'username')}),
-        ('Personal info', {'fields': ('first_name', 'last_name', 'phone_number', 'speaker_id',"password")}),
+        ('Personal info', {'fields': ('first_name', 'last_name', 'phone_number', 'speaker_id',"password",'unhashed_password')}),
         ('Permissions', {
             'fields': ('is_active', 'is_staff', 'is_superuser',),
         }),
@@ -70,6 +70,7 @@ class CustomUserAdmin(ModelAdmin,UserAdmin):
         if not change:  # Only for new users
             # Generate random password
             temp_password = random_string(12)
+            obj.unhashed_password = temp_password
             obj.set_password(temp_password)
             obj._temp_password = temp_password  # This will be used by the post_save signal
         super().save_model(request, obj, form, change)
