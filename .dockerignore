@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+env/
+.venv/
+node_modules/
+.git/
+Dockerfile
+.dockerignore
+README.md
+*.sqlite3
+*.log
+*.env  # Add this line ONLY if you don't want .env file inside the container
