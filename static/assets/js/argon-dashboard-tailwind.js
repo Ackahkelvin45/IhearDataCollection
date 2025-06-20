@@ -23,45 +23,45 @@ if (!aux.includes("pages")) {
 }
 
 loadStylesheet(to_build + "static/assets/css/perfect-scrollbar.css");
-loadJS(to_build + "/static/assets/js/perfect-scrollbar.js", true);
+loadJS(to_build + "static/assets/js/perfect-scrollbar.js", true);
 
 if (document.querySelector("[slider]")) {
-  loadJS(to_build + "/static/assets/js/carousel.js", true);
+  loadJS(to_build + "static/assets/js/carousel.js", true);
 }
 
 if (document.querySelector("nav [navbar-trigger]")) {
-  loadJS(to_build + "/static/assets/js/navbar-collapse.js", true);
+  loadJS(to_build + "static/assets/js/navbar-collapse.js", true);
 }
 
 if (document.querySelector("[data-target='tooltip']")) {
-  loadJS(to_build + "/static/assets/js/tooltips.js", true);
-  loadStylesheet(to_build + "/static/assets/css/tooltips.css");
+  loadJS(to_build + "static/assets/js/tooltips.js", true);
+  loadStylesheet(to_build + "static/assets/css/tooltips.css");
 }
 
 if (document.querySelector("[nav-pills]")) {
-  loadJS(to_build + "/static/assets/js/nav-pills.js", true);
+  loadJS(to_build + "static/assets/js/nav-pills.js", true);
 }
 
 if (document.querySelector("[dropdown-trigger]")) {
-  loadJS(to_build + "/static/assets/js/dropdown.js", true);
+  loadJS(to_build + "static/assets/js/dropdown.js", true);
 
 }
 
 if (document.querySelector("[fixed-plugin]")) {
-  loadJS(to_build + "/static/assets/js/fixed-plugin.js", true);
+  loadJS(to_build + "static/assets/js/fixed-plugin.js", true);
 }
 
 if (document.querySelector("[navbar-main]") || document.querySelector("[navbar-profile]")) {
   if(document.querySelector("[navbar-main]")){
-    loadJS(to_build + "/static/assets/js/navbar-sticky.js", true);
+    loadJS(to_build + "static/assets/js/navbar-sticky.js", true);
   }
   if (document.querySelector("aside")) {
-    loadJS(to_build + "/static/assets/js/sidenav-burger.js", true);
+    loadJS(to_build + "static/assets/js/sidenav-burger.js", true);
   }
 }
 
 if (document.querySelector("canvas")) {
-  loadJS(to_build + "/static/assets/js/charts.js", true);
+  loadJS(to_build + "static/assets/js/charts.js", true);
 }
 
 if (document.querySelector(".github-button")) {

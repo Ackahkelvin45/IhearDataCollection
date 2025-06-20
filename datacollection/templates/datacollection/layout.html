@@ -34,10 +34,14 @@
     <!-- Nucleo Icons -->
     <link href="{% static 'assets/css/nucleo-icons.css' %}" rel="stylesheet" />
     <link href="{% static 'assets/css/nucleo-svg.css'%}" rel="stylesheet" />
+      <link rel="stylesheet" href="{% static 'assets/css/perfect-scrollbar.css' %}">
+
     <!-- Popper -->
     <script src="https://unpkg.com/@popperjs/core@2"></script>
     <!-- Main Styling -->
     <link href=" {% static 'assets/css/argon-dashboard-tailwind.css' %} " rel="stylesheet" />
+        <link href=" {% static 'assets/css/argon-dashboard-tailwind.min.css' %} " rel="stylesheet" />
+
   </head>
 
   <body class="m-0 font-sans text-base antialiased font-normal dark:bg-slate-900 leading-default bg-gray-50 text-slate-500">
@@ -266,12 +270,26 @@
     });
   </script>
   <!-- plugin for charts  -->
+   <!-- At the bottom of your template -->
+<script src="{% static 'assets/js/perfect-scrollbar.js' %}"></script>
+<script src="{% static 'assets/js/carousel.js' %}"></script>
+<script src="{% static 'assets/js/navbar-collapse.js' %}"></script>
+<script src="{% static 'assets/js/tooltips.js' %}"></script>
+<script src="{% static 'assets/js/nav-pills.js' %}"></script>
+<script src="{% static 'assets/js/dropdown.js' %}"></script>
+<script src="{% static 'assets/js/fixed-plugin.js' %}"></script>
+<script src="{% static 'assets/js/navbar-sticky.js' %}"></script>
+<script src="{% static 'assets/js/sidenav-burger.js' %}"></script>
+<script src="{% static 'assets/js/charts.js' %}"></script>
+
 
   <script src="{% static 'assets/js/plugins/chartjs.min.js' %}" async></script>
   <!-- plugin for scrollbar  -->
   <script src="{% static 'assets/js/plugins/perfect-scrollbar.min.js' %}" async></script>
   <!-- main script file  -->
   <script src="{% static 'assets/js/argon-dashboard-tailwind.js' %}" async></script>
+    <script src="{% static 'assets/js/argon-dashboard-tailwind.min.js' %}" async></script>
+
 
   <!-- Dropdown functionality -->
 
