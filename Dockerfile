@@ -1,44 +1,38 @@
-# === Stage 1: Build Wheels ===
-FROM python:3.12-slim-bookworm as builder
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    python3-dev \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /wheels
-COPY requirements.txt .
-
-RUN pip install --upgrade pip && \
-    pip wheel --no-cache-dir --wheel-dir=/wheels -r requirements.txt
-
-# === Stage 2: Final App Image ===
 FROM python:3.12-slim-bookworm
 
+# Set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 ENV PIP_NO_CACHE_DIR 1
 
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    python3-dev \
+    iputils-ping \
+    dnsutils \
+    telnet \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Create and set working directory
 WORKDIR /app
 
-COPY --from=builder /wheels /wheels
+# Install Python dependencies first to leverage Docker cache
 COPY requirements.txt .
-
 RUN pip install --upgrade pip && \
-    pip install --no-index --find-links=/wheels -r requirements.txt
+    pip install -r requirements.txt
 
+# Copy project files (with .dockerignore to exclude unnecessary files)
 COPY . .
 
+# Run as non-root user
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8000
 
+# Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health/ || exit 1
 
