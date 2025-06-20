@@ -1,5 +1,5 @@
 from django.db import models
-
+import hashlib
 # Create your models here.
 from core.models import Region, Category, Community, Class, Microphone_Type,Time_Of_Day,SubClass
 from authentication.models import CustomUser
@@ -9,7 +9,7 @@ from authentication.models import CustomUser
 
 class NoiseDataset(models.Model):
     name = models.CharField(
-        max_length=100,
+        max_length=255,
         null=True,
         help_text="Name of Data set, auto generated"
     )
@@ -86,7 +86,7 @@ class NoiseDataset(models.Model):
     )
 
     duration=models.CharField(
-        max_length=100,
+        max_length=255,
         null=True,
         help_text="Duration of the audio in seconds"
     )
@@ -95,7 +95,7 @@ class NoiseDataset(models.Model):
         help_text="Date when recording was made"
     )
     recording_device = models.CharField(
-        max_length=100,
+        max_length=255,
         help_text="Recording Device (e.g., iPhone 16, Zoom H4n, etc.)"
     )
     updated_at = models.DateTimeField(
@@ -103,7 +103,7 @@ class NoiseDataset(models.Model):
         help_text="When this record was last updated"
     )
     noise_id = models.CharField(
-        max_length=20,
+        max_length=255,
         blank=True,
         null=True,
         unique=True,
@@ -112,5 +112,28 @@ class NoiseDataset(models.Model):
     created_at = models.DateTimeField(
         auto_now_add=True
     )
+    def __str__(self):
+        return f'{self.name}-{self.noise_id}'
+    
+
+
+    def get_audio_hash(self):
+        """
+        Generate MD5 hash of the audio file content
+        Returns None if no audio file exists
+        """
+        if not self.audio:
+            return None
+            
+        # For small files (read entire file)
+        if self.audio.size < 10 * 1024 * 1024:  # 10MB
+            return hashlib.md5(self.audio.read()).hexdigest()
+        else:
+            # For large files (read in chunks)
+            hash_md5 = hashlib.md5()
+            for chunk in self.audio.chunks():
+                hash_md5.update(chunk)
+            return hash_md5.hexdigest()
+    
     def __str__(self):
         return f'{self.name}-{self.noise_id}'

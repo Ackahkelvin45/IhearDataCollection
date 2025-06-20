@@ -35,6 +35,9 @@ class NoiseDatasetForm(forms.ModelForm):
             'class_name': forms.Select(attrs={
                 'class': 'focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none'
             }),
+             'subclass': forms.Select(attrs={
+                'class': 'focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none'
+            }),
             
             'microphone_type': forms.Select(attrs={
                 'class': 'focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none'
@@ -73,7 +76,7 @@ class NoiseDatasetForm(forms.ModelForm):
             'time_of_day': 'Time of Day (Day, Night, etc.)',
             'community': 'Specific community (Kotei, Adum, Ayeduase, etc.)',
             'class_name': 'Class of the data',
-            'microphone_type': 'Microphone Type (Omnidirectional, Directional, etc.) - Skip if using mobile phone',
+            'microphone_type': 'Microphone Type (Omnidirectional, Directional, etc.)',
             'audio': 'Upload audio file',
             'recording_date': 'Date when recording was made',
             'recording_device': 'Recording Device (e.g., iPhone 16, Zoom H4n, etc.)',
@@ -88,7 +91,7 @@ def __init__(self, *args, **kwargs):
         self.fields['time_of_day'].empty_label = "Select Time of Day"
         self.fields['community'].empty_label = "Select Community"
         self.fields['class_name'].empty_label = "Select Class"
-        self.fields['microphone_type'].empty_label = "Select Microphone Type (Optional)"
+        self.fields['microphone_type'].empty_label = "Select Microphone Type "
         
         # Make microphone_type optional
         self.fields['microphone_type'].required = False

@@ -7,8 +7,10 @@ services:
       dockerfile: Dockerfile
     command: bash -c "python manage.py collectstatic --noinput && python manage.py migrate && gunicorn --bind 0.0.0.0:8000 --workers 4 --threads 2 --timeout 120 datacollection.wsgi:application"
     volumes:
-      - .:/app
+      - .:/app  # Only your app files now
       - static_volume:/app/staticfiles
+      - media_volume:/app/mediafiles
+
     ports:
       - "8000:8000"
     env_file:
@@ -16,15 +18,17 @@ services:
     environment:
       - EMAIL_HOST=${EMAIL_HOST}
       - EMAIL_PORT=${EMAIL_PORT}
-      - EMAIL_USE_TLS=${EMAIL_USE_TLS:-True}  # Default to True if not set
-      - EMAIL_USE_SSL=${EMAIL_USE_SSL:-False} # Default to False if not set
+      - EMAIL_USE_TLS=${EMAIL_USE_TLS:-True}
+      - EMAIL_USE_SSL=${EMAIL_USE_SSL:-False}
       - EMAIL_HOST_USER=${EMAIL_HOST_USER}
       - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
+      - USE_SPACES=TRUE
+      - AWS_ACCESS_KEY_ID=${DO_SPACES_KEY}
+      - AWS_SECRET_ACCESS_KEY=${DO_SPACES_SECRET}
+      - AWS_STORAGE_BUCKET_NAME=${DO_SPACES_BUCKET}
     sysctls:
       - net.ipv4.ip_local_port_range=1024 65535
       - net.ipv4.tcp_fin_timeout=30
-
- 
     depends_on:
       db:
         condition: service_healthy
@@ -33,9 +37,6 @@ services:
       app-network:
         aliases:
           - web
-
-
-
 
   db:
     image: postgres:15
@@ -57,7 +58,8 @@ services:
 volumes:
   postgres_data:
   static_volume:
+  media_volume:
 
 networks:
   app-network:
-    driver: bridge  
+    driver: bridge

@@ -14,7 +14,19 @@ from django.http import JsonResponse
 
 from core.models import Class,SubClass,Community
 from django.db.models import Count
+from django.shortcuts import get_object_or_404
 
+
+class RenamedFile:
+    """Wrapper class to rename an uploaded file without changing its content"""
+    
+    def __init__(self, file, new_name):
+        self.file = file
+        self.name = new_name
+        self._name = new_name
+        
+    def __getattr__(self, attr):
+        return getattr(self.file, attr)
 
 @login_required
 def view_dashboard(request):
@@ -48,6 +60,7 @@ def view_datasetlist(request):
 
 import uuid
 from datetime import datetime
+import hashlib
 
 @login_required
 def noise_dataset_create(request):
@@ -61,23 +74,51 @@ def noise_dataset_create(request):
                 # Generate the new noise ID format
                 noise_dataset.noise_id = generate_noise_id(request.user)
                 
-                # Generate dataset name (you might want to update this too)
+                # Generate dataset name
                 noise_dataset.name = generate_dataset_name(noise_dataset)
                 
-                # Calculate audio duration if audio file is provided
+                # Handle audio file
                 if 'audio' in request.FILES:
+                    audio_file = request.FILES['audio']
+                    
+                    # Generate hash of the new audio file for duplicate checking
+                    hash_md5 = hashlib.md5()
+                    for chunk in audio_file.chunks():
+                        hash_md5.update(chunk)
+                    new_audio_hash = hash_md5.hexdigest()
+                    
+                    # Check against existing records
+                    duplicates = NoiseDataset.objects.filter(collector=request.user)
+                    for dataset in duplicates:
+                        if dataset.audio:
+                            # Reset file pointer after reading chunks for hash
+                            audio_file.seek(0)
+                            
+                            # Compare hashes
+                            if dataset.get_audio_hash() == new_audio_hash:
+                                messages.error(request, "This audio file has already been uploaded!")
+                                return redirect('data:noise_dataset_create')
+                    
+                    # Reset file pointer again before processing
+                    audio_file.seek(0)
+                    
+                    # Get file extension
+                    file_extension = audio_file.name.split('.')[-1].lower()
+                    
+                    # Generate new filename using noise_id
+                    new_filename = f"{noise_dataset.noise_id}.{file_extension}"
+                    
+                    # Create a renamed file object
+                    renamed_file = RenamedFile(audio_file, new_filename)
+                    
+                    # Replace the file in the form data
+                    request.FILES['audio'] = renamed_file
+                    
+                    # Calculate duration
                     try:
-                        # Rename the uploaded file to match the noise ID
-                        audio_file = request.FILES['audio']
-                        file_extension = audio_file.name.split('.')[-1]
-                        new_filename = f"{noise_dataset.noise_id}.{file_extension}"
-                        audio_file.name = new_filename
-                        
-                        duration = get_audio_duration(audio_file)
+                        duration = get_audio_duration(renamed_file)
                         if duration:
                             noise_dataset.duration = duration
-                        else:
-                            print("Could not determine duration")  
                     except Exception as e:
                         print(f"Error getting audio duration: {e}")
                         noise_dataset.duration = None
@@ -96,7 +137,6 @@ def noise_dataset_create(request):
     
     context = {'form': form}
     return render(request, 'data/AddNewData.html', context)
-
 def generate_noise_id(user):
     """Generate a unique noise ID with format: NSE-{speaker_id}-{timestamp}-{3 random chars}"""
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -258,3 +298,13 @@ def load_communities(request):
 
 def show_pages(request):
     return render(request, 'data/datasetlist.html')
+
+
+
+def noise_detail(request,dataset_id):
+    dataset = get_object_or_404(NoiseDataset, pk=dataset_id)
+    context = {
+        'noise_dataset': dataset,
+    }
+    
+    return render(request, 'data/Noise_detail.html', context)

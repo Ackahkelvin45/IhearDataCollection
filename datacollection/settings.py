@@ -38,6 +38,7 @@ ALLOWED_HOSTS = ['localhost','178.128.165.1', '127.0.0.1','www.ihearandsee-at-ra
 
 INSTALLED_APPS = [
       # optional, if special form elements are needed
+      'storages',
        "unfold",  # before django.contrib.admin
     "unfold.contrib.filters",  # optional, if special filters are needed
     "unfold.contrib.forms",  # optional, if special form elements are needed
@@ -46,8 +47,9 @@ INSTALLED_APPS = [
     "unfold.contrib.guardian",  # optional, if django-guardian package is used
     "unfold.contrib.simple_history",  # optional, if django-simple-history package is used
     "django.contrib.admin",
-      'tailwind',
-    'theme',
+     'tailwind',
+  'theme',
+    
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
@@ -57,6 +59,7 @@ INSTALLED_APPS = [
      'core',
     'authentication',
       "datacollection",
+        
 
     
 
@@ -64,12 +67,11 @@ INSTALLED_APPS = [
    
     
 ]
-
 TAILWIND_APP_NAME = 'theme'
+
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-        'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -81,7 +83,6 @@ MIDDLEWARE = [
 
 
 
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 ROOT_URLCONF = 'datacollection.urls'
 
@@ -151,12 +152,6 @@ USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
-
-STATIC_URL = '/static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'  # Where collectstatic will put files
-STATICFILES_DIRS = [
-    BASE_DIR / 'static',  # Your source static files
-]
 
 
 # Default primary key field type
@@ -254,3 +249,45 @@ CSRF_TRUSTED_ORIGINS = [
 
         ]
 
+
+
+
+# DigitalOcean Spaces Settings
+AWS_ACCESS_KEY_ID = os.getenv('DO_SPACES_KEY')
+AWS_SECRET_ACCESS_KEY = os.getenv('DO_SPACES_SECRET')
+AWS_STORAGE_BUCKET_NAME = os.getenv('DO_SPACES_BUCKET')
+AWS_S3_ENDPOINT_URL = 'https://lon1.digitaloceanspaces.com'
+
+STORAGES = {
+    "default": {
+        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        "OPTIONS": {
+            "access_key": AWS_ACCESS_KEY_ID,
+            "secret_key": AWS_SECRET_ACCESS_KEY,
+            "bucket_name": AWS_STORAGE_BUCKET_NAME,
+            "endpoint_url": AWS_S3_ENDPOINT_URL,
+            "location": "media",
+            "default_acl": "public-read",
+            "object_parameters": {"CacheControl": "max-age=86400"},
+        },
+    },
+    "staticfiles": {
+        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        "OPTIONS": {
+            "access_key": AWS_ACCESS_KEY_ID,
+            "secret_key": AWS_SECRET_ACCESS_KEY,
+            "bucket_name": AWS_STORAGE_BUCKET_NAME,
+            "endpoint_url": AWS_S3_ENDPOINT_URL,
+            "location": "static",
+            "default_acl": "public-read",
+            "object_parameters": {"CacheControl": "max-age=86400"},
+        },
+    },
+}
+
+STATIC_URL = f"{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/static/"
+MEDIA_URL = f"{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/media/"
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'static'),
+]

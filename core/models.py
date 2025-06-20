@@ -4,7 +4,7 @@ from django.db import models
 
 
 class Region(models.Model):
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=255)
     description = models.TextField(null=True, blank=True)
 
     def __str__(self):
@@ -13,14 +13,14 @@ class Region(models.Model):
 
 class Community(models.Model):
     region = models.ForeignKey(Region, on_delete=models.CASCADE, related_name='communities',null=True)
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=255)
     description = models.TextField(null=True, blank=True)
 
     def __str__(self):
         return self.name
     
 class Category(models.Model):
-    name = models.CharField(max_length=100, unique=True, null=True)
+    name = models.CharField(max_length=255, unique=True, null=True)
     description = models.TextField(blank=True, null=True)
 
     def __str__(self):
@@ -28,7 +28,7 @@ class Category(models.Model):
 
 
 class Class(models.Model):
-    name = models.CharField(max_length=100, null=True)
+    name = models.CharField(max_length=255, null=True)
     category = models.ForeignKey(
         Category, 
         on_delete=models.PROTECT,
@@ -46,7 +46,7 @@ class Class(models.Model):
 
 
 class SubClass(models.Model):
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=255)
     parent_class = models.ForeignKey(
         Class, 
         on_delete=models.PROTECT,
@@ -66,7 +66,7 @@ class SubClass(models.Model):
     
 
 class Microphone_Type(models.Model):
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=255)
     description = models.TextField(null=True,blank=True)
 
     def __str__(self):
@@ -76,7 +76,7 @@ class Microphone_Type(models.Model):
 
     
 class Time_Of_Day(models.Model):
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=255)
     description = models.TextField(null=True, blank=True)
 
     def __str__(self):
