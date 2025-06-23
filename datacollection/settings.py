@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 from pathlib import Path
 from dotenv import load_dotenv
+import sys
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -109,16 +110,26 @@ WSGI_APPLICATION = 'datacollection.wsgi.application'
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
 # settings.py
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('POSTGRES_DB'),
-        'USER': os.getenv('POSTGRES_USER'),
-        'PASSWORD': os.getenv('POSTGRES_PASSWORD'),
-        'HOST': 'db',  # This matches the service name in docker-compose
-        'PORT': '5432',
+if 'test' in sys.argv or os.getenv('USE_SQLITE', 'False').lower() == 'true':
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.getenv('POSTGRES_DB', 'mydatabase'),
+            'USER': os.getenv('POSTGRES_USER', 'mydatabaseuser'),
+            'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'mypassword'),
+            'HOST': os.getenv('POSTGRES_HOST', 'db'),
+            'PORT': os.getenv('POSTGRES_PORT', '5432'),
+        }
+    }
+
+
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
 
@@ -252,42 +263,60 @@ CSRF_TRUSTED_ORIGINS = [
 
 
 
-# DigitalOcean Spaces Settings
-AWS_ACCESS_KEY_ID = os.getenv('DO_SPACES_KEY')
-AWS_SECRET_ACCESS_KEY = os.getenv('DO_SPACES_SECRET')
-AWS_STORAGE_BUCKET_NAME = os.getenv('DO_SPACES_BUCKET')
-AWS_S3_ENDPOINT_URL = 'https://lon1.digitaloceanspaces.com'
+USE_S3 = os.getenv('USE_S3', 'False').lower() == 'true'
 
-STORAGES = {
-    "default": {
-        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
-        "OPTIONS": {
-            "access_key": AWS_ACCESS_KEY_ID,
-            "secret_key": AWS_SECRET_ACCESS_KEY,
-            "bucket_name": AWS_STORAGE_BUCKET_NAME,
-            "endpoint_url": AWS_S3_ENDPOINT_URL,
-            "location": "media",
-            "default_acl": "public-read",
-            "object_parameters": {"CacheControl": "max-age=86400"},
-        },
-    },
-    "staticfiles": {
-        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
-        "OPTIONS": {
-            "access_key": AWS_ACCESS_KEY_ID,
-            "secret_key": AWS_SECRET_ACCESS_KEY,
-            "bucket_name": AWS_STORAGE_BUCKET_NAME,
-            "endpoint_url": AWS_S3_ENDPOINT_URL,
-            "location": "static",
-            "default_acl": "public-read",
-            "object_parameters": {"CacheControl": "max-age=86400"},
-        },
-    },
-}
+if USE_S3:
+    # DigitalOcean Spaces Settings
+    AWS_ACCESS_KEY_ID = os.getenv('DO_SPACES_KEY')
+    AWS_SECRET_ACCESS_KEY = os.getenv('DO_SPACES_SECRET')
+    AWS_STORAGE_BUCKET_NAME = os.getenv('DO_SPACES_BUCKET')
+    AWS_S3_ENDPOINT_URL = os.getenv('DO_SPACES_ENDPOINT', 'https://lon1.digitaloceanspaces.com')
 
-STATIC_URL = f"{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/static/"
-MEDIA_URL = f"{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/media/"
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+    STORAGES = {
+        "default": {
+            "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+            "OPTIONS": {
+                "access_key": AWS_ACCESS_KEY_ID,
+                "secret_key": AWS_SECRET_ACCESS_KEY,
+                "bucket_name": AWS_STORAGE_BUCKET_NAME,
+                "endpoint_url": AWS_S3_ENDPOINT_URL,
+                "location": "media",
+                "default_acl": "public-read",
+                "object_parameters": {"CacheControl": "max-age=86400"},
+            },
+        },
+        "staticfiles": {
+            "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+            "OPTIONS": {
+                "access_key": AWS_ACCESS_KEY_ID,
+                "secret_key": AWS_SECRET_ACCESS_KEY,
+                "bucket_name": AWS_STORAGE_BUCKET_NAME,
+                "endpoint_url": AWS_S3_ENDPOINT_URL,
+                "location": "static",
+                "default_acl": "public-read",
+                "object_parameters": {"CacheControl": "max-age=86400"},
+            },
+        },
+    }
+
+    STATIC_URL = f"{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/static/"
+    MEDIA_URL = f"{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/media/"
+else:
+    # Local file storage
+    STATIC_URL = '/static/'
+    MEDIA_URL = '/media/'
+    STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+    MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+    
+    STORAGES = {
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    }
+
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'static'),
 ]

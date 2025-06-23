@@ -70,6 +70,40 @@
           </div>
         </div>
 
+        <!-- Audio Visualizations -->
+        <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border mb-6">
+          <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-0">
+            <div class="flex items-center">
+              <p class="mb-0 dark:text-white/80">Audio Analysis</p>
+            </div>
+          </div>
+          <div class="flex-auto p-6">
+            <!-- Waveform Plot -->
+            <div class="mb-8">
+              <h6 class="text-lg font-semibold mb-4 dark:text-white">Waveform</h6>
+              {{ waveform_plot|safe }}
+            </div>
+            
+            <!-- Spectrogram Plot -->
+            <div class="mb-8">
+              <h6 class="text-lg font-semibold mb-4 dark:text-white">Mel Spectrogram</h6>
+              {{ spectrogram_plot|safe }}
+            </div>
+            
+            <!-- MFCC Plot -->
+            <div class="mb-8">
+              <h6 class="text-lg font-semibold mb-4 dark:text-white">MFCC Coefficients</h6>
+              {{ mfcc_plot|safe }}
+            </div>
+            
+            <!-- Frequency Features Plot -->
+            <div>
+              <h6 class="text-lg font-semibold mb-4 dark:text-white">Frequency Domain Features</h6>
+              {{ freq_plot|safe }}
+            </div>
+          </div>
+        </div>
+
         <!-- Information Cards -->
         <div class="grid grid-cols-1 gap-6">
           <!-- Basic Information -->
@@ -110,6 +144,67 @@
                     <label class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">Sub Class</label>
                     <p class="dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none">
                       {{ noise_dataset.subclass.name|default:"-" }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Noise Analysis Metrics -->
+          <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+            <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-0">
+              <div class="flex items-center">
+                <p class="mb-0 dark:text-white/80">Noise Analysis Metrics</p>
+              </div>
+            </div>
+            <div class="flex-auto p-6">
+              <div class="flex flex-wrap -mx-3">
+                <div class="w-full max-w-full px-3 shrink-0 md:w-4/12 md:flex-0">
+                  <div class="mb-4">
+                    <label class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">Mean dB</label>
+                    <p class="dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none">
+                      {{ noise_analysis.mean_db|default:"-" }}
+                    </p>
+                  </div>
+                </div>
+                <div class="w-full max-w-full px-3 shrink-0 md:w-4/12 md:flex-0">
+                  <div class="mb-4">
+                    <label class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">Max dB</label>
+                    <p class="dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none">
+                      {{ noise_analysis.max_db|default:"-" }}
+                    </p>
+                  </div>
+                </div>
+                <div class="w-full max-w-full px-3 shrink-0 md:w-4/12 md:flex-0">
+                  <div class="mb-4">
+                    <label class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">Min dB</label>
+                    <p class="dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none">
+                      {{ noise_analysis.min_db|default:"-" }}
+                    </p>
+                  </div>
+                </div>
+                <div class="w-full max-w-full px-3 shrink-0 md:w-4/12 md:flex-0">
+                  <div class="mb-4">
+                    <label class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">Dominant Frequency</label>
+                    <p class="dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none">
+                      {{ noise_analysis.dominant_frequency|default:"-" }} Hz
+                    </p>
+                  </div>
+                </div>
+                <div class="w-full max-w-full px-3 shrink-0 md:w-4/12 md:flex-0">
+                  <div class="mb-4">
+                    <label class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">Loudness</label>
+                    <p class="dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none">
+                      {{ noise_analysis.loudness|default:"-" }}
+                    </p>
+                  </div>
+                </div>
+                <div class="w-full max-w-full px-3 shrink-0 md:w-4/12 md:flex-0">
+                  <div class="mb-4">
+                    <label class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">Sharpness</label>
+                    <p class="dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none">
+                      {{ noise_analysis.sharpness|default:"-" }}
                     </p>
                   </div>
                 </div>
@@ -196,6 +291,44 @@
           </div>
         </div>
 
+        <!-- Audio Features Card -->
+        <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border mb-6">
+          <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-0">
+            <div class="flex items-center">
+              <p class="mb-0 dark:text-white/80">Audio Features</p>
+            </div>
+          </div>
+          <div class="flex-auto p-6">
+            <div class="mb-4">
+              <label class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">Spectral Centroid</label>
+              <p class="dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none">
+                {{ audio_features.spectral_centroid|default:"-" }} Hz
+              </p>
+            </div>
+            
+            <div class="mb-4">
+              <label class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">Spectral Bandwidth</label>
+              <p class="dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none">
+                {{ audio_features.spectral_bandwidth|default:"-" }} Hz
+              </p>
+            </div>
+            
+            <div class="mb-4">
+              <label class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">Spectral Rolloff</label>
+              <p class="dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none">
+                {{ audio_features.spectral_rolloff|default:"-" }} Hz
+              </p>
+            </div>
+            
+            <div class="mb-4">
+              <label class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">Zero Crossing Rate</label>
+              <p class="dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none">
+                {{ audio_features.zero_crossing_rate|default:"-" }}
+              </p>
+            </div>
+          </div>
+        </div>
+
         <!-- Recording Details Card -->
         <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
           <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-0">
@@ -237,4 +370,7 @@
     </div>
   </div>
 </div>
+
+<!-- Include Plotly JS -->
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 {% endblock %}

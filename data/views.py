@@ -15,6 +15,13 @@ from django.http import JsonResponse
 from core.models import Class,SubClass,Community
 from django.db.models import Count
 from django.shortcuts import get_object_or_404
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.offline import plot
+import numpy as np
+import json
+from .models import NoiseDataset, AudioFeature, NoiseAnalysis
+
 
 
 class RenamedFile:
@@ -308,3 +315,96 @@ def noise_detail(request,dataset_id):
     }
     
     return render(request, 'data/Noise_detail.html', context)
+
+
+
+
+
+
+
+def noise_dataset_detail(request, pk):
+    dataset = get_object_or_404(NoiseDataset, pk=pk)
+    audio_features = get_object_or_404(AudioFeature, noise_dataset=dataset)
+    noise_analysis = get_object_or_404(NoiseAnalysis, noise_dataset=dataset)
+    
+    # Get waveform data
+    waveform = np.array(json.loads(audio_features.waveform_data))
+    time_axis = np.arange(len(waveform)) / 44100  # Assuming 44100Hz sample rate
+    
+    # Create waveform plot
+    waveform_fig = go.Figure()
+    waveform_fig.add_trace(go.Scatter(
+        x=time_axis,
+        y=waveform,
+        name='Waveform'
+    ))
+    waveform_fig.update_layout(
+        title='Audio Waveform',
+        xaxis_title='Time (s)',
+        yaxis_title='Amplitude'
+    )
+    waveform_plot = plot(waveform_fig, output_type='div', include_plotlyjs=False)
+    
+    # Create spectrogram plot
+    mel_spectrogram = np.array(json.loads(audio_features.mel_spectrogram))
+    spectrogram_fig = go.Figure()
+    spectrogram_fig.add_trace(go.Heatmap(
+        z=mel_spectrogram,
+        colorscale='Jet',
+        colorbar=dict(title='dB')
+    ))
+    spectrogram_fig.update_layout(
+        title='Mel Spectrogram',
+        xaxis_title='Time',
+        yaxis_title='Frequency Bin'
+    )
+    spectrogram_plot = plot(spectrogram_fig, output_type='div', include_plotlyjs=False)
+    
+    # Create MFCC plot
+    mfcc_fig = go.Figure()
+    for i, coeff in enumerate(audio_features.mfccs):
+        mfcc_fig.add_trace(go.Scatter(
+            y=[coeff],
+            name=f'MFCC {i+1}',
+            mode='markers'
+        ))
+    mfcc_fig.update_layout(
+        title='MFCC Coefficients',
+        xaxis_title='Coefficient Index',
+        yaxis_title='Value'
+    )
+    mfcc_plot = plot(mfcc_fig, output_type='div', include_plotlyjs=False)
+    
+    # Create frequency features plot
+    freq_features = {
+        'Spectral Centroid': audio_features.spectral_centroid,
+        'Spectral Bandwidth': audio_features.spectral_bandwidth,
+        'Spectral Rolloff': audio_features.spectral_rolloff
+    }
+    freq_fig = go.Figure()
+    freq_fig.add_trace(go.Bar(
+        x=list(freq_features.keys()),
+        y=list(freq_features.values())
+    ))
+    freq_fig.update_layout(
+        title='Frequency Domain Features',
+        yaxis_title='Hz'
+    )
+    freq_plot = plot(freq_fig, output_type='div', include_plotlyjs=False)
+    
+    context = {
+        'dataset': dataset,
+        'audio_features': audio_features,
+        'noise_analysis': noise_analysis,
+        'waveform_plot': waveform_plot,
+        'spectrogram_plot': spectrogram_plot,
+        'mfcc_plot': mfcc_plot,
+        'freq_plot': freq_plot,
+    }
+    
+    return render(request, 'noise_analysis/detail.html', context)
+
+
+
+
+
