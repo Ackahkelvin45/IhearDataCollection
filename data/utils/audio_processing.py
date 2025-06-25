@@ -1,293 +1,289 @@
-import librosa
-import numpy as np
+import os
 import json
-from scipy import signal
-import soundfile as sf
-from io import BytesIO
-import traceback
+import numpy as np
+import librosa
+import hashlib
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from django.core.files.storage import default_storage
+from scipy import signal as scipy_signal
+from scipy.stats import skew, kurtosis
+import tempfile
+import logging
 
-def extract_audio_features(audio_file, min_duration=0.1):
-    """
-    Extract all audio features with comprehensive error handling
-    min_duration: minimum audio length in seconds to process (default 0.1s)
-    Returns: dict of features if successful, None if failed
-    """
+from data.models import NoiseDataset, AudioFeature, NoiseAnalysis, VisualizationPreset
+
+logger = logging.getLogger(__name__)
+
+@receiver(post_save, sender=NoiseDataset)
+def process_audio_signal(sender, instance, created, **kwargs):
+    """Post-save signal to process audio and create features/analysis"""
+    if not instance.audio:
+        logger.warning(f"No audio file found for NoiseDataset {instance.id}")
+        return
+    
     try:
-        # Load audio file with multiple fallbacks
+        # Generate IDs and names if not exists
+        if not instance.noise_id:
+            audio_hash = instance.get_audio_hash()
+            instance.noise_id = f"NOISE_{audio_hash[:8]}" if audio_hash else f"NOISE_{instance.id}"
+            instance.save(update_fields=['noise_id'])
+        
+        if not instance.name:
+            name_parts = filter(None, [
+                str(instance.region),
+                str(instance.community),
+                str(instance.category),
+                str(instance.class_name)
+            ])
+            instance.name = "_".join(name_parts) if name_parts else f"Audio_{instance.id}"
+            instance.save(update_fields=['name'])
+        
+        # Process audio file
+        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+            for chunk in instance.audio.chunks():
+                tmp_file.write(chunk)
+            audio_path = tmp_file.name
+        
         try:
-            with audio_file.open('rb') as f:
-                audio_data, sr = sf.read(BytesIO(f.read()))
-        except Exception as e:
-            print(f"Soundfile read failed, trying librosa: {str(e)}")
-            audio_data, sr = librosa.load(audio_file.path, sr=None, mono=True)
-        
-        # Validate audio data
-        if audio_data.size == 0:
-            return None
+            # Extract comprehensive features
+            extract_audio_features(instance, audio_path)
             
-        if audio_data.ndim > 0:
-            audio_data = librosa.to_mono(audio_data)
+            # Perform noise analysis
+            perform_noise_analysis(instance, audio_path)
+            
+            # Create default visualization presets
+            create_visualization_presets(instance)
+            
+        finally:
+            if os.path.exists(audio_path):
+                os.unlink(audio_path)
+                
+    except Exception as e:
+        logger.error(f"Error processing audio: {str(e)}", exc_info=True)
+
+def extract_audio_features(noise_dataset, audio_path):
+    """Extract comprehensive audio features for ML training"""
+    try:
+        y, sr = librosa.load(audio_path, sr=None)
+        duration = librosa.get_duration(y=y, sr=sr)
         
-        duration = librosa.get_duration(y=audio_data, sr=sr)
-        
-        if duration < min_duration:
-            return None
-        
-        # Dynamic FFT size based on audio length
-        n_fft = min(2048, len(audio_data))
-        hop_length = n_fft // 4
-        if n_fft < 0:
-            return None
-        
-        features = {
-            'duration': float(duration),
-            'sample_rate': int(sr),
-            'num_samples': len(audio_data),
-        }
+        # Update duration if needed
+        if not noise_dataset.duration:
+            noise_dataset.duration = duration
+            noise_dataset.save(update_fields=['duration'])
         
         # Time-domain features
-        features.update(extract_time_domain_features(audio_data))
+        rms_energy = librosa.feature.rms(y=y)[0]
+        zcr = librosa.feature.zero_crossing_rate(y=y)[0]
         
-        # Frequency-domain features with dynamic FFT
-        features.update(extract_frequency_domain_features(audio_data, sr, n_fft, hop_length))
+        # Frequency-domain features
+        spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
+        spectral_bandwidth = librosa.feature.spectral_bandwidth(y=y, sr=sr)[0]
+        spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)[0]
+        spectral_flatness = librosa.feature.spectral_flatness(y=y)[0]
         
-        # Only extract advanced features if audio is long enough
-        if duration > 0.1:  # 500ms minimum for these features
-            try:
-                features.update(extract_mfcc_features(audio_data, sr, n_fft, hop_length))
-            except:
-                features['mfccs'] = []
-            
-            try:
-                features.update(extract_chroma_features(audio_data, sr, n_fft, hop_length))
-            except:
-                features['chroma_stft'] = []
-            
-            try:
-                features.update(extract_mel_spectrogram(audio_data, sr, n_fft, hop_length))
-            except:
-                features['mel_spectrogram'] = '[]'
-            
-            try:
-                features.update(extract_psychoacoustic_features(audio_data, sr))
-            except:
-                features.update({
-                    'harmonic_ratio': 0,
-                    'percussive_ratio': 0
-                })
+        # Advanced features
+        mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=20)
+        chroma_stft = librosa.feature.chroma_stft(y=y, sr=sr)
+        tonnetz = librosa.feature.tonnetz(y=y, sr=sr)
         
-        # Serialize waveform data last (as it's large)
-        try:
-            features['waveform_data'] = safe_json_dumps(audio_data.tolist())
-        except:
-            features['waveform_data'] = '[]'
+        # Temporal features
+        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+        tempogram = librosa.feature.tempogram(onset_envelope=onset_env, sr=sr)
         
-        print(features)
+        # Harmonic/percussive separation
+        y_harmonic, y_percussive = librosa.effects.hpss(y)
+        harmonic_ratio = np.sum(y_harmonic**2) / np.sum(y**2)
+        percussive_ratio = np.sum(y_percussive**2) / np.sum(y**2)
         
-        return features
-        
-    except Exception as e:
-        print(f"Audio processing failed: {str(e)}")
-        return None
-
-def safe_json_dumps(data):
-    """Safe JSON serialization with numpy support"""
-    class NumpyEncoder(json.JSONEncoder):
-        def default(self, obj):
-            if isinstance(obj, np.integer):
-                return int(obj)
-            elif isinstance(obj, np.floating):
-                return float(obj)
-            elif isinstance(obj, np.ndarray):
-                return obj.tolist()
-            return super().default(obj)
-    return json.dumps(data, cls=NumpyEncoder)
-
-def extract_time_domain_features(audio_data):
-    """Extract time-domain features with error handling"""
-    features = {}
-    
-    try:
-        features['rms_energy'] = float(np.sqrt(np.mean(np.square(audio_data))))
-    except:
-        features['rms_energy'] = 0.0
-    
-    try:
-        features['zero_crossing_rate'] = float(librosa.feature.zero_crossing_rate(audio_data)[0, 0])
-    except:
-        features['zero_crossing_rate'] = 0.0
-    
-    return features
-
-def extract_frequency_domain_features(audio_data, sr, n_fft=2048, hop_length=512):
-    """Extract frequency-domain features with dynamic FFT size"""
-    features = {}
-    
-    try:
-        stft = np.abs(librosa.stft(audio_data, n_fft=n_fft, hop_length=hop_length))
-        
-        try:
-            features['spectral_centroid'] = float(np.mean(librosa.feature.spectral_centroid(S=stft, sr=sr)))
-        except:
-            features['spectral_centroid'] = 0.0
-            
-        try:
-            features['spectral_bandwidth'] = float(np.mean(librosa.feature.spectral_bandwidth(S=stft, sr=sr)))
-        except:
-            features['spectral_bandwidth'] = 0.0
-            
-        try:
-            features['spectral_rolloff'] = float(np.mean(librosa.feature.spectral_rolloff(S=stft, sr=sr)))
-        except:
-            features['spectral_rolloff'] = 0.0
-            
-        try:
-            features['spectral_flatness'] = float(np.mean(librosa.feature.spectral_flatness(y=audio_data)))
-        except:
-            features['spectral_flatness'] = 0.0
-            
-    except Exception as e:
-        # Set all frequency domain features to 0 if extraction fails
-        features.update({
-            'spectral_centroid': 0.0,
-            'spectral_bandwidth': 0.0,
-            'spectral_rolloff': 0.0,
-            'spectral_flatness': 0.0
-        })
-    
-    return features
-
-def extract_mfcc_features(audio_data, sr, n_fft=2048, hop_length=512, n_mfcc=13):
-    """Extract MFCC features with dynamic FFT"""
-    try:
-        mfccs = librosa.feature.mfcc(
-            y=audio_data, 
-            sr=sr, 
-            n_mfcc=n_mfcc,
-            n_fft=n_fft,
-            hop_length=hop_length
-        )
-        return {'mfccs': np.mean(mfccs, axis=1).tolist()}
-    except:
-        return {'mfccs': [0]*n_mfcc}
-
-def extract_chroma_features(audio_data, sr, n_fft=2048, hop_length=512):
-    """Extract chroma features with dynamic FFT"""
-    try:
-        chroma = librosa.feature.chroma_stft(
-            y=audio_data, 
-            sr=sr,
-            n_fft=n_fft,
-            hop_length=hop_length
-        )
-        return {'chroma_stft': np.mean(chroma, axis=1).tolist()}
-    except:
-        return {'chroma_stft': [0]*12}
-
-def extract_mel_spectrogram(audio_data, sr, n_fft=2048, hop_length=512, n_mels=128):
-    """Extract mel spectrogram with dynamic FFT"""
-    try:
-        mel_spec = librosa.feature.melspectrogram(
-            y=audio_data, 
-            sr=sr, 
-            n_mels=n_mels,
-            n_fft=n_fft,
-            hop_length=hop_length
-        )
+        # Visualization data
+        waveform_data = y[::max(1, len(y)//1000)]  # Downsample for visualization
+        mel_spec = librosa.feature.melspectrogram(y=y, sr=sr)
         mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
-        return {'mel_spectrogram': mel_spec_db.tolist()}
-    except:
-        return {'mel_spectrogram': []}
-
-def extract_psychoacoustic_features(audio_data, sr):
-    """Extract harmonic/percussive components"""
-    try:
-        y_harmonic, y_percussive = librosa.effects.hpss(audio_data)
-        harmonic_ratio = np.sum(y_harmonic**2) / (np.sum(y_harmonic**2) + np.sum(y_percussive**2))
-        return {
-            'harmonic_ratio': float(harmonic_ratio),
-            'percussive_ratio': float(1 - harmonic_ratio)
-        }
-    except:
-        return {
-            'harmonic_ratio': 0.0,
-            'percussive_ratio': 0.0
-        }
-
-def analyze_noise_characteristics(audio_data, sr):
-    """Robust noise analysis with error handling"""
-    analysis = {}
-    
-    try:
-        # Calculate dB levels
-        rms = np.sqrt(np.mean(np.square(audio_data)))
-        db = 20 * np.log10(max(1e-10, rms) / (2e-5))  # Avoid log(0)
         
-        analysis.update({
-            'mean_db': float(db),
-            'max_db': float(db + 10),  # Simplified
-            'min_db': float(db - 10)   # Simplified
-        })
+        # Create AudioFeature record
+        AudioFeature.objects.update_or_create(
+            noise_dataset=noise_dataset,
+            defaults={
+                'sample_rate': sr,
+                'num_samples': len(y),
+                'duration': duration,
+                'rms_energy': float(np.mean(rms_energy)),
+                'zero_crossing_rate': float(np.mean(zcr)),
+                'amplitude_envelope': rms_energy.tolist(),
+                'spectral_centroid': float(np.mean(spectral_centroid)),
+                'spectral_bandwidth': float(np.mean(spectral_bandwidth)),
+                'spectral_rolloff': float(np.mean(spectral_rolloff)),
+                'spectral_flatness': float(np.mean(spectral_flatness)),
+                'mfccs': np.mean(mfccs, axis=1).tolist(),
+                'chroma_stft': np.mean(chroma_stft, axis=1).tolist(),
+                'tonnetz': np.mean(tonnetz, axis=1).tolist(),
+                'tempogram': np.mean(tempogram, axis=1).tolist(),
+                'onset_strength': onset_env.tolist(),
+                'harmonic_ratio': float(harmonic_ratio),
+                'percussive_ratio': float(percussive_ratio),
+                'waveform_data': waveform_data.tolist(),
+                'spectrogram': librosa.amplitude_to_db(np.abs(librosa.stft(y))).tolist(),
+                'mel_spectrogram': mel_spec_db.tolist(),
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error extracting features: {str(e)}", exc_info=True)
+        raise
+
+def perform_noise_analysis(noise_dataset, audio_path):
+    """Perform comprehensive noise analysis on the audio"""
+    try:
+        y, sr = librosa.load(audio_path, sr=None)
+        
+        # Convert to dB scale
+        y_db = librosa.amplitude_to_db(np.abs(y), ref=np.max)
+        
+        # Statistical features
+        mean_db = float(np.mean(y_db))
+        max_db = float(np.max(y_db))
+        min_db = float(np.min(y_db))
+        std_db = float(np.std(y_db))
         
         # Peak detection
-        try:
-            peaks, _ = signal.find_peaks(audio_data, height=0.5*np.max(audio_data))
-            analysis['peak_count'] = int(len(peaks))
-            
-            if len(peaks) > 1:
-                peak_intervals = np.diff(peaks) / sr
-                analysis['peak_interval_mean'] = float(np.mean(peak_intervals))
-            else:
-                analysis['peak_interval_mean'] = 0.0
-        except:
-            analysis.update({
-                'peak_count': 0,
-                'peak_interval_mean': 0.0
-            })
+        peaks, _ = scipy_signal.find_peaks(np.abs(y), height=np.std(y) * 2)
+        peak_count = len(peaks)
+        
+        # Peak interval analysis
+        if len(peaks) > 1:
+            peak_intervals = np.diff(peaks) / sr
+            peak_interval_mean = float(np.mean(peak_intervals))
+        else:
+            peak_interval_mean = 0.0
         
         # Frequency analysis
-        try:
-            n_fft = min(2048, len(audio_data))
-            stft = np.abs(librosa.stft(audio_data, n_fft=n_fft))
-            frequencies = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
-            dominant_freq = frequencies[np.argmax(np.mean(stft, axis=1))]
+        fft = np.fft.fft(y)
+        freqs = np.fft.fftfreq(len(fft), 1/sr)
+        magnitude = np.abs(fft)
+        
+        # Dominant frequency
+        dominant_freq_idx = np.argmax(magnitude[:len(magnitude)//2])
+        dominant_frequency = float(abs(freqs[dominant_freq_idx]))
+        
+        # Frequency range (containing 90% of energy)
+        energy_cumsum = np.cumsum(magnitude[:len(magnitude)//2])
+        total_energy = energy_cumsum[-1]
+        freq_range_low = freqs[np.where(energy_cumsum >= 0.05 * total_energy)[0][0]]
+        freq_range_high = freqs[np.where(energy_cumsum >= 0.95 * total_energy)[0][0]]
+        frequency_range = f"{freq_range_low:.1f}-{freq_range_high:.1f}"
+        
+        # Psychoacoustic metrics (simplified approximations)
+        loudness = float(20 * np.log10(np.sqrt(np.mean(y**2)) + 1e-10))
+        spectral_centroid = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)[0]))
+        sharpness = float(spectral_centroid / 1000)  # Normalized approximation
+        roughness = float(np.mean(np.std(librosa.stft(y), axis=1)))
+        
+        # Event detection (simplified)
+        frame_length = sr // 10  # 100ms frames
+        frames = [y[i:i+frame_length] for i in range(0, len(y), frame_length)]
+        frame_energies = [np.sum(frame**2) for frame in frames if len(frame) == frame_length]
+        
+        # Detect events as frames with energy above threshold
+        energy_threshold = np.mean(frame_energies) + 2 * np.std(frame_energies)
+        event_frames = [i for i, energy in enumerate(frame_energies) if energy > energy_threshold]
+        
+        # Group consecutive event frames
+        events = []
+        if event_frames:
+            current_event_start = event_frames[0]
+            current_event_end = event_frames[0]
             
-            analysis.update({
-                'dominant_frequency': float(dominant_freq),
-                'frequency_range': {
-                    'min': float(frequencies[0]),
-                    'max': float(frequencies[-1])
-                }
-            })
-        except:
-            analysis.update({
-                'dominant_frequency': 0.0,
-                'frequency_range': {'min': 0, 'max': 0}
-            })
+            for frame in event_frames[1:]:
+                if frame == current_event_end + 1:
+                    current_event_end = frame
+                else:
+                    events.append((current_event_start, current_event_end))
+                    current_event_start = frame
+                    current_event_end = frame
+            events.append((current_event_start, current_event_end))
         
-        # Psychoacoustic metrics
-        try:
-            analysis.update({
-                'loudness': float(db),
-                'sharpness': float(np.mean(librosa.feature.spectral_centroid(S=stft, sr=sr))),
-                'roughness': 0.5,  # Placeholder
-                'fluctuation_strength': 0.3  # Placeholder
-            })
-        except:
-            analysis.update({
-                'loudness': float(db),
-                'sharpness': 0.0,
-                'roughness': 0.0,
-                'fluctuation_strength': 0.0
-            })
+        event_count = len(events)
+        event_durations = [float((end - start + 1) * 0.1) for start, end in events]  # 0.1s per frame
         
-        # Event detection
-        analysis.update({
-            'event_count': analysis.get('peak_count', 0),
-            'event_durations': [0.1]*analysis.get('peak_count', 0)
-        })
+        # Create or update NoiseAnalysis record
+        NoiseAnalysis.objects.update_or_create(
+            noise_dataset=noise_dataset,
+            defaults={
+                'mean_db': mean_db,
+                'max_db': max_db,
+                'min_db': min_db,
+                'std_db': std_db,
+                'peak_count': peak_count,
+                'peak_interval_mean': peak_interval_mean,
+                'dominant_frequency': dominant_frequency,
+                'frequency_range': frequency_range,
+                'loudness': loudness,
+                'sharpness': sharpness,
+                'roughness': roughness,
+                'event_count': event_count,
+                'event_durations': event_durations,
+            }
+        )
         
     except Exception as e:
-        return None
-    
-    return analysis
+        logger.error(f"Error performing noise analysis: {str(e)}", exc_info=True)
+        raise
+
+def create_visualization_presets(noise_dataset):
+    """Create default visualization presets for this audio"""
+    try:
+        # Waveform visualization
+        VisualizationPreset.objects.get_or_create(
+            name=f"Waveform - {noise_dataset.name}",
+            noise_dataset=noise_dataset,
+            defaults={
+                'chart_type': 'waveform',
+                'config': {
+                    'title': 'Audio Waveform',
+                    'x_label': 'Time (s)',
+                    'y_label': 'Amplitude',
+                    'color': '#1f77b4',
+                    'height': 400
+                },
+                'alt_text_template': 'Waveform visualization of {noise_dataset.name}'
+            }
+        )
+        
+        # Spectrogram visualization
+        VisualizationPreset.objects.get_or_create(
+            name=f"Spectrogram - {noise_dataset.name}",
+            noise_dataset=noise_dataset,
+            defaults={
+                'chart_type': 'spectrogram',
+                'config': {
+                    'title': 'Spectrogram',
+                    'x_label': 'Time (s)',
+                    'y_label': 'Frequency (Hz)',
+                    'cmap': 'viridis',
+                    'height': 500
+                },
+                'alt_text_template': 'Spectrogram of {noise_dataset.name}'
+            }
+        )
+        
+        # MFCC visualization
+        VisualizationPreset.objects.get_or_create(
+            name=f"MFCC - {noise_dataset.name}",
+            noise_dataset=noise_dataset,
+            defaults={
+                'chart_type': 'mfcc',
+                'config': {
+                    'title': 'MFCC Coefficients',
+                    'x_label': 'Frame',
+                    'y_label': 'MFCC Coefficient',
+                    'cmap': 'coolwarm',
+                    'height': 500
+                },
+                'alt_text_template': 'MFCC coefficients of {noise_dataset.name}'
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error creating visualization presets: {str(e)}")

@@ -42,7 +42,7 @@ class Class(models.Model):
         unique_together = ('name', 'category')  
 
     def __str__(self):
-        return f"{self.category.name} - {self.name}"
+        return f"{self.name}"
 
 
 class SubClass(models.Model):
@@ -58,8 +58,6 @@ class SubClass(models.Model):
     class Meta:
         unique_together = ('name', 'parent_class')  
 
-    def __str__(self):
-        return f"{self.parent_class} - {self.name}"
     def __str__(self):
         return self.name
     

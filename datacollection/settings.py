@@ -113,8 +113,12 @@ WSGI_APPLICATION = 'datacollection.wsgi.application'
 if 'test' in sys.argv or os.getenv('USE_SQLITE', 'False').lower() == 'true':
     DATABASES = {
         'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': "datacollection",
+            'USER':'kelvin',
+            'PASSWORD':'kelvin',
+            'HOST': 'localhost',
+            'PORT': '5432',
         }
     }
 else:
