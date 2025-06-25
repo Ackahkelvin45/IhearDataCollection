@@ -243,14 +243,10 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.10",
     "http://0.0.0.0",
     "http://178.128.165.1",
-    "https://shalom-enterprise-1.onrender.com",
-    'iheardatacollection.onrender.com',
-  'https://iheardatacollection.onrender.com',
 
 'www.ihearandsee-at-rail.com',
 'ihearandsee-at-rail.com',
 'https://www.ihearandsee-at-rail.com',
-'www.google.com'
 
     ]
 
@@ -259,14 +255,12 @@ CORS_ALLOW_CREDENTIALS = True  # To allow cookies
 
 
 CSRF_TRUSTED_ORIGINS = [
-  'https://iheardatacollection.onrender.com',    # Add other trusted origins if needed
     'http://127.0.0.1',
     "http://127.0.0.1:8000",
     'http://localhost',
     'http://0.0.0.0',
 'http://178.128.165.1',
 'https://www.ihearandsee-at-rail.com',
-'https://https//www.google.com/'
 
 
         ]
