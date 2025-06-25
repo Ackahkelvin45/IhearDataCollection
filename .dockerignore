@@ -5,6 +5,8 @@ __pycache__/
 env/
 .venv/
 node_modules/
+media/
+files/
 .git/
 Dockerfile
 .dockerignore
