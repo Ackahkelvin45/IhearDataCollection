@@ -133,7 +133,7 @@ else:
             'ENGINE': 'django.db.backends.postgresql',
             'NAME':  'datacollection',
             'USER':  'kelvin',
-            'PASSWORD':  'kelvin',
+            'PASSWORD': 'kelvin',
             'HOST':'db',
             'PORT': '5432',
         }

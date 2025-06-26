@@ -26,6 +26,7 @@ services:
       - AWS_ACCESS_KEY_ID=${DO_SPACES_KEY}
       - AWS_SECRET_ACCESS_KEY=${DO_SPACES_SECRET}
       - AWS_STORAGE_BUCKET_NAME=${DO_SPACES_BUCKET}
+      - USE_SQLITE=${USE_SQLITE}
     sysctls:
       - net.ipv4.ip_local_port_range=1024 65535
       - net.ipv4.tcp_fin_timeout=30
@@ -46,6 +47,7 @@ services:
       - POSTGRES_DB=db
       - POSTGRES_USER=kelvin
       - POSTGRES_PASSWORD=kelvin
+      - POSTGRES_DB=datacollection
       - POSTGRES_HOST_AUTH_METHOD=trust
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
