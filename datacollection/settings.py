@@ -117,6 +117,7 @@ WSGI_APPLICATION = 'datacollection.wsgi.application'
 
 # settings.py
 if 'test' in sys.argv or os.getenv('USE_SQLITE', 'False').lower() == 'true':
+    print("Using SQLite database")
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
@@ -128,6 +129,7 @@ if 'test' in sys.argv or os.getenv('USE_SQLITE', 'False').lower() == 'true':
         }
     }
 else:
+    print("Using PostgreSQL database")
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
