@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 # import sys
 import os
 import logging
+
 # from django.templatetags.static import static
 
 
@@ -223,6 +224,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://206.189.238.225",
     "www.ihearandsee-at-rail.com",
     "ihearandsee-at-rail.com",
+    "http://ihearandsee-at-rail.com",
     "https://www.ihearandsee-at-rail.com",
 ]
 
@@ -236,6 +238,7 @@ CSRF_TRUSTED_ORIGINS = [
     "http://localhost",
     "http://0.0.0.0",
     "http://206.189.238.225",
+    "http://ihearandsee-at-rail.com",
     "https://www.ihearandsee-at-rail.com",
 ]
 
