@@ -1,38 +1,32 @@
-FROM python:3.13-slim-bookworm
+# Pull base image
+FROM python:3.13-slim-bullseye
+
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
-ENV PIP_NO_CACHE_DIR 1
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    python3-dev \
-    iputils-ping \
-    dnsutils \
-    telnet \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+# Create and set work directory called `app`
+RUN mkdir -p /code
+WORKDIR /code
+RUN --mount=target=/var/lib/apt/lists,type=cache,sharing=locked \
+    --mount=target=/var/cache/apt,type=cache,sharing=locked \
+    apt update && \
+    apt upgrade -y
 
-# Create and set working directory
-WORKDIR /app
+# Install dependencies
+COPY requirements.txt /tmp/requirements.txt
 
-# Install Python dependencies first to leverage Docker cache
-COPY requirements.txt .
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+RUN  --mount=type=cache,target=/root/.cache set -ex && \
+    pip install --upgrade pip && \
+    pip install -r /tmp/requirements.txt
 
-# Copy project files (with .dockerignore to exclude unnecessary files)
-COPY . .
+RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /root/.cache/
 
-# Run as non-root user
-RUN useradd -m appuser && chown -R appuser:appuser /app
-USER appuser
+# Copy local project
+COPY . /code/
 
+# Expose port 8000
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health/ || exit 1
-
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "4", "--threads", "2", "datacollection.wsgi:application"]
+# Use gunicorn on port 8000
+CMD ["gunicorn", "--bind", ":8000", "--workers", "2", "datacollection.wsgi"]

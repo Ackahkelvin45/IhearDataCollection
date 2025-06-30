@@ -12,41 +12,49 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 from pathlib import Path
 from dotenv import load_dotenv
-import sys
+
+# import sys
+import os
+import logging
+
+# from django.templatetags.static import static
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-import os
+
 load_dotenv()
-import logging
 
 logger = logging.getLogger(__name__)
 
+
+def as_bool(value: str):
+    return value.lower() in ["true", "yes"]
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-*_^$!#mp28jhe25iq6dok5suz(_!529k-c2hj#wnd!7@6@p%ri'
+SECRET_KEY = "django-insecure-*_^$!#mp28jhe25iq6dok5suz(_!529k-c2hj#wnd!7@6@p%ri"
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 ALLOWED_HOSTS = [
-    'localhost',
-    '178.128.165.1',
-    '127.0.0.1',
-    'www.ihearandsee-at-rail.com',
-    'ihearandsee-at-rail.com',
+    "localhost",
+    "206.189.238.225",
+    "127.0.0.1",
+    "www.ihearandsee-at-rail.com",
+    "ihearandsee-at-rail.com",
 ]
- 
+
 
 # Application definition
 
 INSTALLED_APPS = [
-      # optional, if special form elements are needed
-      'storages',
-       "unfold",  # before django.contrib.admin
+    # optional, if special form elements are needed
+    "storages",
+    "unfold",  # before django.contrib.admin
     "unfold.contrib.filters",  # optional, if special filters are needed
     "unfold.contrib.forms",  # optional, if special form elements are needed
     "unfold.contrib.inlines",  # optional, if special inlines are needed
@@ -54,109 +62,104 @@ INSTALLED_APPS = [
     "unfold.contrib.guardian",  # optional, if django-guardian package is used
     "unfold.contrib.simple_history",  # optional, if django-simple-history package is used
     "django.contrib.admin",
-     'tailwind',
-  'theme',
-    
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
+    "tailwind",
+    "theme",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
     "data",
-     'core',
-    'authentication',
-      "datacollection",
-        
-
-    
+    "core",
+    "authentication",
+    "datacollection",
+  "django_celery_results",
 
 
-   
-    
 ]
-TAILWIND_APP_NAME = 'theme'
+TAILWIND_APP_NAME = "theme"
 
 
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
 
-
-
-
-ROOT_URLCONF = 'datacollection.urls'
+ROOT_URLCONF = "datacollection.urls"
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.debug',
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.debug",
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
             ],
         },
     },
 ]
 
-WSGI_APPLICATION = 'datacollection.wsgi.application'
+WSGI_APPLICATION = "datacollection.wsgi.application"
 
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
 # settings.py
-if 'test' in sys.argv or os.getenv('USE_SQLITE', 'False').lower() == 'true':
-    print("Using SQLite database")
+USE_SQLITE = as_bool(os.getenv("USE_SQLITE", "False"))
+
+if USE_SQLITE:
+    print("Using local database")
     DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': "datacollection",
-            'USER':'kelvin',
-            'PASSWORD':'kelvin',
-            'HOST': 'localhost',
-            'PORT': '5432',
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": "datacollection",
+            "USER": "kelvin",
+            "PASSWORD": "kelvin",
+            "HOST": "localhost",
+            "PORT": 5432,
+  
         }
     }
 else:
     print("Using PostgreSQL database")
     DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME':  'datacollection',
-            'USER':  'kelvin',
-            'PASSWORD': 'kelvin',
-            'HOST':'db',
-            'PORT': '5432',
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv("POSTGRES_DB", "iheardatadb"),
+            "USER": os.getenv("POSTGRES_USER", "postgres"),
+            "PASSWORD": os.getenv("POSTGRES_PASSWORD", "localhost"),
+            "HOST": os.getenv("POSTGRES_HOST", "db"),
+            "PORT": int(os.getenv("POSTGRES_PORT", 5432)),
+            "OPTIONS": {"sslmode": os.getenv("PGSSLMODE", "prefer")},
         }
     }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
 
@@ -164,9 +167,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = "UTC"
 
 USE_I18N = True
 
@@ -180,104 +183,89 @@ USE_TZ = True
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-AUTH_USER_MODEL = 'authentication.CustomUser'
+AUTH_USER_MODEL = "authentication.CustomUser"
 
-
-
-
-def as_bool(value: str):
-    if value is None:
-        return False
-    return value.lower() in ["true", "yes", "1", "y"]
 
 # Email Configuration
-EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
-EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
-EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
-EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False") == "True"
+if bool(os.getenv("USE_SMTP_EMAIL", True)):
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+EMAIL_USE_TLS = True
+EMAIL_HOST = os.getenv("EMAIL_HOST")
+EMAIL_PORT = 587
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
-
-
-# Ensure only one of USE_TLS or USE_SSL is True
-if EMAIL_USE_TLS and EMAIL_USE_SSL:
-    EMAIL_USE_SSL = False
-    logger.warning("Both EMAIL_USE_TLS and EMAIL_USE_SSL were True. Disabling SSL in favor of TLS.")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL")
 
 # Temporarily add this before your email settings to debug
 
 # Authentication settings
-LOGIN_URL = '/auth/login/'  # URL to redirect to for login
-LOGIN_REDIRECT_URL = '/'  # Where to redirect after login
-LOGOUT_REDIRECT_URL = '/auth/login/'
-
-
-
+LOGIN_URL = "/auth/login/"  # URL to redirect to for login
+LOGIN_REDIRECT_URL = "/"  # Where to redirect after login
+LOGOUT_REDIRECT_URL = "/auth/login/"
 
 
 # At the top of your settings.py file, add this import
-from django.templatetags.static import static
 
 
 # Alternative approach without lambda (simpler):
 UNFOLD = {
-     "SITE_TITLE": "I hear Dataset Admin Portal",
-     "SITE_HEADER": "I hear Dataset",
-     
-     "DARK_MODE": True,
-     "LOGIN": {
-         "image": "/static/assets/img/image.png",
-         "title": "Welcome to I hear Dataset Admin Portal",
-       "description": "Please enter your credentials",
-     },
-     "SIDEBAR": {
-         "show_search": True,
-         "show_all_applications": False,
-     },
-     
- }
+    "SITE_TITLE": "I hear Dataset Admin Portal",
+    "SITE_HEADER": "I hear Dataset",
+    "DARK_MODE": True,
+    "LOGIN": {
+        "image": "/static/assets/img/image.png",
+        "title": "Welcome to I hear Dataset Admin Portal",
+        "description": "Please enter your credentials",
+    },
+    "SIDEBAR": {
+        "show_search": True,
+        "show_all_applications": False,
+    },
+}
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost",  # Your frontend URL
     "http://127.0.0.10",
     "http://0.0.0.0",
-    "http://178.128.165.1",
-
-'www.ihearandsee-at-rail.com',
-'ihearandsee-at-rail.com',
-'https://www.ihearandsee-at-rail.com',
-
-    ]
+    "http://206.189.238.225",
+    "www.ihearandsee-at-rail.com",
+    "ihearandsee-at-rail.com",
+    "https://ihearandsee-at-rail.com",
+    "http://ihearandsee-at-rail.com",
+    "https://www.ihearandsee-at-rail.com",
+]
 
 
 CORS_ALLOW_CREDENTIALS = True  # To allow cookies
 
 
 CSRF_TRUSTED_ORIGINS = [
-    'http://127.0.0.1',
+    "http://127.0.0.1",
     "http://127.0.0.1:8000",
-    'http://localhost',
-    'http://0.0.0.0',
-'http://178.128.165.1',
-'https://www.ihearandsee-at-rail.com',
+    "http://localhost:8000",
+    "http://localhost",
+    "http://0.0.0.0",
+    "http://206.189.238.225",
+    "https://ihearandsee-at-rail.com",
+    "http://ihearandsee-at-rail.com",
+    "https://www.ihearandsee-at-rail.com",
+]
 
 
-        ]
-
-
-
-
-USE_S3 = os.getenv('USE_S3', 'False').lower() == 'true'
+USE_S3 = os.getenv("USE_S3", "False").lower() == "true"
 
 if USE_S3:
     # DigitalOcean Spaces Settings
-    AWS_ACCESS_KEY_ID = os.getenv('DO_SPACES_KEY')
-    AWS_SECRET_ACCESS_KEY = os.getenv('DO_SPACES_SECRET')
-    AWS_STORAGE_BUCKET_NAME = os.getenv('DO_SPACES_BUCKET')
-    AWS_S3_ENDPOINT_URL = os.getenv('DO_SPACES_ENDPOINT', 'https://lon1.digitaloceanspaces.com')
+    AWS_ACCESS_KEY_ID = os.getenv("DO_SPACES_KEY")
+    AWS_SECRET_ACCESS_KEY = os.getenv("DO_SPACES_SECRET")
+    AWS_STORAGE_BUCKET_NAME = os.getenv("DO_SPACES_BUCKET")
+    AWS_S3_ENDPOINT_URL = os.getenv(
+        "DO_SPACES_ENDPOINT", "https://lon1.digitaloceanspaces.com"
+    )
 
     STORAGES = {
         "default": {
@@ -310,11 +298,11 @@ if USE_S3:
     MEDIA_URL = f"{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/media/"
 else:
     # Local file storage
-    STATIC_URL = '/static/'
-    MEDIA_URL = '/media/'
-    STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-    MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-    
+    STATIC_URL = "/static/"
+    MEDIA_URL = "/media/"
+    STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
+    MEDIA_ROOT = os.path.join(BASE_DIR, "media")
+
     STORAGES = {
         "default": {
             "BACKEND": "django.core.files.storage.FileSystemStorage",
@@ -325,5 +313,60 @@ else:
     }
 
 STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'static'),
+    os.path.join(BASE_DIR, "static"),
 ]
+
+
+# READ HTTPS CONFIG FROM PROXY
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
+REDIS_USERNAME = os.getenv("REDIS_USERNAME", default="default")
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", default="default")
+REDIS_USE_TLS = as_bool(os.getenv("REDIS_USE_TLS", default="False"))
+REDIS_HOST = os.getenv("REDIS_HOST", default="localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", default="6379"))
+if REDIS_USE_TLS:
+    REDIS_URL = f"rediss://{REDIS_USERNAME}:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}"
+else:
+    REDIS_URL = f"redis://{REDIS_USERNAME}:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}"
+CACHE_TIMEOUT = int(os.getenv("CACHE_TIMEOUT", default=3600))
+# DJANGO CACHE
+CACHE_DB_ID = int(os.getenv("CACHE_DB_ID", default="1"))
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": f"{REDIS_URL}/{CACHE_DB_ID}",
+        # "OPTIONS": {"CACHE_TIMEOUT": CACHE_TIMEOUT},
+    }
+}
+# CHANNELS FOR WEBSOCKET
+CHANNEL_LAYER_DB_ID = int(os.getenv("CHANNEL_LAYER_DB_ID", default="0"))
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [f"{REDIS_URL}/{CHANNEL_LAYER_DB_ID}"],
+        },
+    },
+}
+THROTTLE_RATE = os.getenv("THROTTLE_RATE", "100/s")
+
+# CELERY
+CELERY_ACCEPT_CONTENT = ["application/json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TASK_ALWAYS_EAGER = False
+CELERY_ENABLE_UTC = True
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60
+CELERY_BROKER_DB_ID = int(os.getenv("CELERY_BROKER_DB_ID", default="2"))
+CELERY_RESULT_BACKEND_DB_ID = int(os.getenv("CELERY_RESULT_BACKEND_DB_ID", default="3"))
+CELERY_BROKER_URL = f"{REDIS_URL}/{CELERY_BROKER_DB_ID}"
+CELERY_RESULT_BACKEND = f"{REDIS_URL}/3"
+if REDIS_USE_TLS:
+    CELERY_BROKER_URL += "?ssl_cert_reqs=required"
+    CELERY_RESULT_BACKEND += "?ssl_cert_reqs=required"
+CELERY_TASK_ALWAYS_EAGER = as_bool(
+    os.getenv("CELERY_TASK_ALWAYS_EAGER", default="False")
+)
