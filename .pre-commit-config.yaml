@@ -1,0 +1,47 @@
+default_language_version:
+  # default language version for each language
+  python: python3.12
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      # See https://pre-commit.com/hooks.html for more hooks
+      - id: check-ast
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+      - id: detect-private-key
+      - id: name-tests-test
+        args: [ "--django" ]
+      - id: trailing-whitespace
+      - id: check-added-large-files
+        args: ['--maxkb=4096']
+      # - id: no-commit-to-branch
+      #   args: [--branch, main, --branch, develop]
+      # - id: requirements-txt-fixer
+
+  - repo: https://github.com/psf/black
+    rev: 24.2.0
+    hooks:
+    - id: black
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.0.0
+    hooks:
+      -  id: flake8
+         exclude: migrations
+         args: [--max-line-length=100]
+
+  - repo: https://github.com/ecugol/pre-commit-hooks-django
+    rev: v0.4.0  # Use the ref you want to point at
+    hooks:
+    -   id: check-untracked-migrations
+        # Optional, if specified, hook will work only on these branches
+        # otherwise it will work on all branches
+        # args: ["--branches", "main", "other_branch"]
+    # -   id: check-unapplied-migrations
+    -   id: check-absent-migrations
+    # -   id: po-location-format
+    #     # Mandatory, select one of the following options:
+    #     # file: show only the file path as location
+    #     # never: remove all locations
+    #     args: ["--add-location", "file"]
