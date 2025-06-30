@@ -12,9 +12,12 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 from pathlib import Path
 from dotenv import load_dotenv
-import sys
+
+# import sys
 import os
 import logging
+# from django.templatetags.static import static
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -38,7 +41,7 @@ SECRET_KEY = "django-insecure-*_^$!#mp28jhe25iq6dok5suz(_!529k-c2hj#wnd!7@6@p%ri
 DEBUG = True
 ALLOWED_HOSTS = [
     "localhost",
-    "178.128.165.1",
+    "206.189.238.225",
     "127.0.0.1",
     "www.ihearandsee-at-rail.com",
     "ihearandsee-at-rail.com",
@@ -195,7 +198,6 @@ LOGOUT_REDIRECT_URL = "/auth/login/"
 
 
 # At the top of your settings.py file, add this import
-from django.templatetags.static import static
 
 
 # Alternative approach without lambda (simpler):
@@ -218,7 +220,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost",  # Your frontend URL
     "http://127.0.0.10",
     "http://0.0.0.0",
-    "http://178.128.165.1",
+    "http://206.189.238.225",
     "www.ihearandsee-at-rail.com",
     "ihearandsee-at-rail.com",
     "https://www.ihearandsee-at-rail.com",
@@ -233,7 +235,7 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:8000",
     "http://localhost",
     "http://0.0.0.0",
-    "http://178.128.165.1",
+    "http://206.189.238.225",
     "https://www.ihearandsee-at-rail.com",
 ]
 
