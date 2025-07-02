@@ -81,13 +81,13 @@ services:
     image: *image
     restart: unless-stopped
     env_file: *env_file
-    command: [ "celery", "-A", "datacollection", "worker", "-l", "DEBUG", "--concurrency", "3" ]
+    command: [ "celery", "-A", "datacollection", "worker", "-l", "DEBUG", "--concurrency", "1" ]
     deploy:
       replicas: 1
       resources:
         limits:
           cpus: '0.4'
-          memory: 768M
+          memory: 1G
       update_config:
         parallelism: 2
         delay: 10s

@@ -25,7 +25,7 @@ from django.db.models import Count, Avg
 from django.utils import timezone
 from datetime import timedelta
 from core.models import Category, Region, Microphone_Type, Class, SubClass
-
+from django.contrib.auth.mixins import LoginRequiredMixin
 import uuid
 from datetime import datetime
 import hashlib
@@ -53,6 +53,7 @@ class RenamedFile:
     def __getattr__(self, attr):
         return getattr(self.file, attr)
 
+@login_required
 def view_dashboard(request):
     # Basic stats
     total_recordings = NoiseDataset.objects.count()
@@ -119,16 +120,14 @@ def view_dashboard(request):
     
     return render(request, 'data/dashboard.html', context)
 
-
-class NoiseDatasetDeleteView(DeleteView):
+class NoiseDatasetDeleteView(LoginRequiredMixin, DeleteView):
     model = NoiseDataset
     success_url = reverse_lazy('data:datasetlist')
-    
+
     def delete(self, request, *args, **kwargs):
         response = super().delete(request, *args, **kwargs)
         messages.success(request, f'Dataset "{self.object.noise_id}" was deleted successfully.')
         return response
-
 @login_required
 def view_datasetlist(request):   
     datasets = NoiseDataset.objects.filter().order_by('-updated_at')
@@ -169,16 +168,16 @@ def noise_dataset_create(request):
                     new_audio_hash = hash_md5.hexdigest()
                     
                     # Check against existing records
-                    duplicates = NoiseDataset.objects.filter(collector=request.user)
-                    for dataset in duplicates:
-                        if dataset.audio:
+                    # duplicates = NoiseDataset.objects.filter(collector=request.user)
+                    # for dataset in duplicates:
+                        # if dataset.audio:
                             # Reset file pointer after reading chunks for hash
-                            audio_file.seek(0)
+                           #  audio_file.seek(0)
                             
                             # Compare hashes
-                            if dataset.get_audio_hash() == new_audio_hash:
-                                messages.error(request, "This audio file has already been uploaded!")
-                                return redirect('data:noise_dataset_create')
+                            # if dataset.get_audio_hash() == new_audio_hash:
+                               #  messages.error(request, "This audio file has already been uploaded!")
+                               #  return redirect('data:noise_dataset_create')
                     
                     # Reset file pointer again before processing
                     audio_file.seek(0)
@@ -361,7 +360,7 @@ def show_pages(request):
     return render(request, 'data/datasetlist.html')
 
 
-
+@login_required
 def noise_detail(request, dataset_id):
     dataset = get_object_or_404(NoiseDataset, pk=dataset_id)
     
