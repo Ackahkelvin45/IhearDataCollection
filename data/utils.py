@@ -6,31 +6,111 @@ import logging
 from scipy import signal as scipy_signal
 import soundfile as sf
 import audioread
+from typing import Optional
 
 from .models import NoiseDataset, AudioFeature, NoiseAnalysis, VisualizationPreset
 
 logger = logging.getLogger(__name__)
 
+# Supported audio formats and their common extensions
+SUPPORTED_FORMATS = {
+    "wav": [".wav", ".wave"],
+    "mp3": [".mp3"],
+    "flac": [".flac"],
+    "ogg": [".ogg", ".oga", ".opus"],
+    "aiff": [".aiff", ".aif"],
+    "m4a": [".m4a"],
+}
+
+
 def check_audio_backends():
     """Check if required audio backends are available"""
     try:
         # Test soundfile backend
-        with tempfile.NamedTemporaryFile(suffix='.wav') as tmp:
+        with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
             sf.write(tmp.name, np.zeros(1000), 44100)
             sf.read(tmp.name)
-        
+
         # Test audioread backend
-        with tempfile.NamedTemporaryFile(suffix='.mp3') as tmp:
+        with tempfile.NamedTemporaryFile(suffix=".mp3") as tmp:
             try:
                 with audioread.audio_open(tmp.name):
                     pass
             except audioread.exceptions.NoBackendError:
                 logger.warning("audiored MP3 backend not available")
-                
+
         return True
     except Exception as e:
         logger.error(f"Audio backend check failed: {e}")
         return False
+
+
+def get_file_extension(filename: str) -> Optional[str]:
+    """Get normalized file extension from filename"""
+    if not filename:
+        return None
+
+    # Get the last part after dot (handle multiple dots like .tar.gz)
+    base, ext = os.path.splitext(filename.lower())
+    ext = ext.strip()
+
+    # Check for compound extensions
+    if not ext and "." in base:
+        ext = "." + base.split(".")[-1]
+
+    return ext if ext else None
+
+
+def is_supported_extension(ext: str) -> bool:
+    """Check if extension is in our supported formats list"""
+    if not ext:
+        return False
+    return any(ext in extensions for extensions in SUPPORTED_FORMATS.values())
+
+
+def get_audio_format(ext: str) -> Optional[str]:
+    """Get audio format from extension"""
+    for fmt, extensions in SUPPORTED_FORMATS.items():
+        if ext in extensions:
+            return fmt
+    return None
+
+
+def load_audio_file(audio_path: str, ext: str):
+    """Robust audio file loading with multiple fallback strategies"""
+    try:
+        # First try librosa with native sample rate
+        y, sr = librosa.load(audio_path, sr=None)
+        logger.info(f"Loaded {audio_path} with librosa (native SR)")
+        return y, sr
+    except Exception as primary_error:
+        logger.warning(f"Primary load failed for {audio_path}: {primary_error}")
+
+        # Try with soundfile if format is supported
+        if (
+            ext
+            in SUPPORTED_FORMATS["wav"]
+            + SUPPORTED_FORMATS["flac"]
+            + SUPPORTED_FORMATS["aiff"]
+        ):
+            try:
+                y, sr = sf.read(audio_path)
+                logger.info(f"Loaded {audio_path} with soundfile")
+                return y, sr
+            except Exception as sf_error:
+                logger.warning(f"Soundfile load failed: {sf_error}")
+
+        # Try with standard sample rate as last resort
+        try:
+            y, sr = librosa.load(audio_path, sr=22050)
+            logger.info(f"Loaded {audio_path} with librosa (standard SR)")
+            return y, sr
+        except Exception as fallback_error:
+            logger.error(
+                f"All loading attempts failed for {audio_path}: {fallback_error}"
+            )
+            raise
+
 
 def process_audio_file(instance: NoiseDataset):
     """Full audio processing pipeline that mimics post_save signal"""
@@ -42,24 +122,29 @@ def process_audio_file(instance: NoiseDataset):
         # Generate noise_id
         if not instance.noise_id:
             audio_hash = instance.get_audio_hash()
-            instance.noise_id = f"NOISE_{audio_hash[:8]}" if audio_hash else f"NOISE_{instance.id}"
-            instance.save(update_fields=['noise_id'])
+            instance.noise_id = (
+                f"NOISE_{audio_hash[:8]}" if audio_hash else f"NOISE_{instance.id}"
+            )
+            instance.save(update_fields=["noise_id"])
 
         # Generate name
         if not instance.name:
-            name_parts = filter(None, [
-                str(instance.region),
-                str(instance.community),
-                str(instance.category),
-                str(instance.class_name)
-            ])
+            name_parts = filter(
+                None,
+                [
+                    str(instance.region),
+                    str(instance.community),
+                    str(instance.category),
+                    str(instance.class_name),
+                ],
+            )
             instance.name = "_".join(name_parts) or f"Audio_{instance.id}"
-            instance.save(update_fields=['name'])
+            instance.save(update_fields=["name"])
 
-        # Get file extension or default to .wav
-        file_ext = os.path.splitext(instance.audio.name)[1].lower()
-        if not file_ext or file_ext not in ['.wav', '.mp3', '.flac', '.ogg']:
-            file_ext = '.wav'
+        # Get file extension
+        file_ext = get_file_extension(instance.audio.name)
+        if not file_ext or not is_supported_extension(file_ext):
+            file_ext = ".wav"  # Default to WAV if unknown extension
             logger.info(f"Using default .wav extension for file {instance.audio.name}")
 
         # Save audio temporarily with proper extension
@@ -68,55 +153,64 @@ def process_audio_file(instance: NoiseDataset):
                 tmp_file.write(chunk)
             audio_path = tmp_file.name
 
-        logger.info(f"Processing audio file: {audio_path}, size: {os.path.getsize(audio_path)} bytes")
+        logger.info(
+            f"Processing audio file: {audio_path}, "
+            f"size: {os.path.getsize(audio_path)} bytes, "
+            f"ext: {file_ext}"
+        )
 
         try:
             # Verify file exists and has content
             if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
                 raise ValueError("Temporary audio file is empty or doesn't exist")
 
-            extract_audio_features(instance, audio_path)
-            perform_noise_analysis(instance, audio_path)
+            extract_audio_features(instance, audio_path, file_ext)
+            perform_noise_analysis(instance, audio_path, file_ext)
             create_visualization_presets(instance)
         except Exception as processing_error:
-            logger.error(f"Error processing audio file {audio_path}: {processing_error}", exc_info=True)
+            logger.error(
+                f"Error processing audio file {audio_path}: {processing_error}",
+                exc_info=True,
+            )
             raise
         finally:
             if os.path.exists(audio_path):
                 try:
                     os.unlink(audio_path)
                 except Exception as cleanup_error:
-                    logger.warning(f"Could not delete temp file {audio_path}: {cleanup_error}")
+                    logger.warning(
+                        f"Could not delete temp file {audio_path}: {cleanup_error}"
+                    )
 
     except Exception as e:
         logger.error(f"Error in audio processing pipeline: {e}", exc_info=True)
         raise
 
-def extract_audio_features(instance, audio_path):
+
+def extract_audio_features(instance, audio_path, file_ext):
     """Extract audio features with robust error handling"""
     try:
         logger.info(f"Extracting features from {audio_path}")
 
-        # Try multiple loading strategies
-        try:
-            y, sr = librosa.load(audio_path, sr=None)  # Try with native sample rate first
-        except Exception as primary_load_error:
-            logger.warning(f"Primary load failed, trying with standard sample rate: {primary_load_error}")
-            try:
-                y, sr = librosa.load(audio_path, sr=22050)  # Fallback to standard rate
-            except Exception as fallback_error:
-                logger.error(f"All loading attempts failed for {audio_path}: {fallback_error}")
-                raise
+        # Load audio with our robust loader
+        y, sr = load_audio_file(audio_path, file_ext)
 
         duration = librosa.get_duration(y=y, sr=sr)
-        logger.info(f"Audio loaded successfully: duration={duration:.2f}s, sr={sr}, samples={len(y)}")
+        logger.info(
+            f"Audio loaded successfully: duration={duration:.2f}s, sr={sr}, samples={len(y)}"
+        )
+
+        # Convert to mono if needed
+        if len(y.shape) > 1:
+            y = librosa.to_mono(y)
+            logger.info(f"Converted audio to mono, new shape: {y.shape}")
 
         # RMS Energy
         rms_energy = librosa.feature.rms(y=y)[0]
-        
+
         # Zero Crossing Rate
         zcr = librosa.feature.zero_crossing_rate(y=y)[0]
-        
+
         # Spectral Features
         spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
         spectral_bandwidth = librosa.feature.spectral_bandwidth(y=y, sr=sr)[0]
@@ -136,7 +230,7 @@ def extract_audio_features(instance, audio_path):
         mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
 
         # Waveform data (downsampled for visualization)
-        waveform_data = y[::max(1, len(y)//1000)].tolist()
+        waveform_data = y[:: max(1, len(y) // 1000)].tolist()
 
         # Harmonic/Percussive Separation
         y_harmonic, y_percussive = librosa.effects.hpss(y)
@@ -147,40 +241,44 @@ def extract_audio_features(instance, audio_path):
         AudioFeature.objects.update_or_create(
             noise_dataset=instance,
             defaults={
-                'sample_rate': sr,
-                'num_samples': len(y),
-                'duration': duration,
-                'rms_energy': float(np.mean(rms_energy)),
-                'zero_crossing_rate': float(np.mean(zcr)),
-                'spectral_centroid': float(np.mean(spectral_centroid)),
-                'spectral_bandwidth': float(np.mean(spectral_bandwidth)),
-                'spectral_rolloff': float(np.mean(spectral_rolloff)),
-                'spectral_flatness': float(np.mean(spectral_flatness)),
-                'mfccs': mfccs_mean,
-                'chroma_stft': chroma_mean,
-                'mel_spectrogram': mel_spec_db.tolist(),
-                'waveform_data': waveform_data,
-                'harmonic_ratio': harmonic_ratio,
-                'percussive_ratio': percussive_ratio,
-            }
+                "sample_rate": sr,
+                "num_samples": len(y),
+                "duration": duration,
+                "rms_energy": float(np.mean(rms_energy)),
+                "zero_crossing_rate": float(np.mean(zcr)),
+                "spectral_centroid": float(np.mean(spectral_centroid)),
+                "spectral_bandwidth": float(np.mean(spectral_bandwidth)),
+                "spectral_rolloff": float(np.mean(spectral_rolloff)),
+                "spectral_flatness": float(np.mean(spectral_flatness)),
+                "mfccs": mfccs_mean,
+                "chroma_stft": chroma_mean,
+                "mel_spectrogram": mel_spec_db.tolist(),
+                "waveform_data": waveform_data,
+                "harmonic_ratio": harmonic_ratio,
+                "percussive_ratio": percussive_ratio,
+            },
         )
 
         logger.info(f"Successfully extracted features for {instance.noise_id}")
 
     except Exception as e:
-        logger.error(f"Error extracting audio features from {audio_path}: {e}", exc_info=True)
+        logger.error(
+            f"Error extracting audio features from {audio_path}: {e}", exc_info=True
+        )
         raise
 
-def perform_noise_analysis(instance, audio_path):
+
+def perform_noise_analysis(instance, audio_path, file_ext):
     """Perform detailed noise analysis with robust error handling"""
     try:
         logger.info(f"Performing noise analysis on {audio_path}")
 
-        # Load audio with same fallback strategy as extract_audio_features
-        try:
-            y, sr = librosa.load(audio_path, sr=None)
-        except:
-            y, sr = librosa.load(audio_path, sr=22050)
+        # Load audio with our robust loader
+        y, sr = load_audio_file(audio_path, file_ext)
+
+        # Convert to mono if needed
+        if len(y.shape) > 1:
+            y = librosa.to_mono(y)
 
         y_db = librosa.amplitude_to_db(np.abs(y), ref=np.max)
 
@@ -193,17 +291,19 @@ def perform_noise_analysis(instance, audio_path):
         # Peak detection
         peaks, _ = scipy_signal.find_peaks(np.abs(y), height=np.std(y) * 2)
         peak_count = len(peaks)
-        peak_interval_mean = float(np.mean(np.diff(peaks)/sr)) if len(peaks) > 1 else 0.0
+        peak_interval_mean = (
+            float(np.mean(np.diff(peaks) / sr)) if len(peaks) > 1 else 0.0
+        )
 
         # Frequency analysis
         fft = np.fft.fft(y)
-        freqs = np.fft.fftfreq(len(fft), 1/sr)
+        freqs = np.fft.fftfreq(len(fft), 1 / sr)
         magnitude = np.abs(fft)
-        dominant_freq_idx = np.argmax(magnitude[:len(magnitude)//2])
+        dominant_freq_idx = np.argmax(magnitude[: len(magnitude) // 2])
         dominant_frequency = float(abs(freqs[dominant_freq_idx]))
 
         # Frequency range containing 90% of energy
-        energy_cumsum = np.cumsum(magnitude[:len(magnitude)//2])
+        energy_cumsum = np.cumsum(magnitude[: len(magnitude) // 2])
         total_energy = energy_cumsum[-1]
         freq_range_low = freqs[np.where(energy_cumsum >= 0.05 * total_energy)[0][0]]
         freq_range_high = freqs[np.where(energy_cumsum >= 0.95 * total_energy)[0][0]]
@@ -211,10 +311,14 @@ def perform_noise_analysis(instance, audio_path):
 
         # Event detection
         frame_length = sr // 10  # 100ms frames
-        frames = [y[i:i+frame_length] for i in range(0, len(y), frame_length)]
-        frame_energies = [np.sum(frame**2) for frame in frames if len(frame) == frame_length]
+        frames = [y[i : i + frame_length] for i in range(0, len(y), frame_length)]
+        frame_energies = [
+            np.sum(frame**2) for frame in frames if len(frame) == frame_length
+        ]
         energy_threshold = np.mean(frame_energies) + 2 * np.std(frame_energies)
-        event_frames = [i for i, energy in enumerate(frame_energies) if energy > energy_threshold]
+        event_frames = [
+            i for i, energy in enumerate(frame_energies) if energy > energy_threshold
+        ]
 
         # Cluster consecutive events
         events = []
@@ -229,29 +333,34 @@ def perform_noise_analysis(instance, audio_path):
             events.append(current_event)
 
         event_count = len(events)
-        event_durations = [float((end - start + 1) * 0.1) for start, end in events]  # Convert to seconds
+        event_durations = [
+            float((end - start + 1) * 0.1) for start, end in events
+        ]  # Convert to seconds
 
         NoiseAnalysis.objects.update_or_create(
             noise_dataset=instance,
             defaults={
-                'mean_db': mean_db,
-                'max_db': max_db,
-                'min_db': min_db,
-                'std_db': std_db,
-                'peak_count': peak_count,
-                'peak_interval_mean': peak_interval_mean,
-                'dominant_frequency': dominant_frequency,
-                'frequency_range': frequency_range,
-                'event_count': event_count,
-                'event_durations': event_durations,
-            }
+                "mean_db": mean_db,
+                "max_db": max_db,
+                "min_db": min_db,
+                "std_db": std_db,
+                "peak_count": peak_count,
+                "peak_interval_mean": peak_interval_mean,
+                "dominant_frequency": dominant_frequency,
+                "frequency_range": frequency_range,
+                "event_count": event_count,
+                "event_durations": event_durations,
+            },
         )
 
         logger.info(f"Completed noise analysis for {instance.noise_id}")
 
     except Exception as e:
-        logger.error(f"Error performing noise analysis on {audio_path}: {e}", exc_info=True)
+        logger.error(
+            f"Error performing noise analysis on {audio_path}: {e}", exc_info=True
+        )
         raise
+
 
 def create_visualization_presets(instance):
     """Create standard visualization presets for the audio"""
@@ -262,77 +371,81 @@ def create_visualization_presets(instance):
         # Waveform preset
         VisualizationPreset.objects.get_or_create(
             noise_dataset=instance,
-            chart_type='waveform',
+            chart_type="waveform",
             defaults={
-                'name': f'Waveform - {instance.name}',
-                'description': 'Waveform visualization of the audio',
-                'config': {
-                    'title': 'Waveform',
-                    'x_label': 'Time (s)',
-                    'y_label': 'Amplitude',
-                    'color': '#1f77b4',
-                    'data': features.waveform_data,
-                    'duration': features.duration
+                "name": f"Waveform - {instance.name}",
+                "description": "Waveform visualization of the audio",
+                "config": {
+                    "title": "Waveform",
+                    "x_label": "Time (s)",
+                    "y_label": "Amplitude",
+                    "color": "#1f77b4",
+                    "data": features.waveform_data,
+                    "duration": features.duration,
                 },
-                'alt_text_template': f'Waveform of {instance.name} showing amplitude over time'
-            }
+                "alt_text_template": f"Waveform of {instance.name} showing amplitude over time",
+            },
         )
 
         # Spectrogram preset
         VisualizationPreset.objects.get_or_create(
             noise_dataset=instance,
-            chart_type='spectrogram',
+            chart_type="spectrogram",
             defaults={
-                'name': f'Spectrogram - {instance.name}',
-                'description': 'Spectrogram visualization of the audio',
-                'config': {
-                    'title': 'Spectrogram',
-                    'x_label': 'Time (s)',
-                    'y_label': 'Frequency (Hz)',
-                    'cmap': 'viridis',
-                    'data': features.mel_spectrogram,
-                    'sample_rate': features.sample_rate,
-                    'duration': features.duration
+                "name": f"Spectrogram - {instance.name}",
+                "description": "Spectrogram visualization of the audio",
+                "config": {
+                    "title": "Spectrogram",
+                    "x_label": "Time (s)",
+                    "y_label": "Frequency (Hz)",
+                    "cmap": "viridis",
+                    "data": features.mel_spectrogram,
+                    "sample_rate": features.sample_rate,
+                    "duration": features.duration,
                 },
-                'alt_text_template': f'Spectrogram of {instance.name} showing frequency content over time'
-            }
+                "alt_text_template": f"Spectrogram of {instance.name}"
+                f" showing frequency content over time",
+            },
         )
 
         # MFCC preset
         VisualizationPreset.objects.get_or_create(
             noise_dataset=instance,
-            chart_type='mfcc',
+            chart_type="mfcc",
             defaults={
-                'name': f'MFCC - {instance.name}',
-                'description': 'MFCC coefficients visualization',
-                'config': {
-                    'title': 'MFCC Coefficients',
-                    'x_label': 'Frame',
-                    'y_label': 'MFCC Coefficient',
-                    'cmap': 'coolwarm',
-                    'data': features.mfccs,
-                    'num_coefficients': len(features.mfccs)
+                "name": f"MFCC - {instance.name}",
+                "description": "MFCC coefficients visualization",
+                "config": {
+                    "title": "MFCC Coefficients",
+                    "x_label": "Frame",
+                    "y_label": "MFCC Coefficient",
+                    "cmap": "coolwarm",
+                    "data": features.mfccs,
+                    "num_coefficients": len(features.mfccs),
                 },
-                'alt_text_template': f'MFCC coefficients of {instance.name} showing timbral characteristics'
-            }
+                "alt_text_template": f"MFCC coefficients of {instance.name}"
+                f" showing timbral characteristics",
+            },
         )
 
         # Frequency analysis preset
         VisualizationPreset.objects.get_or_create(
             noise_dataset=instance,
-            chart_type='frequency',
+            chart_type="frequency",
             defaults={
-                'name': f'Frequency Analysis - {instance.name}',
-                'description': 'Frequency domain analysis',
-                'config': {
-                    'title': 'Frequency Analysis',
-                    'x_label': 'Frequency (Hz)',
-                    'y_label': 'Magnitude',
-                    'dominant_frequency': analysis.dominant_frequency,
-                    'frequency_range': analysis.frequency_range
+                "name": f"Frequency Analysis - {instance.name}",
+                "description": "Frequency domain analysis",
+                "config": {
+                    "title": "Frequency Analysis",
+                    "x_label": "Frequency (Hz)",
+                    "y_label": "Magnitude",
+                    "dominant_frequency": analysis.dominant_frequency,
+                    "frequency_range": analysis.frequency_range,
                 },
-                'alt_text_template': f'Frequency analysis of {instance.name} showing dominant frequency at {analysis.dominant_frequency:.1f}Hz'
-            }
+                "alt_text_template": f"Frequency analysis of {instance.name}"
+                f" showing dominant frequency at"
+                f" {analysis.dominant_frequency:.1f}Hz",
+            },
         )
 
         logger.info(f"Created visualization presets for {instance.noise_id}")

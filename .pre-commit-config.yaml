@@ -1,6 +1,6 @@
 default_language_version:
   # default language version for each language
-  python: python3.12
+  python: python3.13
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
@@ -29,7 +29,9 @@ repos:
     hooks:
       -  id: flake8
          exclude: migrations
-         args: [--max-line-length=100]
+         args: [--max-line-length=100,
+                --extend-ignore=E203,
+         ]
 
   - repo: https://github.com/ecugol/pre-commit-hooks-django
     rev: v0.4.0  # Use the ref you want to point at
