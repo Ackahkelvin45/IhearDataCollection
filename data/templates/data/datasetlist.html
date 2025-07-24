@@ -20,6 +20,80 @@
   .swal2-confirm {
     margin-right: 10px;
   }
+
+  /* Custom Filter Styling */
+  .filter-container {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .filter-select, .filter-input {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(5px);
+    transition: all 0.3s ease;
+  }
+
+  .filter-select:focus, .filter-input:focus {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  }
+
+  .filter-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    transition: all 0.3s ease;
+    transform: translateY(0);
+  }
+
+  .filter-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+  }
+
+  .clear-btn {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    transition: all 0.3s ease;
+  }
+
+  .clear-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(245, 87, 108, 0.3);
+  }
+
+  /* Modern Pagination Styling */
+  .pagination-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 2rem !important;
+    gap: 0.5rem;
+
+  }
+
+
+  .filter-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 1rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    margin: 0.25rem;
+  }
+
+  .filter-tag button {
+    background: none;
+    border: none;
+    color: white;
+    margin-left: 0.5rem;
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+  }
 </style>
 {% endblock %}
 
@@ -40,6 +114,8 @@
       </a>
     </div>
   </nav>
+
+
 
   <!-- row 1 -->
   <div class="flex flex-wrap -mx-3">
@@ -71,18 +147,163 @@
 </div>
 {% endif %}
             <div class="p-6 pb-0 mb-0 border-b-0 border-b-solid rounded-t-2xl border-b-transparent">
-              <h6 class="dark:text-white text-xl">Dataset table</h6>
-            </div>
-
-            <div class="flex items-center md:ml-auto md:pr-4">
-              <div class="relative flex flex-wrap items-stretch w-full transition-all rounded-lg ease">
-                <span class="text-sm ease leading-5.6 absolute z-50 -ml-px flex h-full items-center whitespace-nowrap rounded-lg rounded-tr-none rounded-br-none border border-r-0 border-transparent bg-transparent py-2 px-2.5 text-center font-normal text-slate-500 transition-all">
-                  <i class="fas fa-search"></i>
-                </span>
-                <input type="text" class="pl-9 text-sm focus:shadow-primary-outline ease w-1/100 leading-5.6 relative -ml-px block min-w-0 flex-auto rounded-lg border border-solid border-gray-300 dark:bg-slate-850 dark:text-white bg-white bg-clip-padding py-2 pr-3 text-gray-700 transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:transition-shadow" placeholder="Search here..." />
+              <div class="flex justify-between items-center">
+                <h6 class="dark:text-white text-xl">Noise Dataset table</h6>
+                <div class="text-sm text-gray-500 dark:text-gray-400">
+                  Total: {{ paginator.count }} datasets
+                </div>
               </div>
             </div>
-            
+
+              <!-- Advanced Filters -->
+ <div class="filter-container rounded-2xl p-6  backdrop-blur-lg">
+    <form method="GET" class="space-y-4">
+      <div class="flex flex-wrap items-center gap-4">
+        <!-- Search Input -->
+        <div  style="min-width: 90px;" class="flex-1 min-w-64">
+          <div class="relative flex flex-wrap items-stretch w-full transition-all rounded-lg ease">
+           <span class="text-sm ease leading-5.6 absolute z-50 -ml-px flex h-full items-center whitespace-nowrap rounded-lg rounded-tr-none rounded-br-none border border-r-0 border-transparent bg-transparent py-2 px-2.5 text-center font-normal text-slate-500 transition-all">
+      <i class="fas fa-search" aria-hidden="true"></i>
+    </span>
+            <input
+              type="text"
+              name="search"
+              value="{{ current_filters.search|default:'' }}"
+              placeholder="Search by Noise ID or Name..."
+              class="pl-9 text-sm filter-input  focus:shadow-primary-outline ease w-1/100 leading-5.6 relative -ml-px block min-w-0 flex-auto rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding py-2 pr-3 text-gray-700 transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:transition-shadow" placeholder="Type here..."
+            />
+          </div>
+        </div>
+
+        <!-- Category Filter -->
+        <div class="min-w-40">
+          <select name="category" class="focus:shadow-primary-outline text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
+            <option value="">All Categories</option>
+            {% for category in categories %}
+              <option value="{{ category.name }}" {% if current_filters.category == category.name %}selected{% endif %}>
+                {{ category.name|title }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Class Filter -->
+        <div>
+          <select name="class" class="focus:shadow-primary-outline text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
+            <option value="">All Classes</option>
+            {% for class_name in classes %}
+              <option value="{{ class_name.name }}" {% if current_filters.class == class_name.name %}selected{% endif %}>
+                {{ class_name.name|title }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Subclass Filter -->
+        <div>
+          <select name="subclass" class="focus:shadow-primary-outline text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
+            <option value="">All Subclasses</option>
+            {% for subclass in subclasses %}
+              <option value="{{ subclass.name }}" {% if current_filters.subclass == subclass.name %}selected{% endif %}>
+                {{ subclass.name|title }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Region Filter -->
+        <div>
+          <select name="region" class="focus:shadow-primary-outline text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
+            <option value="">All Regions</option>
+            {% for region in regions %}
+              <option value="{{ region.name }}" {% if current_filters.region == region.name %}selected{% endif %}>
+                {{ region.name|title }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Community Filter -->
+        <div>
+          <select name="community" class="focus:shadow-primary-outline text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
+            <option value="">All Communities</option>
+            {% for community in communities %}
+              <option value="{{ community.name }}" {% if current_filters.community == community.name %}selected{% endif %}>
+                {{ community.name|title }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Date Range Filter -->
+        <div>
+          <select name="date_range" class="focus:shadow-primary-outline text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
+            <option value="">All Time</option>
+            <option value="today" {% if current_filters.date_range == 'today' %}selected{% endif %}>Today</option>
+            <option value="week" {% if current_filters.date_range == 'week' %}selected{% endif %}>This Week</option>
+            <option value="month" {% if current_filters.date_range == 'month' %}selected{% endif %}>This Month</option>
+            <option value="year" {% if current_filters.date_range == 'year' %}selected{% endif %}>This Year</option>
+          </select>
+        </div>
+
+        <!-- Filter Buttons -->
+        <div class="flex gap-2">
+          <button type="submit" class="filter-btn px-6 py-2.5  rounded-lg text-primary font-medium">
+            <i class="fas fa-filter mr-2"></i>Filter
+          </button>
+          <a href="{% url 'data:datasetlist' %}" class="clear-btn px-6 py-2.5 rounded-lg text-red-600 font-medium inline-flex items-center">
+            <i class="fas fa-times mr-2"></i>Clear
+          </a>
+        </div>
+      </div>
+
+      <!-- Active Filters Display -->
+      <div style="margin-top: 20px;" class="flex flex-wrap items-center">
+        {% if current_filters.search %}
+        <div style="font-size: 12px;" class="filter-tag border  rounded-lg px-1 py-1 text-primary border-primary">
+            Search: {{ current_filters.search }}
+            <button  style="font-size: 16px;" type="button" onclick="clearFilter('search')">&times;</button>
+        </div>
+        {% endif %}
+        {% if current_filters.category %}
+          <div style="font-size: 12px;" class="filter-tag border  rounded-lg px-1 py-1 text-primary border-primary">
+            Category: {{ current_filters.category|title }}
+            <button type="button" onclick="clearFilter('category')">&times;</button>
+          </div>
+        {% endif %}
+        {% if current_filters.class %}
+          <div style="font-size: 12px;" class="filter-tag border  rounded-lg px-1 py-1 text-primary border-primary">
+            Class: {{ current_filters.class|title }}
+            <button type="button" onclick="clearFilter('class')">&times;</button>
+          </div>
+        {% endif %}
+        {% if current_filters.subclass %}
+          <div  style="font-size: 12px;" class="filter-tag border  rounded-lg px-1 py-1 text-primary border-primary">
+            Subclass: {{ current_filters.subclass|title }}
+            <button type="button" onclick="clearFilter('subclass')">&times;</button>
+          </div>
+        {% endif %}
+        {% if current_filters.region %}
+          <div style="font-size: 12px;" class="filter-tag border  rounded-lg px-1 py-1 text-primary border-primary">
+            Region: {{ current_filters.region|title }}
+            <button type="button" onclick="clearFilter('region')">&times;</button>
+          </div>
+        {% endif %}
+        {% if current_filters.community %}
+          <div style="font-size: 12px;" class="filter-tag border  rounded-lg px-1 py-1 text-primary border-primary">
+            Community: {{ current_filters.community|title }}
+            <button type="button" onclick="clearFilter('community')">&times;</button>
+          </div>
+        {% endif %}
+        {% if current_filters.date_range %}
+          <div style="font-size: 12px;" class="filter-tag border  rounded-lg px-1 py-1 text-primary border-primary">
+            Date: {{ current_filters.date_range|title }}
+            <button type="button" onclick="clearFilter('date_range')">&times;</button>
+          </div>
+        {% endif %}
+      </div>
+    </form>
+  </div>
             <div class="flex-auto px-0 pt-0 pb-2">
               <div class="p-0 overflow-x-auto">
                 <table class="items-center w-full mb-0 align-top border-collapse dark:border-white/40 text-slate-500">
@@ -106,7 +327,7 @@
                           </div>
                         </div>
                       </td>
-                    
+
                       <td class="p-2 text-sm leading-normal text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
                         <span class="bg-gradient-to-tl from-emerald-500 to-teal-400 px-2.5 text-xs rounded-1.8 py-1.4 inline-block whitespace-nowrap text-center align-baseline font-bold uppercase leading-none text-white">
                           {{ dataset.category }}
@@ -127,7 +348,7 @@
                         <div class="flex flex-row items-center justify-center gap-4">
                           <a href="{% url 'data:noise_dataset_detail' dataset.id %}" class="text-sm mr-2 font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">View</a>
                           <a  href="{% url 'data:noise_dataset_edit' dataset.id %}" class="text-sm text-cyan-500 mr-2 font-semibold leading-tight dark:text-white dark:opacity-80">Edit</a>
-                          <button onclick="confirmDelete('{% url 'data:noise_dataset_delete' dataset.id %}', '{{ dataset.noise_id }}')" 
+                          <button onclick="confirmDelete('{% url 'data:noise_dataset_delete' dataset.id %}', '{{ dataset.noise_id }}')"
                                   class="text-sm text-red-600 font-semibold leading-tight dark:text-white dark:opacity-80 hover:text-red-800">
                             Delete
                           </button>
@@ -144,13 +365,77 @@
                     {% endfor %}
                   </tbody>
                 </table>
+
               </div>
+
+              <!-- Modern Pagination -->
+              {% if is_paginated %}
+              <div class="pagination-container  mx-2 mt-2">
+                {% if page_obj.has_previous %}
+                  <a href="?page=1{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}"
+                     class="pagination-btn">
+                    <i class="fas fa-angle-double-left"></i>
+                  </a>
+                  <a href="?page={{ page_obj.previous_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}"
+                     class="pagination-btn">
+                    <i class="fas fa-angle-left"></i>
+                  </a>
+                {% else %}
+                  <span class="pagination-btn disabled">
+                    <i class="fas fa-angle-double-left"></i>
+                  </span>
+                  <span class="pagination-btn disabled">
+                    <i class="fas fa-angle-left"></i>
+                  </span>
+                {% endif %}
+
+                {% for num in page_obj.paginator.page_range %}
+                  {% if num == page_obj.number %}
+                    <span class="pagination-btn active">{{ num }}</span>
+                  {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                    <a href="?page={{ num }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}"
+                       class="pagination-btn">{{ num }}</a>
+                  {% elif num == 1 or num == page_obj.paginator.num_pages %}
+                    <a href="?page={{ num }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}"
+                       class="pagination-btn">{{ num }}</a>
+                  {% elif num == 2 and page_obj.number > 5 %}
+                    <span class="pagination-dots">...</span>
+                  {% elif num == page_obj.paginator.num_pages|add:'-1' and page_obj.number < page_obj.paginator.num_pages|add:'-4' %}
+                    <span class="pagination-dots">...</span>
+                  {% endif %}
+                {% endfor %}
+
+                {% if page_obj.has_next %}
+                  <a href="?page={{ page_obj.next_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}"
+                     class="pagination-btn">
+                    <i class="fas fa-angle-right"></i>
+                  </a>
+                  <a href="?page={{ page_obj.paginator.num_pages }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}"
+                     class="pagination-btn">
+                    <i class="fas fa-angle-double-right"></i>
+                  </a>
+                {% else %}
+                  <span class="pagination-btn disabled">
+                    <i class="fas fa-angle-right"></i>
+                  </span>
+                  <span class="pagination-btn disabled">
+                    <i class="fas fa-angle-double-right"></i>
+                  </span>
+                {% endif %}
+
+                <div class="page-info">
+                  Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                </div>
+              </div>
+              {% endif %}
+
             </div>
           </div>
         </div>
       </div>
     </div>
   </div>
+
 <style>
   /* SweetAlert2 Custom Styling */
   .swal2-popup {
@@ -158,22 +443,22 @@
     border-radius: 0.5rem;
     font-family: inherit;
   }
-  
+
   .dark .swal2-popup {
     background: #1e293b;
     color: #ffffff;
   }
-  
+
   .swal2-title {
     color: inherit;
     font-size: 1.25rem;
     font-weight: 600;
   }
-  
+
   .swal2-html-container {
     color: inherit;
   }
-  
+
   .swal2-confirm {
     background-color: #ef4444 !important;
     color: white !important;
@@ -184,7 +469,7 @@
     margin-right: 0.5rem !important;
     margin-left: 0.5rem !important;
   }
-  
+
   .swal2-confirm:hover {
     background-color: #dc2626 !important;
   }
@@ -195,7 +480,7 @@
    gap: 5;
    padding-right: 10px;
   }
-  
+
   .swal2-cancel {
     background-color: #e5e7eb !important;
     color: #374151 !important;
@@ -204,11 +489,11 @@
     padding: 0.5rem 1rem !important;
     font-weight: 500 !important;
   }
-  
+
   .swal2-cancel:hover {
     background-color: #d1d5db !important;
   }
-  
+
   .swal2-icon.swal2-warning {
     color: #ef4444 !important;
     border-color: #ef4444 !important;
@@ -240,11 +525,11 @@
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = url;
-        
+
         // Add CSRF token
-        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || 
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value ||
                           document.cookie.match(/csrftoken=([^;]+)/)?.[1];
-        
+
         if (!csrfToken) {
           Swal.fire('Error', 'CSRF token missing. Please refresh the page.', 'error');
           return;
@@ -255,11 +540,27 @@
         csrfInput.name = 'csrfmiddlewaretoken';
         csrfInput.value = csrfToken;
         form.appendChild(csrfInput);
-        
+
         document.body.appendChild(form);
         form.submit();
       }
     });
   }
+
+  function clearFilter(filterName) {
+    const url = new URL(window.location);
+    url.searchParams.delete(filterName);
+    window.location.href = url.toString();
+  }
+
+  // Auto-submit form on filter change
+  document.addEventListener('DOMContentLoaded', function() {
+    const selects = document.querySelectorAll('.filter-select');
+    selects.forEach(select => {
+      select.addEventListener('change', function() {
+        this.form.submit();
+      });
+    });
+  });
 </script>
 {% endblock %}
