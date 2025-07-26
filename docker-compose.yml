@@ -6,12 +6,12 @@ services:
       - ./static:/code/static
       - ./media:/code/media
       - ./nginx/:/etc/nginx/conf.d
-
     ports:
       - '8000:80'
     deploy:
       resources:
         limits:
+          cpus: '0.5'
           memory: 512M
     depends_on:
       - web
@@ -27,14 +27,15 @@ services:
         order: start-first
       resources:
         limits:
-          cpus: '0.50'
-          memory: 512M
+          cpus: '1.0'
+          memory: 2G
     restart: always
     command: [ "uvicorn", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--log-level", "info", "datacollection.asgi:application" ]
-    volumes: &volumes
+    volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./static:/code/static
       - ./media:/code/media
+      - shared_uploads:/shared_uploads
     env_file: &env_file ./.env
     depends_on:
       - db
@@ -72,7 +73,10 @@ services:
         limits:
           cpus: '0.2'
           memory: 256M
-    volumes: *volumes
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./static:/code/static
+      - ./media:/code/media
     depends_on:
       - db
       - redis
@@ -86,18 +90,22 @@ services:
       replicas: 1
       resources:
         limits:
-          cpus: '0.4'
+          cpus: '0.5'
           memory: 1G
       update_config:
         parallelism: 2
         delay: 10s
         order: stop-first
-    volumes: *volumes
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./static:/code/static
+      - ./media:/code/media
+      - shared_uploads:/shared_uploads
     depends_on:
       - db
       - redis
 
-
 volumes:
   postgres_data:
   redis_data:
+  shared_uploads:

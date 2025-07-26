@@ -7,8 +7,10 @@ from scipy import signal as scipy_signal
 import soundfile as sf
 import audioread
 from typing import Optional
-
 from .models import NoiseDataset, AudioFeature, NoiseAnalysis, VisualizationPreset
+import uuid
+from datetime import datetime
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -453,3 +455,30 @@ def create_visualization_presets(instance):
     except Exception as e:
         logger.error(f"Error creating visualization presets: {e}", exc_info=True)
         raise
+
+
+def generate_dataset_name(noise_dataset):
+    parts = []
+
+    if noise_dataset.category:
+        parts.append(str(noise_dataset.category.name))
+
+    if noise_dataset.class_name:
+        parts.append(str(noise_dataset.class_name.name))
+
+    if noise_dataset.subclass:
+        parts.append(str(noise_dataset.subclass.name))
+
+    timestamp = timezone.now().strftime("%Y%m%d_%H%M")
+    parts.append(timestamp)
+
+    return "_".join(parts) if parts else f"NoiseDataset_{timestamp}"
+
+
+def generate_noise_id(user):
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    random_chars = uuid.uuid4().hex[:3].upper()
+    speaker_id = (
+        user.speaker_id if hasattr(user, "speaker_id") and user.speaker_id else "UNK"
+    )
+    return f"NSE-{speaker_id}-{timestamp}-{random_chars}"

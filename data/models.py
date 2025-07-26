@@ -11,6 +11,8 @@ from core.models import (
 )
 from authentication.models import CustomUser
 from django.contrib.postgres.fields import ArrayField
+from django.core.exceptions import ValidationError
+from dateutil.parser import parse
 
 
 class NoiseDataset(models.Model):
@@ -235,3 +237,51 @@ class VisualizationPreset(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.chart_type})"
+
+
+class BulkAudioUpload(models.Model):
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("processing", "Processing"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+        ("completed_with_errors", "Completed With Errors"),
+    ]
+
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    status = models.CharField(max_length=255, choices=STATUS_CHOICES, default="pending")
+    metadata = models.JSONField(null=True)
+    total_files = models.IntegerField(default=0)
+    processed_files = models.IntegerField(default=0)
+    failed_files = models.IntegerField(default=0)
+
+    def __str__(self):
+        return f"Bulk Upload {self.id} by {self.user.username}"
+
+    def clean_metadata(self):
+        required_fields = [
+            "region_id",
+            "category_id",
+            "time_of_day_id",
+            "community_id",
+            "class_name_id",
+            "recording_date",
+            "recording_device",
+        ]
+
+        if not self.metadata:
+            raise ValidationError("Metadata cannot be empty")
+
+        for field in required_fields:
+            if field not in self.metadata:
+                raise ValidationError(f"Missing required metadata field: {field}")
+
+        # Validate recording_date format using dateutil
+        try:
+            parse(self.metadata["recording_date"])
+        except (ValueError, TypeError, KeyError):
+            raise ValidationError(
+                "Invalid recording_date format. Use ISO format (YYYY-MM-DD)"
+            )

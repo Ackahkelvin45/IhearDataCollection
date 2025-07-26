@@ -26,4 +26,10 @@ urlpatterns = [
         views.NoiseDatasetDeleteView.as_view(),
         name="noise_dataset_delete",
     ),
+    path("bulk-upload/", views.bulk_upload_view, name="bulk_upload"),
+    path(
+        "api/bulk-upload-progress/<int:bulk_upload_id>/",
+        views.bulk_upload_progress,
+        name="bulk_upload_progress",
+    ),
 ]

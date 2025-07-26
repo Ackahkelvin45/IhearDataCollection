@@ -48,7 +48,7 @@
       {% endfor %}
     </div>
 
- 
+
 
 
   {% endif %}
@@ -59,12 +59,12 @@
             </div>
           </div>
 
-  
-          
+
+
           <div class="flex-auto p-6">
             <form id="noise-form" method="post" enctype="multipart/form-data">
               {% csrf_token %}
-              
+
               <!-- Basic Information -->
               <p class="leading-normal uppercase dark:text-white dark:opacity-60 text-sm">Basic Information</p>
               <div class="flex flex-wrap -mx-3">
@@ -93,7 +93,7 @@
                     {% endif %}
                   </div>
                 </div>
-                
+
                 <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0">
                   <div class="mb-4">
                     <label for="id_category" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.category.label }}</label>
@@ -106,7 +106,7 @@
                     {% endif %}
                   </div>
                 </div>
-                
+
                 <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0">
                   <div class="mb-4">
                     <label for="id_class_name" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.class_name.label }}</label>
@@ -134,9 +134,9 @@
     </div>
 </div>
               </div>
-              
+
               <hr class="h-px mx-0 my-4 bg-transparent border-0 opacity-25 bg-gradient-to-r from-transparent via-black/40 to-transparent dark:bg-gradient-to-r dark:from-transparent dark:via-white dark:to-transparent " />
-              
+
               <!-- Location Information -->
               <p class="leading-normal uppercase dark:text-white dark:opacity-60 text-sm">Location Information</p>
               <div class="flex flex-wrap -mx-3">
@@ -152,7 +152,7 @@
                     {% endif %}
                   </div>
                 </div>
-                
+
                 <div class="w-full max-w-full px-3 shrink-0 md:w-4/12 md:flex-0">
                   <div class="mb-4">
                     <label for="id_community" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.community.label }}</label>
@@ -165,11 +165,11 @@
                     {% endif %}
                   </div>
                 </div>
-                
-              
-                
-              
-                
+
+
+
+
+
                 <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0">
                   <div class="mb-4">
                     <label for="id_time_of_day" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.time_of_day.label }}</label>
@@ -183,9 +183,9 @@
                   </div>
                 </div>
               </div>
-              
+
               <hr class="h-px mx-0 my-4 bg-transparent border-0 opacity-25 bg-gradient-to-r from-transparent via-black/40 to-transparent dark:bg-gradient-to-r dark:from-transparent dark:via-white dark:to-transparent " />
-              
+
               <!-- Recording Information -->
               <p class="leading-normal uppercase dark:text-white dark:opacity-60 text-sm">Recording Information</p>
               <div class="flex flex-wrap -mx-3">
@@ -201,7 +201,7 @@
                     {% endif %}
                   </div>
                 </div>
-                
+
                 <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0">
                   <div class="mb-4">
                     <label for="id_recording_date" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.recording_date.label }}</label>
@@ -214,7 +214,7 @@
                     {% endif %}
                   </div>
                 </div>
-                
+
                 <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0">
                   <div class="mb-4">
                     <label for="id_recording_device" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.recording_device.label }}</label>
@@ -227,7 +227,7 @@
                     {% endif %}
                   </div>
                 </div>
-                
+
                 <div class="w-full max-w-full px-3 shrink-0 md:w-full md:flex-0">
                   <div class="mb-4">
                     <label for="id_microphone_type" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.microphone_type.label }} <span class="text-slate-400">(Optional)</span></label>
@@ -241,14 +241,14 @@
                   </div>
                 </div>
               </div>
-              
+
               <!-- Form Errors -->
               {% if form.non_field_errors %}
                 <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
                   {{ form.non_field_errors }}
                 </div>
               {% endif %}
-              
+
             </form>
           </div>
         </div>
@@ -270,7 +270,7 @@
         const minutes = String(now.getMinutes()).padStart(2, '0');
         recordingDateField.value = `${year}-${month}-${day}T${hours}:${minutes}`;
       }
-      
+
  const audioField = document.getElementById('id_audio');
 if (audioField) {
   audioField.addEventListener('change', function(e) {
@@ -285,7 +285,7 @@ if (audioField) {
   });
 }
 
-      
+
     });
 
 
@@ -298,13 +298,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const categorySelect = document.getElementById('id_category');
     const classSelect = document.getElementById('id_class_name');
     const subclassSelect = document.getElementById('id_subclass');
-    
+
     // Region-Community relationship
     if (regionSelect && communitySelect) {
         regionSelect.addEventListener('change', function() {
             const regionId = this.value;
             communitySelect.innerHTML = '<option value="">Select Community</option>';
-            
+
             if (regionId) {
                 fetch(`/load-communities/?region_id=${regionId}`)
                     .then(response => response.json())
@@ -320,14 +320,14 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-    
+
     // Category-Class relationship
     if (categorySelect && classSelect) {
         categorySelect.addEventListener('change', function() {
             const categoryId = this.value;
             classSelect.innerHTML = '<option value="">Select Class</option>';
             if (subclassSelect) subclassSelect.innerHTML = '<option value="">Select Sub Class</option>';
-            
+
             if (categoryId) {
                 fetch(`/load-classes/?category_id=${categoryId}`)
                     .then(response => response.json())
@@ -343,13 +343,13 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-    
+
     // Class-Subclass relationship
     if (classSelect && subclassSelect) {
         classSelect.addEventListener('change', function() {
             const classId = this.value;
             subclassSelect.innerHTML = '<option value="">Select Sub Class</option>';
-            
+
             if (classId) {
                 fetch(`/load-subclasses/?class_id=${classId}`)
                     .then(response => response.json())
@@ -365,7 +365,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-    
+
     // Trigger change events for pre-selected values (when editing)
     if (regionSelect && regionSelect.value) {
         regionSelect.dispatchEvent(new Event('change'));
@@ -380,7 +380,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 100);
     }
 });
-  </script>
+
+
+ </script>
 
 
   <script>
@@ -390,13 +392,13 @@ document.addEventListener('DOMContentLoaded', function() {
           e.target.closest('.alert').remove();
         });
       });
-      
+
       setTimeout(() => {
         document.querySelectorAll('.alert').forEach(alert => {
           alert.remove();
         });
       }, 7000);
-      
+
     });
   </script>
 

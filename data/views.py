@@ -1,6 +1,5 @@
 from django.shortcuts import render, redirect
-from .forms import NoiseDatasetForm
-import uuid
+from .forms import NoiseDatasetForm, BulkAudioUploadForm
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from core.models import Class, SubClass, Community, Category, Region
@@ -16,9 +15,16 @@ from django.views.generic import DeleteView, ListView
 from django.urls import reverse_lazy
 from django.contrib import messages
 from .models import NoiseDataset
-from datetime import datetime, timedelta
+from datetime import timedelta
 from django.db.models import Q
 from .models import AudioFeature
+from .models import BulkAudioUpload
+from .tasks import process_bulk_upload
+import logging
+import os
+from .utils import generate_dataset_name, generate_noise_id
+
+logger = logging.getLogger(__name__)
 
 
 class RenamedFile:
@@ -141,7 +147,7 @@ class NoiseDatasetListView(ListView):
     template_name = "data/datasetlist.html"
     context_object_name = "datasets"
     ordering = ["-created_at"]
-    paginate_by = 1  # More practical default
+    paginate_by = 200  # More practical default
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -300,33 +306,113 @@ def noise_dataset_create(request):
     return render(request, "data/AddNewData.html", context)
 
 
-def generate_dataset_name(noise_dataset):
-    parts = []
+@login_required
+def bulk_upload_view(request):
+    if request.method == "POST":
+        form = BulkAudioUploadForm(request.POST, request.FILES)
+        if form.is_valid():
+            try:
+                # Prepare metadata
+                metadata = {
+                    "description": form.cleaned_data["description"],
+                    "region_id": form.cleaned_data["region"].id,
+                    "category_id": form.cleaned_data["category"].id,
+                    "time_of_day_id": form.cleaned_data["time_of_day"].id,
+                    "community_id": form.cleaned_data["community"].id,
+                    "class_name_id": form.cleaned_data["class_name"].id,
+                    "subclass_id": (
+                        form.cleaned_data["subclass"].id
+                        if form.cleaned_data["subclass"]
+                        else None
+                    ),
+                    "microphone_type_id": (
+                        form.cleaned_data["microphone_type"].id
+                        if form.cleaned_data["microphone_type"]
+                        else None
+                    ),
+                    "recording_date": form.cleaned_data["recording_date"].isoformat(),
+                    "recording_device": form.cleaned_data["recording_device"],
+                }
 
-    if noise_dataset.category:
-        parts.append(str(noise_dataset.category.name))
+                # Create bulk upload record
+                bulk_upload = BulkAudioUpload.objects.create(
+                    user=request.user,
+                    metadata=metadata,
+                    total_files=len(request.FILES.getlist("audio_files")),
+                )
 
-    # Add class name if available
-    if noise_dataset.class_name:
-        parts.append(str(noise_dataset.class_name.name))
+                # Create shared uploads directory if it doesn't exist
+                shared_dir = "/shared_uploads"
+                if not os.path.exists(shared_dir):
+                    os.makedirs(shared_dir, exist_ok=True)
 
-    if noise_dataset.subclass:
-        parts.append(str(noise_dataset.subclass.name))
+                # Save files to shared location
+                file_paths = []
+                for file in request.FILES.getlist("audio_files"):
+                    try:
+                        # Sanitize filename
+                        file_name = file.name.replace(" ", "_")
+                        temp_path = (
+                            f"{shared_dir}/bulk_upload_{bulk_upload.id}_{file_name}"
+                        )
 
-    # Add timestamp
-    timestamp = timezone.now().strftime("%Y%m%d_%H%M")
-    parts.append(timestamp)
+                        with open(temp_path, "wb+") as destination:
+                            for chunk in file.chunks():
+                                destination.write(chunk)
 
-    return "_".join(parts) if parts else f"NoiseDataset_{timestamp}"
+                        if not os.path.exists(temp_path):
+                            raise IOError(f"Failed to save temporary file: {temp_path}")
+
+                        file_paths.append(temp_path)
+                    except Exception as e:
+                        logger.error(f"Failed to save file {file.name}: {str(e)}")
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
+                        raise
+
+                # Start async processing with user ID
+                process_bulk_upload.delay(
+                    bulk_upload.id,
+                    file_paths,
+                    request.user.id,  # Pass user ID instead of user object
+                )
+
+                return JsonResponse(
+                    {
+                        "status": "success",
+                        "bulk_upload_id": bulk_upload.id,
+                        "message": "Bulk upload started successfully",
+                    }
+                )
+
+            except Exception as e:
+                logger.error(
+                    f"Bulk upload initialization failed: {str(e)}", exc_info=True
+                )
+                return JsonResponse({"status": "error", "error": str(e)}, status=500)
+        else:
+            return JsonResponse({"status": "error", "errors": form.errors}, status=400)
+
+    else:
+        form = BulkAudioUploadForm()
+
+    return render(request, "data/bulk_upload.html", {"form": form})
 
 
-def generate_noise_id(user):
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    random_chars = uuid.uuid4().hex[:3].upper()
-
-    speaker_id = user.speaker_id if user.speaker_id else "UNK"
-
-    return f"NSE-{speaker_id}-{timestamp}-{random_chars}"
+@login_required
+def bulk_upload_progress(request, bulk_upload_id):
+    try:
+        bulk_upload = BulkAudioUpload.objects.get(id=bulk_upload_id, user=request.user)
+        return JsonResponse(
+            {
+                "status": bulk_upload.status,
+                "processed": bulk_upload.processed_files,
+                "total": bulk_upload.total_files,
+                "failed": bulk_upload.failed_files,
+            }
+        )
+    except BulkAudioUpload.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
 
 
 @login_required

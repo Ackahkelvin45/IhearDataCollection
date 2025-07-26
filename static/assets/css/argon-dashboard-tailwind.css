@@ -43,15 +43,7 @@
 }
 
 
-    .bg-primary { background-color: #005450; }
-      .bg-secondary { background-color: #00d553; }
-      .text-primary { color: #005450; }
-      .text-secondary { color: #00d553; }
-      .border-primary { border-color: #005450; }
-      .border-secondary { border-color: #00d553; }
-      .focus\:border-primary:focus { border-color: #005450; }
-      .focus\:border-secondary:focus { border-color: #00d553; }
-      .bg-gradient-primary { background: linear-gradient(135deg, #005450 0%, #00d553 100%); }
+
 
 /*
 1. Use a consistent sensible line-height in all browsers.
@@ -149,6 +141,16 @@ strong {
 1. Use the user's configured `mono` font family by default.
 2. Correct the odd `em` font sizing in all browsers.
 */
+
+.bg-primary { background-color: #005450; }
+.bg-secondary { background-color: #00d553; }
+.text-primary { color: #005450; }
+.text-secondary { color: #00d553; }
+.border-primary { border-color: #005450; }
+.border-secondary { border-color: #00d553; }
+.focus\:border-primary:focus { border-color: #005450; }
+.focus\:border-secondary:focus { border-color: #00d553; }
+ .bg-gradient-primary { background: linear-gradient(135deg, #005450 0%, #00d553 100%); }
 
 code,
 kbd,
