@@ -73,9 +73,7 @@ INSTALLED_APPS = [
     "core",
     "authentication",
     "datacollection",
-  "django_celery_results",
-
-
+    "django_celery_results",
 ]
 TAILWIND_APP_NAME = "theme"
 
@@ -88,6 +86,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "nyc1-88878471021e.zeddy-dev.onstagingocean.app",
+    "api.ipify.org",
 ]
 
 
@@ -128,7 +128,6 @@ if USE_SQLITE:
             "PASSWORD": "kelvin",
             "HOST": "localhost",
             "PORT": 5432,
-  
         }
     }
 else:
@@ -237,6 +236,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://ihearandsee-at-rail.com",
     "http://ihearandsee-at-rail.com",
     "https://www.ihearandsee-at-rail.com",
+    "nyc1-88878471021e.zeddy-dev.onstagingocean.app",
 ]
 
 
