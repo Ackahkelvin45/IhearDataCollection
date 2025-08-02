@@ -46,6 +46,8 @@ ALLOWED_HOSTS = [
     "127.0.0.1",
     "www.ihearandsee-at-rail.com",
     "ihearandsee-at-rail.com",
+    "nyc1-88878471021e.zeddy-dev.onstagingocean.app",
+    "api.ipify.org",
 ]
 
 
@@ -86,8 +88,6 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "nyc1-88878471021e.zeddy-dev.onstagingocean.app",
-    "api.ipify.org",
 ]
 
 
