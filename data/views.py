@@ -702,3 +702,4 @@ def create_frequency_features_plot(audio_features):
         showlegend=False,  # Since we're showing labels on markers
     )
     return fig
+

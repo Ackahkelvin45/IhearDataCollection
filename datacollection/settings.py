@@ -72,6 +72,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "data",
+    "data_insights",
     "core",
     "authentication",
     "datacollection",
@@ -123,9 +124,9 @@ if USE_SQLITE:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
-            "NAME": "datacollection",
-            "USER": "kelvin",
-            "PASSWORD": "kelvin",
+            "NAME": "ihear",
+            "USER": "Chris",
+            "PASSWORD": "chris",
             "HOST": "localhost",
             "PORT": 5432,
         }
