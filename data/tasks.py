@@ -10,6 +10,9 @@ from django.db import transaction
 from datetime import time
 from .utils import generate_dataset_name, generate_noise_id
 from django.contrib.auth import get_user_model
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +59,11 @@ def process_bulk_upload(self, bulk_upload_id, file_paths, user_id):
 
         for i, file_path in enumerate(file_paths):
             try:
+                # Check for cancellation
+                bulk_upload.refresh_from_db()
+                if getattr(bulk_upload, "status", "").lower() == "cancelled":
+                    logger.info(f"Bulk upload {bulk_upload_id} cancelled. Stopping processing.")
+                    break
                 # Validate file exists and is accessible
                 if not os.path.exists(file_path):
                     raise FileNotFoundError(f"File not found at path: {file_path}")
@@ -64,6 +72,15 @@ def process_bulk_upload(self, bulk_upload_id, file_paths, user_id):
                     raise PermissionError(f"No read permission for file: {file_path}")
 
                 # Create NoiseDataset instance
+                # Parse recording_date to datetime
+                recording_dt = metadata["recording_date"]
+                if isinstance(recording_dt, str):
+                    recording_dt_parsed = parse_datetime(recording_dt)
+                    if recording_dt_parsed and timezone.is_naive(recording_dt_parsed):
+                        recording_dt_parsed = timezone.make_aware(recording_dt_parsed)
+                else:
+                    recording_dt_parsed = recording_dt
+
                 noise_dataset = NoiseDataset(
                     collector=user,
                     description=metadata.get("description"),
@@ -74,7 +91,7 @@ def process_bulk_upload(self, bulk_upload_id, file_paths, user_id):
                     class_name_id=metadata["class_name_id"],
                     subclass_id=metadata.get("subclass_id"),
                     microphone_type_id=metadata.get("microphone_type_id"),
-                    recording_date=metadata["recording_date"],
+                    recording_date=recording_dt_parsed,
                     recording_device=metadata["recording_device"],
                 )
 
@@ -85,10 +102,13 @@ def process_bulk_upload(self, bulk_upload_id, file_paths, user_id):
                 # Validate model before saving (excluding audio field)
                 noise_dataset.full_clean(exclude=["audio"])
 
-                # Save the file with proper naming
-                file_name = os.path.basename(file_path)
+                # Save the file with proper naming: rename to noise_id + original ext
+                original_name = os.path.basename(file_path)
                 with open(file_path, "rb") as f:
-                    noise_dataset.audio.save(file_name, File(f))
+                    # Derive extension
+                    ext = os.path.splitext(original_name)[1] or ""
+                    final_name = f"{noise_dataset.noise_id}{ext}"
+                    noise_dataset.audio.save(final_name, File(f))
 
                 noise_dataset.save()
 
@@ -123,12 +143,23 @@ def process_bulk_upload(self, bulk_upload_id, file_paths, user_id):
                     logger.error(f"Failed to remove temp file {file_path}: {str(e)}")
 
         # Update final status
-        if bulk_upload.failed_files == 0:
-            bulk_upload.status = "completed"
-        elif bulk_upload.processed_files > 0:
-            bulk_upload.status = "completed_with_errors"
+        if bulk_upload.status == "cancelled":
+            # Clean up any remaining files for the user
+            try:
+                upload_dir = os.path.join(settings.SHARED_UPLOADS_DIR, f"user_{user.id}")
+                for p in os.listdir(upload_dir):
+                    full = os.path.join(upload_dir, p)
+                    if os.path.isfile(full):
+                        os.remove(full)
+            except Exception:
+                pass
         else:
-            bulk_upload.status = "failed"
+            if bulk_upload.failed_files == 0:
+                bulk_upload.status = "completed"
+            elif bulk_upload.processed_files > 0:
+                bulk_upload.status = "completed_with_errors"
+            else:
+                bulk_upload.status = "failed"
 
         bulk_upload.save()
 
@@ -143,8 +174,11 @@ def process_bulk_upload(self, bulk_upload_id, file_paths, user_id):
             f"Critical error processing bulk upload {bulk_upload_id}: {str(e)}",
             exc_info=True,
         )
-        bulk_upload.status = "failed"
-        bulk_upload.save()
+        try:
+            bulk_upload.status = "failed"
+            bulk_upload.save()
+        except Exception:
+            pass
         return {
             "bulk_upload_id": bulk_upload_id,
             "processed": bulk_upload.processed_files,
@@ -155,7 +189,7 @@ def process_bulk_upload(self, bulk_upload_id, file_paths, user_id):
 
 @shared_task
 def cleanup_shared_uploads(days_old=1):
-    shared_dir = "/shared_uploads"
+    shared_dir = getattr(settings, "SHARED_UPLOADS_DIR", "/shared_uploads")
     now = time.time()
     cutoff = now - (days_old * 86400)
 

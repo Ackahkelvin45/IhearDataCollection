@@ -28,8 +28,18 @@ urlpatterns = [
     ),
     path("bulk-upload/", views.bulk_upload_view, name="bulk_upload"),
     path(
+        "api/upload-chunk/",
+        views.upload_chunk,
+        name="upload_chunk",
+    ),
+    path(
         "api/bulk-upload-progress/<int:bulk_upload_id>/",
         views.bulk_upload_progress,
         name="bulk_upload_progress",
+    ),
+    path(
+        "api/cancel-upload/<int:bulk_upload_id>/",
+        views.cancel_upload,
+        name="cancel_upload",
     ),
 ]

@@ -1,0 +1,185 @@
+{% extends 'datacollection/layout.html' %}
+{% load static %}
+
+{% block content %}
+<div class="relative w-full mx-auto">
+  <!-- Breadcrumb -->
+  <nav class="mb-6">
+    <ol class="flex flex-wrap pt-1 mr-12 bg-transparent rounded-lg sm:mr-16">
+      <li class="text-sm leading-normal">
+        <a class="text-white opacity-50" href="javascript:;">Home</a>
+      </li>
+      <li class="text-sm pl-2 capitalize leading-normal text-white before:float-left before:pr-2 before:text-white before:content-['/']">
+        <a href="javascript:;" class="text-white">Approvals</a>
+      </li>
+      <li class="text-sm pl-2 capitalize leading-normal text-white before:float-left before:pr-2 before:text-white before:content-['/']" aria-current="page">
+        Review Audio
+      </li>
+    </ol>
+  </nav>
+
+  <!-- Main Header Card -->
+  <div class="relative flex flex-col flex-auto min-w-0 p-4 mx-6 overflow-hidden break-words bg-white border-0 dark:bg-slate-850 dark:shadow-dark-xl shadow-3xl rounded-2xl bg-clip-border">
+    <div class="flex flex-wrap -mx-3 items-center">
+      <div class="flex-none w-auto max-w-full px-3">
+        <div class="relative inline-flex items-center justify-center text-white transition-all duration-200 ease-in-out text-base h-19 w-19 rounded-xl bg-primary">
+          <i class="ni ni-sound-wave text-2xl text-white"></i>
+        </div>
+      </div>
+      <div class="flex-auto max-w-full px-3 my-auto">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h5 class="mb-1 dark:text-white">Audio Review</h5>
+            <p class="mb-0 font-semibold leading-normal dark:text-white/60 text-sm">Dataset: <span class="text-primary">{{ object.name|default:'Sample name' }}</span> • Noise ID: {{ object.noise_id|default:'NS-XXXX' }}</p>
+          </div>
+          <div class="mt-4 sm:mt-0 flex gap-2">
+            <button id="btnApprove" class="px-4 py-2 rounded-lg text-white bg-secondary hover:opacity-90 shadow-sm">
+              <i class="fa-solid fa-check mr-2"></i>Approve
+            </button>
+            <button id="btnReject" class="px-4 py-2 rounded-lg  bg-red-600 hover:bg-red-700 shadow-sm">
+              <i class="fa-solid fa-xmark mr-2"></i>Reject
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div class="w-full p-6 mx-auto">
+    <div class="flex flex-wrap -mx-3">
+      <!-- Left Column -->
+      <div class="w-full max-w-full px-3 shrink-0 md:w-8/12 md:flex-0">
+        <!-- Description -->
+        <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border mb-6">
+          <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-0">
+            <div class="flex items-center justify-between">
+              <p class="mb-0 dark:text-white/80">Description</p>
+              <span class="text-xs text-slate-500">Submitted {{ object.created_at|timesince|default:'3 days ago' }} ago</span>
+            </div>
+          </div>
+          <div class="flex-auto p-6">
+            <p class="text-gray-700 dark:text-gray-300">{{ object.description|default:'No description provided for this audio. Please verify the content and quality before approval.' }}</p>
+          </div>
+        </div>
+
+        <!-- Remarks History -->
+        <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+          <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-0">
+            <div class="flex items-center">
+              <p class="mb-0 dark:text-white/80">Remarks History</p>
+            </div>
+          </div>
+          <div class="flex-auto p-6">
+            <ul class="space-y-3 text-sm text-slate-600">
+              <li class="p-3 rounded-lg bg-slate-50">No remarks yet. Decisions and comments will appear here.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column -->
+      <div class="w-full max-w-full px-3 mt-6 shrink-0 md:w-4/12 md:flex-0 md:mt-0">
+        <!-- Audio Player -->
+        <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border mb-6">
+          <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-0">
+            <div class="flex items-center justify-between">
+              <p class="mb-0 dark:text-white/80">Audio Recording</p>
+              {% if object.audio %}
+              <a href="{{ object.audio.url }}" class="text-primary text-xs"><i class="fa fa-download mr-1"></i>Download</a>
+              {% else %}
+              <span class="text-slate-400 text-xs"><i class="fa fa-download mr-1"></i>No audio</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="flex-auto p-6">
+            <audio controls class="w-full rounded-lg" id="approvalAudio">
+              {% if object.audio %}
+              <source src="{{ object.audio.url }}" type="audio/mpeg">
+              {% else %}
+              <source src="{% static 'assets/img/placeholder.mp3' %}" type="audio/mpeg">
+              {% endif %}
+              Your browser does not support the audio element.
+            </audio>
+            <div class="grid grid-cols-3 gap-3 mt-4 text-sm text-slate-600">
+              <div class="p-3 rounded-lg bg-slate-50"><span class="block text-xs text-slate-500">Region</span>{{ object.region.name|default:'-' }}</div>
+              <div class="p-3 rounded-lg bg-slate-50"><span class="block text-xs text-slate-500">Category</span>{{ object.category.name|default:'-' }}</div>
+              <div class="p-3 rounded-lg bg-slate-50"><span class="block text-xs text-slate-500">Recorded</span>{{ object.recording_date|date:'M d, Y'|default:'-' }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Decision Panel -->
+        <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+          <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-0">
+            <div class="flex items-center">
+              <p class="mb-0 dark:text-white/80">Decision</p>
+            </div>
+          </div>
+          <div class="flex-auto p-6">
+            <div class="space-y-3">
+              <button id="sideApprove" class="w-full px-4 py-2 rounded-lg text-white bg-secondary hover:opacity-90">
+                <i class="fa-solid fa-check mr-2"></i>Approve
+              </button>
+              <button id="sideReject" class="w-full px-4 py-2 rounded-lg text-white bg-red-600 hover:bg-red-700">
+                <i class="fa-solid fa-xmark mr-2"></i>Reject
+              </button>
+            </div>
+            <p class="text-xs text-slate-500 mt-3">Approving will mark this audio as ready for use. Rejecting requires a remark.</p>
+
+            <!-- Inline remarks (hidden until Reject is clicked) -->
+            <div id="inlineRemarks" class="hidden mt-4 border rounded-xl p-4 bg-slate-50">
+              <div class="mb-3">
+                <label class="block text-sm text-slate-600 mb-1">Reason</label>
+                <select class="w-full border rounded-md px-3 py-2">
+                  <option value="quality">Poor audio quality</option>
+                  <option value="content">Irrelevant content</option>
+                  <option value="metadata">Incorrect metadata</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="block text-sm text-slate-600 mb-1">Remarks</label>
+                <textarea id="inlineTextarea" rows="4" class="w-full border rounded-md px-3 py-2" placeholder="Provide reasons for rejection..."></textarea>
+              </div>
+              <div class="flex justify-end gap-2">
+                <button type="button" id="inlineCancel" class="px-4 py-2 rounded-md bg-slate-100">Cancel</button>
+                <button type="button" id="inlineSubmit" class="px-4 py-2 rounded-md text-white bg-primary">Submit</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Removed modal approach; using inline remarks instead -->
+
+<script>
+  // Inline remarks toggling
+  const inlineRemarks = document.getElementById('inlineRemarks');
+  const openButtons = [document.getElementById('btnReject'), document.getElementById('sideReject')].filter(Boolean);
+  openButtons.forEach(btn => btn && btn.addEventListener('click', () => {
+    inlineRemarks.classList.remove('hidden');
+    inlineRemarks.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }));
+
+  document.getElementById('inlineCancel')?.addEventListener('click', () => inlineRemarks.classList.add('hidden'));
+
+  // Approve buttons placeholder
+  const approveButtons = [document.getElementById('btnApprove'), document.getElementById('sideApprove')];
+  approveButtons.forEach(btn => btn && btn.addEventListener('click', () => {
+    // Placeholder feedback
+    if (window.Swal) { Swal.fire({ icon: 'success', title: 'Approved', text: 'This audio has been approved (UI only).' }); }
+  }));
+
+  // Submit inline remarks placeholder
+  document.getElementById('inlineSubmit')?.addEventListener('click', () => {
+    const text = document.getElementById('inlineTextarea')?.value || '';
+    if (window.Swal) { Swal.fire({ icon: 'info', title: 'Submitted', text: text ? `Remarks: ${text}` : 'Remarks submitted (UI only).' }); }
+    inlineRemarks.classList.add('hidden');
+  });
+</script>
+{% endblock %}
+

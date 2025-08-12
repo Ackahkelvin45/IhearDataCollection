@@ -256,39 +256,119 @@ document.addEventListener('DOMContentLoaded', function() {
 
   let bulkUploadId = null;
   let progressInterval = null;
+  const concurrency = 6; // tune based on server capacity
+  const chunkSize = 5 * 1024 * 1024; // 5MB chunks
+  const csrfToken = document.querySelector('input[name=csrfmiddlewaretoken]')?.value;
 
   form.addEventListener('submit', function(e) {
     e.preventDefault();
-
-    const formData = new FormData(form);
 
     // Show progress section
     progressSection.classList.remove('hidden');
     progressStatus.textContent = 'Uploading...';
 
-    fetch('{% url "data:bulk_upload" %}', {
-      method: 'POST',
-      body: formData,
-      headers: {
-        'X-Requested-With': 'XMLHttpRequest',
-      },
-    })
-    .then(response => response.json())
-    .then(data => {
-      if (data.status === 'success') {
-        bulkUploadId = data.bulk_upload_id;
-        progressStatus.textContent = 'Processing...';
+    const filesInput = document.getElementById('id_audio_files');
+    const files = filesInput && filesInput.files ? Array.from(filesInput.files) : [];
 
-        // Start polling for progress
-        progressInterval = setInterval(checkProgress, 2000);
-      } else {
-        alert('Error: ' + data.message);
+    // Kick off chunked uploads first (if any files were selected)
+    const startProcessing = () => {
+      const meta = new FormData(form);
+      // Remove file list from form submission; we already uploaded chunks to server storage
+      if (meta.has('audio_files')) meta.delete('audio_files');
+
+      fetch('{% url "data:bulk_upload" %}', {
+        method: 'POST',
+        body: meta,
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === 'success') {
+          bulkUploadId = data.bulk_upload_id;
+          progressStatus.textContent = 'Processing...';
+          progressInterval = setInterval(checkProgress, 2000);
+        } else {
+          alert('Error: ' + (data.message || data.error || 'Unknown error'));
+        }
+      })
+      .catch(err => {
+        console.error('Error starting processing:', err);
+        alert('Failed to start processing');
+      });
+    };
+
+    if (files.length === 0) {
+      // No direct files selected; assume files were uploaded previously to shared dir
+      startProcessing();
+      return;
+    }
+
+    // Concurrency control
+    let inFlight = 0;
+    let index = 0;
+    let uploadedCount = 0;
+    let failedCountLocal = 0;
+
+    const next = () => {
+      while (inFlight < concurrency && index < files.length) {
+        uploadOne(files[index++]);
       }
-    })
-    .catch(error => {
-      console.error('Error:', error);
-      alert('An error occurred during upload');
-    });
+      if (uploadedCount + failedCountLocal === files.length) {
+        // All uploads finished
+        startProcessing();
+      }
+    };
+
+    const uploadOne = async (file) => {
+      inFlight++;
+      try {
+        await uploadFileInChunks(file);
+        uploadedCount++;
+      } catch (e) {
+        console.error('Failed uploading', file.name, e);
+        failedCountLocal++;
+      } finally {
+        inFlight--;
+        const total = files.length;
+        const processed = uploadedCount + failedCountLocal;
+        const pct = Math.round((processed / total) * 100);
+        progressCount.textContent = `${processed}/${total}`;
+        progressBar.style.width = `${pct}%`;
+        if (failedCountLocal > 0) {
+          failedFiles.classList.remove('hidden');
+          failedCount.textContent = failedCountLocal;
+        }
+        next();
+      }
+    };
+
+    const uploadFileInChunks = async (file) => {
+      const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize));
+      const fileUid = `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`;
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * chunkSize;
+        const end = Math.min(start + chunkSize, file.size);
+        const chunkBlob = file.slice(start, end);
+        const fd = new FormData();
+        fd.append('file', chunkBlob, file.name);
+        fd.append('chunkNumber', i);
+        fd.append('totalChunks', totalChunks);
+        fd.append('fileName', file.name);
+        fd.append('fileUid', fileUid);
+        if (csrfToken) fd.append('csrfmiddlewaretoken', csrfToken);
+        await fetch('{% url "data:upload_chunk" %}', {
+          method: 'POST',
+          body: fd,
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        }).then(r => {
+          if (!r.ok) throw new Error(`Chunk ${i+1}/${totalChunks} failed`);
+          return r.json();
+        });
+      }
+    };
+
+    // Start workers
+    next();
   });
 
   function checkProgress() {

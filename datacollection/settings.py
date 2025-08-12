@@ -74,6 +74,8 @@ INSTALLED_APPS = [
     "data",
     "core",
     "authentication",
+    "data_insights",
+    "approval",
     "datacollection",
     "django_celery_results",
 ]
@@ -370,3 +372,10 @@ if REDIS_USE_TLS:
 CELERY_TASK_ALWAYS_EAGER = as_bool(
     os.getenv("CELERY_TASK_ALWAYS_EAGER", default="False")
 )
+
+# Directory for assembling large/chunked uploads before background processing
+# Can be overridden via env var SHARED_UPLOADS_DIR
+SHARED_UPLOADS_DIR = os.getenv(
+    "SHARED_UPLOADS_DIR", os.path.join(BASE_DIR, "shared_uploads")
+)
+
