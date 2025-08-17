@@ -241,61 +241,75 @@ class VisualizationPreset(models.Model):
 
 class BulkReprocessingTask(models.Model):
     """Tracks progress of bulk audio analysis reprocessing"""
-    
+
     STATUS_CHOICES = [
-        ('pending', 'Pending'),
-        ('processing', 'Processing'),
-        ('completed', 'Completed'),
-        ('failed', 'Failed'),
-        ('cancelled', 'Cancelled'),
+        ("pending", "Pending"),
+        ("processing", "Processing"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+        ("cancelled", "Cancelled"),
     ]
-    
+
     task_id = models.CharField(max_length=255, unique=True, help_text="Celery task ID")
     created_by = models.ForeignKey(
-        CustomUser, 
-        on_delete=models.CASCADE, 
-        help_text="User who initiated the task"
+        CustomUser, on_delete=models.CASCADE, help_text="User who initiated the task"
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
-    
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+
     # Progress tracking
-    total_datasets = models.IntegerField(default=0, help_text="Total number of datasets to process")
-    processed_datasets = models.IntegerField(default=0, help_text="Number of datasets processed")
-    failed_datasets = models.IntegerField(default=0, help_text="Number of datasets that failed")
-    successful_datasets = models.IntegerField(default=0, help_text="Number of datasets processed successfully")
-    
+    total_datasets = models.IntegerField(
+        default=0, help_text="Total number of datasets to process"
+    )
+    processed_datasets = models.IntegerField(
+        default=0, help_text="Number of datasets processed"
+    )
+    failed_datasets = models.IntegerField(
+        default=0, help_text="Number of datasets that failed"
+    )
+    successful_datasets = models.IntegerField(
+        default=0, help_text="Number of datasets processed successfully"
+    )
+
     # Error tracking
-    error_message = models.TextField(blank=True, null=True, help_text="Error message if task failed")
-    failed_dataset_ids = models.JSONField(default=list, help_text="List of dataset IDs that failed")
-    
+    error_message = models.TextField(
+        blank=True, null=True, help_text="Error message if task failed"
+    )
+    failed_dataset_ids = models.JSONField(
+        default=list, help_text="List of dataset IDs that failed"
+    )
+
     # Task metadata
-    started_at = models.DateTimeField(null=True, blank=True, help_text="When processing started")
-    completed_at = models.DateTimeField(null=True, blank=True, help_text="When processing completed")
-    
+    started_at = models.DateTimeField(
+        null=True, blank=True, help_text="When processing started"
+    )
+    completed_at = models.DateTimeField(
+        null=True, blank=True, help_text="When processing completed"
+    )
+
     class Meta:
-        ordering = ['-created_at']
-    
+        ordering = ["-created_at"]
+
     def __str__(self):
         return f"Bulk Reprocessing Task {self.task_id} - {self.status}"
-    
+
     @property
     def progress_percentage(self):
         """Calculate progress percentage"""
         if self.total_datasets == 0:
             return 0
         return int((self.processed_datasets / self.total_datasets) * 100)
-    
+
     @property
     def is_completed(self):
         """Check if task is completed (success or failure)"""
-        return self.status in ['completed', 'failed', 'cancelled']
-    
+        return self.status in ["completed", "failed", "cancelled"]
+
     @property
     def is_running(self):
         """Check if task is currently running"""
-        return self.status == 'processing'
+        return self.status == "processing"
 
 
 class BulkAudioUpload(models.Model):

@@ -29,17 +29,17 @@
         <li><strong>{{ missing_noise_analysis_count }}</strong> missing noise analysis</li>
       </ul>
       <div>
-        <a href="{% url 'admin:data_noisedataset_missing_analysis' %}" 
+        <a href="{% url 'admin:data_noisedataset_missing_analysis' %}"
            style="display: inline-block; padding: 6px 12px; background-color: #79aec8; color: white; text-decoration: none; border-radius: 3px; margin-right: 8px; font-size: 13px;">
           🔍 View Details
         </a>
-        <a href="{% url 'admin:data_noisedataset_redo_analysis' %}" 
+        <a href="{% url 'admin:data_noisedataset_redo_analysis' %}"
            style="display: inline-block; padding: 6px 12px; background-color: #ba8b00; color: white; text-decoration: none; border-radius: 3px; font-size: 13px;">
           🔄 Reprocess All
         </a>
       </div>
     </div>
   {% endif %}
-  
+
   {{ block.super }}
-{% endblock %} 
+{% endblock %}

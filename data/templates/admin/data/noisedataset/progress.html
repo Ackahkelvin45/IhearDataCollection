@@ -153,17 +153,17 @@
 <div id="content-main">
   <div class="module filtered">
     <h2>🔄 Bulk Reprocessing Progress</h2>
-    
+
     <div class="progress-container">
       <div class="progress-header">
         <h3>Task: {{ task.task_id }}</h3>
         <span class="status-badge status-{{ task.status }}">{{ task.get_status_display }}</span>
       </div>
-      
+
       <div class="progress-bar">
         <div class="progress-fill" style="width: {{ task.progress_percentage }}%"></div>
       </div>
-      
+
       <div class="progress-stats">
         <div class="stat-item">
           <div class="stat-number">{{ task.progress_percentage }}%</div>
@@ -186,7 +186,7 @@
           <div class="stat-label">Total</div>
         </div>
       </div>
-      
+
       <div class="task-info">
         <h3>Task Information</h3>
         <p><strong>Created by:</strong> {{ task.created_by.username }}</p>
@@ -201,7 +201,7 @@
         <p><strong>Last updated:</strong> {{ task.updated_at|date:"Y-m-d H:i:s" }}</p>
         {% endif %}
       </div>
-      
+
       {% if task.error_message %}
       <div class="error-section">
         <h4>⚠️ Error Information</h4>
@@ -211,7 +211,7 @@
         {% endif %}
       </div>
       {% endif %}
-      
+
       <div class="action-buttons">
         <a href="{% url 'admin:data_noisedataset_missing_analysis' %}" class="btn btn-primary">
           ← Back to Missing Analysis
@@ -228,4 +228,4 @@
     </div>
   </div>
 </div>
-{% endblock %} 
+{% endblock %}
