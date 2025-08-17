@@ -31,16 +31,20 @@ def process_audio_task(noise_dataset_id):
         logging.warning(f"NoiseDataset with ID {noise_dataset_id} not found.")
 
 
-@shared_task(bind=True)
+@shared_task(bind=True, time_limit=3600*6, soft_time_limit=3600*5)
 def bulk_reprocess_audio_analysis(self, dataset_ids, user_id=None):
     """
     Bulk reprocess audio analysis for multiple datasets with progress tracking
+    Optimized for large datasets (400+ items)
     """
     total_datasets = len(dataset_ids)
     processed_count = 0
     failed_count = 0
     failed_datasets = []
-
+    
+    # Limit failed datasets list to prevent memory issues
+    MAX_FAILED_DETAILS = 100
+    
     logger.info(f"Starting bulk reprocessing for {total_datasets} datasets")
 
     # Update task state
@@ -56,68 +60,105 @@ def bulk_reprocess_audio_analysis(self, dataset_ids, user_id=None):
         },
     )
 
-    for i, dataset_id in enumerate(dataset_ids):
-        try:
-            # Check if task was revoked
+    try:
+        # Process in smaller batches to prevent memory issues
+        batch_size = 50
+        for batch_start in range(0, total_datasets, batch_size):
+            batch_end = min(batch_start + batch_size, total_datasets)
+            batch_ids = dataset_ids[batch_start:batch_end]
+            
+            logger.info(f"Processing batch {batch_start//batch_size + 1}: datasets {batch_start+1}-{batch_end}")
+            
+            for i, dataset_id in enumerate(batch_ids):
+                global_index = batch_start + i
+                
+                try:
+                    # Check if task was revoked or timed out
+                    if self.is_aborted():
+                        logger.info("Bulk reprocessing task was aborted")
+                        break
+
+                    # Get the dataset with select_related to reduce DB queries
+                    try:
+                        dataset = NoiseDataset.objects.select_related(
+                            'collector', 'category', 'region', 'community'
+                        ).get(id=dataset_id)
+                    except NoiseDataset.DoesNotExist:
+                        logger.warning(f"Dataset {dataset_id} not found, skipping")
+                        failed_count += 1
+                        if len(failed_datasets) < MAX_FAILED_DETAILS:
+                            failed_datasets.append({"id": dataset_id, "error": "Dataset not found"})
+                        continue
+
+                    # Check if dataset has audio file
+                    if not dataset.audio:
+                        logger.warning(f"Dataset {dataset_id} has no audio file, skipping")
+                        failed_count += 1
+                        if len(failed_datasets) < MAX_FAILED_DETAILS:
+                            failed_datasets.append(
+                                {
+                                    "id": dataset_id,
+                                    "noise_id": dataset.noise_id,
+                                    "error": "No audio file",
+                                }
+                            )
+                        continue
+
+                    # Process the audio file
+                    logger.info(f"Processing dataset {dataset_id} ({global_index+1}/{total_datasets})")
+                    process_audio_file(dataset)
+
+                    processed_count += 1
+                    logger.info(f"Successfully processed dataset {dataset_id}")
+
+                except Exception as e:
+                    logger.error(f"Failed to process dataset {dataset_id}: {str(e)}")
+                    failed_count += 1
+                    if len(failed_datasets) < MAX_FAILED_DETAILS:
+                        failed_datasets.append(
+                            {
+                                "id": dataset_id,
+                                "noise_id": getattr(dataset, "noise_id", "Unknown"),
+                                "error": str(e)[:200],  # Limit error message length
+                            }
+                        )
+
+                # Update progress less frequently for large datasets
+                if (global_index + 1) % 10 == 0 or global_index + 1 == total_datasets:
+                    progress_percentage = int(((global_index + 1) / total_datasets) * 100)
+                    self.update_state(
+                        state="PROGRESS",
+                        meta={
+                            "current": global_index + 1,
+                            "total": total_datasets,
+                            "status": f"Processing dataset {global_index+1} of {total_datasets} ({progress_percentage}%)",
+                            "processed": processed_count,
+                            "failed": failed_count,
+                            "failed_datasets": failed_datasets,
+                            "progress_percentage": progress_percentage,
+                        },
+                    )
+            
+            # Check if task was aborted after each batch
             if self.is_aborted():
-                logger.info("Bulk reprocessing task was aborted")
                 break
-
-            # Get the dataset
-            try:
-                dataset = NoiseDataset.objects.get(id=dataset_id)
-            except NoiseDataset.DoesNotExist:
-                logger.warning(f"Dataset {dataset_id} not found, skipping")
-                failed_count += 1
-                failed_datasets.append({"id": dataset_id, "error": "Dataset not found"})
-                continue
-
-            # Check if dataset has audio file
-            if not dataset.audio:
-                logger.warning(f"Dataset {dataset_id} has no audio file, skipping")
-                failed_count += 1
-                failed_datasets.append(
-                    {
-                        "id": dataset_id,
-                        "noise_id": dataset.noise_id,
-                        "error": "No audio file",
-                    }
-                )
-                continue
-
-            # Process the audio file
-            logger.info(f"Processing dataset {dataset_id} ({i+1}/{total_datasets})")
-            process_audio_file(dataset)
-
-            processed_count += 1
-            logger.info(f"Successfully processed dataset {dataset_id}")
-
-        except Exception as e:
-            logger.error(f"Failed to process dataset {dataset_id}: {str(e)}")
-            failed_count += 1
-            failed_datasets.append(
-                {
-                    "id": dataset_id,
-                    "noise_id": getattr(dataset, "noise_id", "Unknown"),
-                    "error": str(e),
-                }
-            )
-
-        # Update progress
-        progress_percentage = int(((i + 1) / total_datasets) * 100)
-        self.update_state(
-            state="PROGRESS",
-            meta={
-                "current": i + 1,
-                "total": total_datasets,
-                "status": f"Processing dataset {i+1} of {total_datasets} ({progress_percentage}%)",
-                "processed": processed_count,
-                "failed": failed_count,
-                "failed_datasets": failed_datasets,
-                "progress_percentage": progress_percentage,
-            },
-        )
-
+                
+    except Exception as e:
+        logger.error(f"Critical error in bulk reprocessing: {str(e)}")
+        # Return partial results
+        result = {
+            "current": processed_count + failed_count,
+            "total": total_datasets,
+            "status": f"Failed with error: {str(e)}",
+            "processed": processed_count,
+            "failed": failed_count,
+            "failed_datasets": failed_datasets,
+            "progress_percentage": int(((processed_count + failed_count) / total_datasets) * 100),
+            "final_status": "failed",
+            "error": str(e),
+        }
+        return result
+    
     # Final state
     final_status = "completed"
     if failed_count > 0 and processed_count == 0:

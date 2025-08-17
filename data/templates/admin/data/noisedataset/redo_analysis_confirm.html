@@ -154,6 +154,10 @@
         <li>This process may take several minutes depending on the number of datasets</li>
       </ul>
       <p style="margin-top: 15px;"><strong>Note:</strong> This will overwrite any existing audio features and noise analysis for these datasets.</p>
+      <p style="margin-top: 15px;"><strong>Estimated time:</strong> {{ estimated_time_minutes|floatformat:1 }} minutes ({{ total_datasets }} datasets × ~2 seconds each)</p>
+      {% if total_datasets > 100 %}
+        <p style="margin-top: 15px; color: #f59e0b; font-weight: 500;"><strong>📊 Large batch:</strong> This will be processed in batches of 50 for optimal performance.</p>
+      {% endif %}
       {% if datasets_without_audio > 0 %}
         <p style="margin-top: 15px; color: #dc2626; font-weight: 500;"><strong>⚠️ Warning:</strong> {{ datasets_without_audio }} datasets are missing audio files and cannot be processed.</p>
       {% endif %}
