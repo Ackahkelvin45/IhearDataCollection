@@ -348,7 +348,9 @@ class DormantAccountSearchTool(BaseTool):
 
 class CustomerDetailTool(BaseTool):
     name: str = "get_customer_details"
-    description: str = """Get detailed information about a specific customer including accounts, behavior, and recent activity."""
+    description: str = (
+        """Get detailed information about a specific customer including accounts, behavior, and recent activity."""
+    )
 
     def _run(
         self,
@@ -455,7 +457,9 @@ class CustomerDetailTool(BaseTool):
 
 class SendEmailTool(BaseTool):
     name: str = "send_customer_email"
-    description: str = """Send an email to a specific customer. Use this for individual email communications."""
+    description: str = (
+        """Send an email to a specific customer. Use this for individual email communications."""
+    )
 
     def _run(
         self, customer_id: int, subject: str, body: str, to_email: Optional[str] = None
@@ -491,7 +495,9 @@ class SendEmailTool(BaseTool):
 
 class BulkEmailTool(BaseTool):
     name: str = "send_bulk_email"
-    description: str = """Send bulk emails using a query handle. The system will handle template processing and delivery."""
+    description: str = (
+        """Send bulk emails using a query handle. The system will handle template processing and delivery."""
+    )
 
     def _run(
         self, query_id: str, subject: str, body: str, send_immediately: bool = False
@@ -752,7 +758,9 @@ class DataAnalysisInput(BaseModel):
 
 class DataAnalysisTool(BaseTool):
     name: str = "ai_powered_data_analysis_tool"
-    description: str = "Generic data analysis tool executes AI-powered exploration and querying of the database. Use this to ask a queric question if the user's message cannot be answered with any of the other tools directly"
+    description: str = (
+        "Generic data analysis tool executes AI-powered exploration and querying of the database. Use this to ask a queric question if the user's message cannot be answered with any of the other tools directly"
+    )
     agent: Any = None
     top_k: int = 10
     args_schema: ArgsSchema | None = DataAnalysisInput

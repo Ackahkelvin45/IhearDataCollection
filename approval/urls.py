@@ -12,4 +12,3 @@ def review(request):
 urlpatterns = [
     path("", review, name="review"),
 ]
-

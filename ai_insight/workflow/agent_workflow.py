@@ -71,7 +71,7 @@ class CRMAgent:
         context_info = ""
         if user_context:
             context_info = f"""
-            
+
 ## Current Context
 - User ID: {user_context.get("user_id", "Unknown")}
 - Session ID: {user_context.get("session_id", "Unknown")}

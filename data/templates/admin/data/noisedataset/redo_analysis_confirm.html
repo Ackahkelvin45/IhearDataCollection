@@ -1,0 +1,195 @@
+{% extends "admin/change_list.html" %}
+{% load i18n admin_urls static admin_list %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .warning-box {
+      background-color: #fff3cd;
+      border: 1px solid #ffeaa7;
+      border-radius: 4px;
+      padding: 15px;
+      margin-bottom: 20px;
+    }
+    .warning-box h3 {
+      margin-top: 0;
+      color: #856404;
+      font-size: 16px;
+    }
+    .summary-section {
+      background: white;
+      padding: 15px;
+      border-radius: 4px;
+      border: 1px solid #ddd;
+      margin-bottom: 20px;
+    }
+    .summary-section h3 {
+      margin-top: 0;
+      color: #333;
+      border-bottom: 2px solid #79aec8;
+      padding-bottom: 8px;
+      font-size: 16px;
+    }
+    .action-buttons {
+      margin: 20px 0;
+      padding: 12px;
+      background: #e7f3ff;
+      border-radius: 4px;
+      border: 1px solid #b3d9ff;
+    }
+    .btn {
+      display: inline-block;
+      padding: 8px 16px;
+      margin-right: 8px;
+      text-decoration: none;
+      border-radius: 3px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      font-size: 13px;
+    }
+    .btn-primary {
+      background-color: #79aec8;
+      color: white;
+    }
+    .btn-primary:hover {
+      background-color: #417690;
+    }
+    .btn-warning {
+      background-color: #ba8b00;
+      color: white;
+    }
+    .btn-warning:hover {
+      background-color: #8b6b00;
+    }
+    .btn-danger {
+      background-color: #dc3545;
+      color: white;
+    }
+    .btn-danger:hover {
+      background-color: #c82333;
+    }
+    .dataset-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 13px;
+    }
+    .dataset-table th,
+    .dataset-table td {
+      padding: 6px 10px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+    .dataset-table th {
+      background-color: #f5f5f5;
+      font-weight: 600;
+      color: #333;
+    }
+    .dataset-table tr:hover {
+      background-color: #f9f9f9;
+    }
+  </style>
+{% endblock %}
+
+{% block coltype %}colM{% endblock %}
+
+{% block bodyclass %}{{ block.super }} app-{{ opts.app_label }} model-{{ opts.model_name }} change-list{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; <a href="{% url 'admin:data_noisedataset_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+&rsaquo; <a href="{% url 'admin:data_noisedataset_missing_analysis' %}">{% trans 'Missing Analysis' %}</a>
+&rsaquo; {% trans 'Confirm Reprocessing' %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <div class="module filtered">
+    <h2>{% trans "Confirm Reprocessing Audio Analysis" %}</h2>
+    
+    <!-- Warning Box -->
+    <div class="warning-box">
+      <h3>⚠️ Important Notice</h3>
+      <p>You are about to reprocess audio analysis for <strong>{{ total_datasets }}</strong> datasets. This action will:</p>
+      <ul>
+        <li>Extract audio features (MFCCs, spectral features, etc.)</li>
+        <li>Perform noise analysis (dB levels, frequency analysis, etc.)</li>
+        <li>Create visualization presets</li>
+        <li>This process may take several minutes depending on the number of datasets</li>
+      </ul>
+      <p><strong>Note:</strong> This will overwrite any existing audio features and noise analysis for these datasets.</p>
+      {% if datasets_without_audio > 0 %}
+        <p><strong>⚠️ Warning:</strong> {{ datasets_without_audio }} datasets are missing audio files and cannot be processed.</p>
+      {% endif %}
+    </div>
+
+    <!-- Statistics Summary -->
+    <div class="summary-section">
+      <h3>📊 Analysis Summary</h3>
+      <p>Total Datasets: <strong>{{ total_datasets }}</strong></p>
+      <p>Datasets to Reprocess: <strong>{{ total_datasets }}</strong></p>
+      <p>Datasets Missing Audio: <strong>{{ datasets_without_audio }}</strong></p>
+    </div>
+
+    <!-- Datasets to be processed -->
+    <div class="confirmation-section">
+      <h3>📋 Datasets to be Reprocessed</h3>
+      {% if datasets_to_process %}
+        <table class="dataset-table">
+          <thead>
+            <tr>
+              <th>Noise ID</th>
+              <th>Name</th>
+              <th>Collector</th>
+              <th>Category</th>
+              <th>Region</th>
+              <th>Recording Date</th>
+              <th>Audio File</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for dataset in datasets_to_process %}
+            <tr>
+              <td><a href="{% url 'admin:data_noisedataset_change' dataset.id %}">{{ dataset.noise_id }}</a></td>
+              <td>{{ dataset.name }}</td>
+              <td>{{ dataset.collector.username }}</td>
+              <td>{{ dataset.category.name|default:"-" }}</td>
+              <td>{{ dataset.region.name|default:"-" }}</td>
+              <td>{{ dataset.recording_date|date:"Y-m-d H:i"|default:"-" }}</td>
+              <td>
+                {% if dataset.audio %}
+                  ✅ Present
+                {% else %}
+                  ❌ Missing
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p>✅ No datasets found that need reprocessing.</p>
+      {% endif %}
+    </div>
+
+    <!-- Form Actions -->
+    <div class="action-buttons">
+      <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-warning">
+          🔄 Confirm and Start Reprocessing
+        </button>
+        <a href="{% url 'admin:data_noisedataset_missing_analysis' %}" class="btn btn-danger">
+          ❌ Cancel
+        </a>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %} 

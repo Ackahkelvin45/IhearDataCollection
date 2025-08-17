@@ -308,11 +308,6 @@ def noise_dataset_create(request):
     return render(request, "data/AddNewData.html", context)
 
 
-
-
-
-
-
 @login_required
 def bulk_upload_view(request):
     if request.method == "POST":
@@ -347,12 +342,13 @@ def bulk_upload_view(request):
                 )
                 os.makedirs(upload_dir, exist_ok=True)
                 file_pattern = os.path.join(upload_dir, "*")
-                file_paths = [
-                    p for p in glob.glob(file_pattern) if os.path.isfile(p)
-                ]
-                
+                file_paths = [p for p in glob.glob(file_pattern) if os.path.isfile(p)]
+
                 if not file_paths:
-                    return JsonResponse({"status": "error", "error": "No files found for processing"}, status=400)
+                    return JsonResponse(
+                        {"status": "error", "error": "No files found for processing"},
+                        status=400,
+                    )
 
                 # Create bulk upload record
                 bulk_upload = BulkAudioUpload.objects.create(
@@ -368,15 +364,19 @@ def bulk_upload_view(request):
                     request.user.id,
                 )
 
-                return JsonResponse({
-                    "status": "success",
-                    "bulk_upload_id": bulk_upload.id,
-                    "message": "Bulk upload started successfully",
-                    "total_files": bulk_upload.total_files,
-                })
+                return JsonResponse(
+                    {
+                        "status": "success",
+                        "bulk_upload_id": bulk_upload.id,
+                        "message": "Bulk upload started successfully",
+                        "total_files": bulk_upload.total_files,
+                    }
+                )
 
             except Exception as e:
-                logger.error(f"Bulk upload initialization failed: {str(e)}", exc_info=True)
+                logger.error(
+                    f"Bulk upload initialization failed: {str(e)}", exc_info=True
+                )
                 return JsonResponse({"status": "error", "error": str(e)}, status=500)
         else:
             return JsonResponse({"status": "error", "errors": form.errors}, status=400)
@@ -385,21 +385,26 @@ def bulk_upload_view(request):
 
     return render(request, "data/bulk_upload.html", {"form": form})
 
+
 @login_required
 def upload_chunk(request):
     if request.method == "POST":
         try:
-            chunk = request.FILES.get('file')
-            chunk_number = int(request.POST.get('chunkNumber', 0))
-            total_chunks = int(request.POST.get('totalChunks', 1))
-            file_name = request.POST.get('fileName', '')
-            file_uid = request.POST.get('fileUid', '')
+            chunk = request.FILES.get("file")
+            chunk_number = int(request.POST.get("chunkNumber", 0))
+            total_chunks = int(request.POST.get("totalChunks", 1))
+            file_name = request.POST.get("fileName", "")
+            file_uid = request.POST.get("fileUid", "")
 
             if not chunk or not file_name:
-                return JsonResponse({"status": "error", "error": "Missing file data"}, status=400)
+                return JsonResponse(
+                    {"status": "error", "error": "Missing file data"}, status=400
+                )
 
             # Create user-specific upload directory
-            upload_dir = os.path.join(settings.SHARED_UPLOADS_DIR, f"user_{request.user.id}")
+            upload_dir = os.path.join(
+                settings.SHARED_UPLOADS_DIR, f"user_{request.user.id}"
+            )
             os.makedirs(upload_dir, exist_ok=True)
 
             # Create temporary directory for this file's chunks
@@ -408,30 +413,32 @@ def upload_chunk(request):
 
             # Save chunk
             chunk_path = os.path.join(temp_dir, f"{chunk_number}.part")
-            with open(chunk_path, 'wb+') as f:
+            with open(chunk_path, "wb+") as f:
                 for piece in chunk.chunks():
                     f.write(piece)
 
             # Check if all chunks received
-            received_chunks = len([name for name in os.listdir(temp_dir) if name.endswith('.part')])
+            received_chunks = len(
+                [name for name in os.listdir(temp_dir) if name.endswith(".part")]
+            )
             if received_chunks == total_chunks:
                 # Reassemble file with unique prefix to avoid collisions
-                safe_uid = "".join(c for c in file_uid if c.isalnum() or c in ('-', '_'))
+                safe_uid = "".join(
+                    c for c in file_uid if c.isalnum() or c in ("-", "_")
+                )
                 final_name = f"{safe_uid}_{file_name}" if safe_uid else file_name
                 final_path = os.path.join(upload_dir, final_name)
-                with open(final_path, 'wb') as outfile:
+                with open(final_path, "wb") as outfile:
                     for i in range(total_chunks):
                         chunk_path = os.path.join(temp_dir, f"{i}.part")
-                        with open(chunk_path, 'rb') as infile:
+                        with open(chunk_path, "rb") as infile:
                             outfile.write(infile.read())
                         os.remove(chunk_path)
                 os.rmdir(temp_dir)
 
-                return JsonResponse({
-                    "status": "success",
-                    "completed": True,
-                    "file_path": final_path
-                })
+                return JsonResponse(
+                    {"status": "success", "completed": True, "file_path": final_path}
+                )
 
             return JsonResponse({"status": "success", "completed": False})
 
@@ -439,7 +446,10 @@ def upload_chunk(request):
             logger.error(f"Chunk upload failed: {str(e)}", exc_info=True)
             return JsonResponse({"status": "error", "error": str(e)}, status=500)
 
-    return JsonResponse({"status": "error", "error": "Invalid request method"}, status=400)
+    return JsonResponse(
+        {"status": "error", "error": "Invalid request method"}, status=400
+    )
+
 
 @login_required
 def bulk_upload_progress(request, bulk_upload_id):
@@ -456,30 +466,34 @@ def bulk_upload_progress(request, bulk_upload_id):
     except BulkAudioUpload.DoesNotExist:
         return JsonResponse({"error": "Not found"}, status=404)
 
+
 @login_required
 def cancel_upload(request, bulk_upload_id):
     try:
         bulk_upload = BulkAudioUpload.objects.get(id=bulk_upload_id, user=request.user)
-        if bulk_upload.status in ['pending', 'processing']:
-            bulk_upload.status = 'cancelled'
+        if bulk_upload.status in ["pending", "processing"]:
+            bulk_upload.status = "cancelled"
             bulk_upload.save()
-            
+
             # Clean up files
-            upload_dir = os.path.join(settings.SHARED_UPLOADS_DIR, f"user_{request.user.id}")
+            upload_dir = os.path.join(
+                settings.SHARED_UPLOADS_DIR, f"user_{request.user.id}"
+            )
             file_pattern = os.path.join(upload_dir, "*")
             for file_path in glob.glob(file_pattern):
                 try:
                     os.remove(file_path)
                 except:
                     pass
-            
+
             return JsonResponse({"status": "success", "message": "Upload cancelled"})
         else:
-            return JsonResponse({"status": "error", "error": "Cannot cancel completed upload"}, status=400)
+            return JsonResponse(
+                {"status": "error", "error": "Cannot cancel completed upload"},
+                status=400,
+            )
     except BulkAudioUpload.DoesNotExist:
         return JsonResponse({"error": "Not found"}, status=404)
-    
-    
 
 
 @login_required

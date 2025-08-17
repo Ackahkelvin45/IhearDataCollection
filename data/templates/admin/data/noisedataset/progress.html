@@ -1,0 +1,231 @@
+{% extends "admin/change_list.html" %}
+{% load i18n admin_urls static admin_list %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .progress-container {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      margin-bottom: 20px;
+    }
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 20px;
+      background-color: #f0f0f0;
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 15px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #4CAF50, #45a049);
+      transition: width 0.3s ease;
+      border-radius: 10px;
+    }
+    .progress-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    .stat-item {
+      text-align: center;
+      padding: 10px;
+      background: #f8f9fa;
+      border-radius: 5px;
+    }
+    .stat-number {
+      font-size: 24px;
+      font-weight: bold;
+      color: #333;
+    }
+    .stat-label {
+      font-size: 12px;
+      color: #666;
+      margin-top: 5px;
+    }
+    .task-info {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+    }
+    .task-info h3 {
+      margin-top: 0;
+      color: #333;
+      font-size: 16px;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .status-pending {
+      background-color: #fff3cd;
+      color: #856404;
+    }
+    .status-processing {
+      background-color: #d1ecf1;
+      color: #0c5460;
+    }
+    .status-completed {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .status-failed {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+    .action-buttons {
+      margin-top: 20px;
+    }
+    .btn {
+      display: inline-block;
+      padding: 8px 16px;
+      margin-right: 8px;
+      text-decoration: none;
+      border-radius: 4px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      font-size: 13px;
+    }
+    .btn-primary {
+      background-color: #007bff;
+      color: white;
+    }
+    .btn-primary:hover {
+      background-color: #0056b3;
+    }
+    .btn-secondary {
+      background-color: #6c757d;
+      color: white;
+    }
+    .btn-secondary:hover {
+      background-color: #545b62;
+    }
+    .error-section {
+      background-color: #f8d7da;
+      border: 1px solid #f5c6cb;
+      border-radius: 4px;
+      padding: 15px;
+      margin-top: 20px;
+    }
+    .error-section h4 {
+      color: #721c24;
+      margin-top: 0;
+    }
+  </style>
+  {% if not task.is_completed %}
+  <script>
+    // Auto-refresh every 5 seconds for active tasks
+    setTimeout(function() {
+      location.reload();
+    }, 5000);
+  </script>
+  {% endif %}
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; <a href="{% url 'admin:data_noisedataset_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+&rsaquo; <a href="{% url 'admin:data_noisedataset_missing_analysis' %}">Missing Analysis</a>
+&rsaquo; Progress
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <div class="module filtered">
+    <h2>🔄 Bulk Reprocessing Progress</h2>
+    
+    <div class="progress-container">
+      <div class="progress-header">
+        <h3>Task: {{ task.task_id }}</h3>
+        <span class="status-badge status-{{ task.status }}">{{ task.get_status_display }}</span>
+      </div>
+      
+      <div class="progress-bar">
+        <div class="progress-fill" style="width: {{ task.progress_percentage }}%"></div>
+      </div>
+      
+      <div class="progress-stats">
+        <div class="stat-item">
+          <div class="stat-number">{{ task.progress_percentage }}%</div>
+          <div class="stat-label">Progress</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-number">{{ task.processed_datasets }}</div>
+          <div class="stat-label">Processed</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-number">{{ task.successful_datasets }}</div>
+          <div class="stat-label">Successful</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-number">{{ task.failed_datasets }}</div>
+          <div class="stat-label">Failed</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-number">{{ task.total_datasets }}</div>
+          <div class="stat-label">Total</div>
+        </div>
+      </div>
+      
+      <div class="task-info">
+        <h3>Task Information</h3>
+        <p><strong>Created by:</strong> {{ task.created_by.username }}</p>
+        <p><strong>Created at:</strong> {{ task.created_at|date:"Y-m-d H:i:s" }}</p>
+        {% if task.started_at %}
+        <p><strong>Started at:</strong> {{ task.started_at|date:"Y-m-d H:i:s" }}</p>
+        {% endif %}
+        {% if task.completed_at %}
+        <p><strong>Completed at:</strong> {{ task.completed_at|date:"Y-m-d H:i:s" }}</p>
+        {% endif %}
+        {% if task.updated_at %}
+        <p><strong>Last updated:</strong> {{ task.updated_at|date:"Y-m-d H:i:s" }}</p>
+        {% endif %}
+      </div>
+      
+      {% if task.error_message %}
+      <div class="error-section">
+        <h4>⚠️ Error Information</h4>
+        <p><strong>Error:</strong> {{ task.error_message }}</p>
+        {% if task.failed_dataset_ids %}
+        <p><strong>Failed Dataset IDs:</strong> {{ task.failed_dataset_ids|join:", " }}</p>
+        {% endif %}
+      </div>
+      {% endif %}
+      
+      <div class="action-buttons">
+        <a href="{% url 'admin:data_noisedataset_missing_analysis' %}" class="btn btn-primary">
+          ← Back to Missing Analysis
+        </a>
+        <a href="{% url 'admin:data_bulkreprocessingtask_changelist' %}" class="btn btn-secondary">
+          View All Tasks
+        </a>
+        {% if not task.is_completed %}
+        <a href="{% url 'admin:data_noisedataset_progress' task.task_id %}" class="btn btn-primary">
+          🔄 Refresh
+        </a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %} 

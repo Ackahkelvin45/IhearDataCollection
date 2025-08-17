@@ -1,0 +1,356 @@
+{% extends "admin/change_list.html" %}
+{% load i18n admin_urls static admin_list %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .missing-analysis-section {
+      margin-bottom: 20px;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background-color: #f9f9f9;
+    }
+    .missing-analysis-section h3 {
+      margin-top: 0;
+      color: #333;
+      border-bottom: 2px solid #79aec8;
+      padding-bottom: 8px;
+      font-size: 16px;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    .stat-card {
+      background: white;
+      padding: 12px;
+      border-radius: 4px;
+      border-left: 4px solid #79aec8;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .stat-number {
+      font-size: 20px;
+      font-weight: bold;
+      color: #79aec8;
+    }
+    .stat-label {
+      color: #666;
+      font-size: 13px;
+    }
+    .action-buttons {
+      margin: 20px 0;
+      padding: 12px;
+      background: #e7f3ff;
+      border-radius: 4px;
+      border: 1px solid #b3d9ff;
+    }
+    .btn {
+      display: inline-block;
+      padding: 8px 16px;
+      margin-right: 8px;
+      text-decoration: none;
+      border-radius: 3px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      font-size: 13px;
+    }
+    .btn-primary {
+      background-color: #79aec8;
+      color: white;
+    }
+    .btn-primary:hover {
+      background-color: #417690;
+    }
+    .btn-warning {
+      background-color: #ba8b00;
+      color: white;
+    }
+    .btn-warning:hover {
+      background-color: #8b6b00;
+    }
+    .dataset-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 13px;
+    }
+    .dataset-table th,
+    .dataset-table td {
+      padding: 6px 10px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+    .dataset-table th {
+      background-color: #f5f5f5;
+      font-weight: 600;
+      color: #333;
+    }
+    .dataset-table tr:hover {
+      background-color: #f9f9f9;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: 3px 6px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .status-missing {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+    .status-present {
+      background-color: #d4edda;
+      color: #155724;
+    }
+  </style>
+{% endblock %}
+
+{% block coltype %}colM{% endblock %}
+
+{% block bodyclass %}{{ block.super }} app-{{ opts.app_label }} model-{{ opts.model_name }} change-list{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; <a href="{% url 'admin:data_noisedataset_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+&rsaquo; {% trans 'Missing Analysis' %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <div class="module filtered">
+    <h2>{% trans "Datasets with Missing Audio Analysis" %}</h2>
+    
+    <!-- Statistics Cards -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-number">{{ total_missing_either }}</div>
+        <div class="stat-label">Total Datasets Missing Analysis</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">{{ total_missing_audio_features }}</div>
+        <div class="stat-label">Missing Audio Features</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">{{ total_missing_noise_analysis }}</div>
+        <div class="stat-label">Missing Noise Analysis</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number">{{ total_missing_both }}</div>
+        <div class="stat-label">Missing Both</div>
+      </div>
+      {% if total_without_audio > 0 %}
+      <div class="stat-card" style="border-left-color: #dc3545;">
+        <div class="stat-number" style="color: #dc3545;">{{ total_without_audio }}</div>
+        <div class="stat-label">Missing Audio Files</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="action-buttons">
+      <a href="{% url 'admin:data_noisedataset_redo_analysis' %}" class="btn btn-warning">
+        🔄 Redo Noise Analysis for All Missing Datasets
+      </a>
+      <a href="{% url 'admin:data_noisedataset_changelist' %}" class="btn btn-primary">
+        📋 View All Noise Datasets
+      </a>
+    </div>
+
+    <!-- Active Tasks Section -->
+    {% if active_tasks %}
+    <div class="missing-analysis-section" style="border-color: #007bff; background-color: #e7f3ff;">
+      <h3 style="border-bottom-color: #007bff;">🔄 Active Bulk Reprocessing Tasks ({{ active_tasks|length }})</h3>
+      <p style="color: #0056b3; margin-bottom: 15px;">
+        <strong>Note:</strong> The following tasks are currently processing datasets. You can monitor their progress.
+      </p>
+      <table class="dataset-table">
+        <thead>
+          <tr>
+            <th>Task ID</th>
+            <th>Created By</th>
+            <th>Status</th>
+            <th>Progress</th>
+            <th>Created At</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for task in active_tasks %}
+          <tr>
+            <td><code>{{ task.task_id }}</code></td>
+            <td>{{ task.created_by.username }}</td>
+            <td><span class="status-badge status-{{ task.status }}">{{ task.get_status_display }}</span></td>
+            <td>
+              <div style="width: 100px; background-color: #f0f0f0; border-radius: 10px; overflow: hidden; display: inline-block;">
+                <div style="width: {{ task.progress_percentage }}%; height: 8px; background: linear-gradient(90deg, #4CAF50, #45a049);"></div>
+              </div>
+              <span style="margin-left: 5px; font-size: 11px;">{{ task.progress_percentage }}%</span>
+            </td>
+            <td>{{ task.created_at|date:"Y-m-d H:i" }}</td>
+            <td>
+              <a href="{% url 'admin:data_noisedataset_progress' task.task_id %}" class="btn btn-primary" style="font-size: 11px; padding: 4px 8px;">
+                📊 View Progress
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    <!-- Datasets Missing Audio Features -->
+    <div class="missing-analysis-section">
+      <h3>📊 Datasets Missing Audio Features ({{ total_missing_audio_features }})</h3>
+      {% if datasets_missing_audio_features %}
+        <table class="dataset-table">
+          <thead>
+            <tr>
+              <th>Noise ID</th>
+              <th>Name</th>
+              <th>Collector</th>
+              <th>Category</th>
+              <th>Region</th>
+              <th>Recording Date</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for dataset in datasets_missing_audio_features %}
+            <tr>
+              <td><a href="{% url 'admin:data_noisedataset_change' dataset.id %}">{{ dataset.noise_id }}</a></td>
+              <td>{{ dataset.name }}</td>
+              <td>{{ dataset.collector.username }}</td>
+              <td>{{ dataset.category.name|default:"-" }}</td>
+              <td>{{ dataset.region.name|default:"-" }}</td>
+              <td>{{ dataset.recording_date|date:"Y-m-d H:i"|default:"-" }}</td>
+              <td><span class="status-badge status-missing">Missing Audio Features</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p>✅ All datasets have audio features.</p>
+      {% endif %}
+    </div>
+
+    <!-- Datasets Missing Noise Analysis -->
+    <div class="missing-analysis-section">
+      <h3>📈 Datasets Missing Noise Analysis ({{ total_missing_noise_analysis }})</h3>
+      {% if datasets_missing_noise_analysis %}
+        <table class="dataset-table">
+          <thead>
+            <tr>
+              <th>Noise ID</th>
+              <th>Name</th>
+              <th>Collector</th>
+              <th>Category</th>
+              <th>Region</th>
+              <th>Recording Date</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for dataset in datasets_missing_noise_analysis %}
+            <tr>
+              <td><a href="{% url 'admin:data_noisedataset_change' dataset.id %}">{{ dataset.noise_id }}</a></td>
+              <td>{{ dataset.name }}</td>
+              <td>{{ dataset.collector.username }}</td>
+              <td>{{ dataset.category.name|default:"-" }}</td>
+              <td>{{ dataset.region.name|default:"-" }}</td>
+              <td>{{ dataset.recording_date|date:"Y-m-d H:i"|default:"-" }}</td>
+              <td><span class="status-badge status-missing">Missing Noise Analysis</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p>✅ All datasets have noise analysis.</p>
+      {% endif %}
+    </div>
+
+    <!-- Datasets Missing Both -->
+    <div class="missing-analysis-section">
+      <h3>⚠️ Datasets Missing Both Audio Features and Noise Analysis ({{ total_missing_both }})</h3>
+      {% if datasets_missing_both %}
+        <table class="dataset-table">
+          <thead>
+            <tr>
+              <th>Noise ID</th>
+              <th>Name</th>
+              <th>Collector</th>
+              <th>Category</th>
+              <th>Region</th>
+              <th>Recording Date</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for dataset in datasets_missing_both %}
+            <tr>
+              <td><a href="{% url 'admin:data_noisedataset_change' dataset.id %}">{{ dataset.noise_id }}</a></td>
+              <td>{{ dataset.name }}</td>
+              <td>{{ dataset.collector.username }}</td>
+              <td>{{ dataset.category.name|default:"-" }}</td>
+              <td>{{ dataset.region.name|default:"-" }}</td>
+              <td>{{ dataset.recording_date|date:"Y-m-d H:i"|default:"-" }}</td>
+              <td><span class="status-badge status-missing">Missing Both</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p>✅ No datasets are missing both audio features and noise analysis.</p>
+      {% endif %}
+    </div>
+
+    <!-- Datasets Without Audio Files -->
+    {% if total_without_audio > 0 %}
+    <div class="missing-analysis-section" style="border-color: #dc3545; background-color: #f8d7da;">
+      <h3 style="border-bottom-color: #dc3545;">🚫 Datasets Without Audio Files ({{ total_without_audio }})</h3>
+      <p style="color: #721c24; margin-bottom: 15px;">
+        <strong>Note:</strong> These datasets cannot be processed for audio analysis because they don't have audio files uploaded.
+      </p>
+      {% if datasets_without_audio %}
+        <table class="dataset-table">
+          <thead>
+            <tr>
+              <th>Noise ID</th>
+              <th>Name</th>
+              <th>Collector</th>
+              <th>Category</th>
+              <th>Region</th>
+              <th>Recording Date</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for dataset in datasets_without_audio %}
+            <tr>
+              <td><a href="{% url 'admin:data_noisedataset_change' dataset.id %}">{{ dataset.noise_id }}</a></td>
+              <td>{{ dataset.name }}</td>
+              <td>{{ dataset.collector.username }}</td>
+              <td>{{ dataset.category.name|default:"-" }}</td>
+              <td>{{ dataset.region.name|default:"-" }}</td>
+              <td>{{ dataset.recording_date|date:"Y-m-d H:i"|default:"-" }}</td>
+              <td><span class="status-badge" style="background-color: #dc3545; color: white;">No Audio File</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %} 

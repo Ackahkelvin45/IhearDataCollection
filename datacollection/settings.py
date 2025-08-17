@@ -378,4 +378,3 @@ CELERY_TASK_ALWAYS_EAGER = as_bool(
 SHARED_UPLOADS_DIR = os.getenv(
     "SHARED_UPLOADS_DIR", os.path.join(BASE_DIR, "shared_uploads")
 )
-

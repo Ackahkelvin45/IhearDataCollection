@@ -60,7 +60,9 @@ def session(request):
                 "title": "Recordings by Region",
             }
             subtitle = "The chart below shows dataset distribution per region"
-            assistant_text = "Here are the regions ranked by number of recordings collected."
+            assistant_text = (
+                "Here are the regions ranked by number of recordings collected."
+            )
 
         elif "recent" in normalized or "20" in normalized:
             # Table: 20 most recent datasets
@@ -71,10 +73,9 @@ def session(request):
                 "Category",
                 "Recording Date",
             ]
-            recent = (
-                NoiseDataset.objects.select_related("region", "category")
-                .order_by("-created_at")[:20]
-            )
+            recent = NoiseDataset.objects.select_related("region", "category").order_by(
+                "-created_at"
+            )[:20]
             table_rows = [
                 [
                     d.name or d.noise_id,
@@ -85,9 +86,13 @@ def session(request):
                 for d in recent
             ]
             subtitle = "Recent 20 datasets"
-            assistant_text = "Here are the 20 most recent recordings added to the dataset."
+            assistant_text = (
+                "Here are the 20 most recent recordings added to the dataset."
+            )
 
-        elif "highest" in normalized and ("db" in normalized or "decibel" in normalized):
+        elif "highest" in normalized and (
+            "db" in normalized or "decibel" in normalized
+        ):
             # Table: top datasets by maximum decibel level
             show_table = True
             table_headers = ["Name", "Region", "Max dB", "Recording Date"]
@@ -103,13 +108,21 @@ def session(request):
                         d.name or d.noise_id,
                         getattr(d.region, "name", "-") if d.region else "-",
                         round(a.max_db, 2) if a.max_db is not None else "-",
-                        d.recording_date.strftime("%d/%m/%Y") if d.recording_date else "-",
+                        (
+                            d.recording_date.strftime("%d/%m/%Y")
+                            if d.recording_date
+                            else "-"
+                        ),
                     ]
                 )
             subtitle = "Top datasets by maximum decibel level"
-            assistant_text = "These are the recordings with the highest measured decibel levels."
+            assistant_text = (
+                "These are the recordings with the highest measured decibel levels."
+            )
 
-        elif "community" in normalized and ("lowest" in normalized and ("db" in normalized or "decibel" in normalized)):
+        elif "community" in normalized and (
+            "lowest" in normalized and ("db" in normalized or "decibel" in normalized)
+        ):
             # Chart: lowest average decibel by community (bar)
             show_chart = True
             qs = (
@@ -128,19 +141,30 @@ def session(request):
                 "title": "Communities with Lowest Average dB",
             }
             subtitle = "Communities with the lowest average decibel levels"
-            assistant_text = "Lowest average decibel levels by community are shown below."
+            assistant_text = (
+                "Lowest average decibel levels by community are shown below."
+            )
 
         else:
             # Default to chart by region
             show_chart = True
             region_counts = (
-                NoiseDataset.objects.values("region__name").annotate(count=Count("id")).order_by("-count")
+                NoiseDataset.objects.values("region__name")
+                .annotate(count=Count("id"))
+                .order_by("-count")
             )
             labels = [r.get("region__name") or "Unknown" for r in region_counts]
             values = [r["count"] for r in region_counts]
-            chart = {"type": "doughnut", "labels": labels, "values": values, "title": "Recordings by Region"}
+            chart = {
+                "type": "doughnut",
+                "labels": labels,
+                "values": values,
+                "title": "Recordings by Region",
+            }
             subtitle = "The chart below shows dataset distribution per region"
-            assistant_text = "Here are the regions ranked by number of recordings collected."
+            assistant_text = (
+                "Here are the regions ranked by number of recordings collected."
+            )
 
     except Exception:
         # Fail silently to avoid UI errors
@@ -159,5 +183,3 @@ def session(request):
         "assistant_text": assistant_text,
     }
     return render(request, "data_insights/session.html", context)
-
-
