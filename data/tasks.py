@@ -13,6 +13,8 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.conf import settings
+from celery import group
+from django.db.models import Q
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,117 @@ def process_audio_task(noise_dataset_id):
         import logging
 
         logging.warning(f"NoiseDataset with ID {noise_dataset_id} not found.")
+
+
+@shared_task(bind=True)
+def bulk_reprocess_audio_analysis(self, dataset_ids, user_id=None):
+    """
+    Bulk reprocess audio analysis for multiple datasets with progress tracking
+    """
+    total_datasets = len(dataset_ids)
+    processed_count = 0
+    failed_count = 0
+    failed_datasets = []
+
+    logger.info(f"Starting bulk reprocessing for {total_datasets} datasets")
+
+    # Update task state
+    self.update_state(
+        state="PROGRESS",
+        meta={
+            "current": 0,
+            "total": total_datasets,
+            "status": "Starting reprocessing...",
+            "processed": 0,
+            "failed": 0,
+            "failed_datasets": [],
+        },
+    )
+
+    for i, dataset_id in enumerate(dataset_ids):
+        try:
+            # Check if task was revoked
+            if self.is_aborted():
+                logger.info("Bulk reprocessing task was aborted")
+                break
+
+            # Get the dataset
+            try:
+                dataset = NoiseDataset.objects.get(id=dataset_id)
+            except NoiseDataset.DoesNotExist:
+                logger.warning(f"Dataset {dataset_id} not found, skipping")
+                failed_count += 1
+                failed_datasets.append({"id": dataset_id, "error": "Dataset not found"})
+                continue
+
+            # Check if dataset has audio file
+            if not dataset.audio:
+                logger.warning(f"Dataset {dataset_id} has no audio file, skipping")
+                failed_count += 1
+                failed_datasets.append(
+                    {
+                        "id": dataset_id,
+                        "noise_id": dataset.noise_id,
+                        "error": "No audio file",
+                    }
+                )
+                continue
+
+            # Process the audio file
+            logger.info(f"Processing dataset {dataset_id} ({i+1}/{total_datasets})")
+            process_audio_file(dataset)
+
+            processed_count += 1
+            logger.info(f"Successfully processed dataset {dataset_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to process dataset {dataset_id}: {str(e)}")
+            failed_count += 1
+            failed_datasets.append(
+                {
+                    "id": dataset_id,
+                    "noise_id": getattr(dataset, "noise_id", "Unknown"),
+                    "error": str(e),
+                }
+            )
+
+        # Update progress
+        progress_percentage = int(((i + 1) / total_datasets) * 100)
+        self.update_state(
+            state="PROGRESS",
+            meta={
+                "current": i + 1,
+                "total": total_datasets,
+                "status": f"Processing dataset {i+1} of {total_datasets} ({progress_percentage}%)",
+                "processed": processed_count,
+                "failed": failed_count,
+                "failed_datasets": failed_datasets,
+                "progress_percentage": progress_percentage,
+            },
+        )
+
+    # Final state
+    final_status = "completed"
+    if failed_count > 0 and processed_count == 0:
+        final_status = "failed"
+    elif failed_count > 0:
+        final_status = "completed_with_errors"
+
+    result = {
+        "current": total_datasets,
+        "total": total_datasets,
+        "status": f"Completed: {processed_count} processed, {failed_count} failed",
+        "processed": processed_count,
+        "failed": failed_count,
+        "failed_datasets": failed_datasets,
+        "progress_percentage": 100,
+        "final_status": final_status,
+    }
+
+    logger.info(
+        f"Bulk reprocessing completed: {processed_count} processed, {failed_count} failed"
+    )
+    return result
 
 
 @shared_task(bind=True)
@@ -187,119 +300,6 @@ def process_bulk_upload(self, bulk_upload_id, file_paths, user_id):
             "bulk_upload_id": bulk_upload_id,
             "processed": bulk_upload.processed_files,
             "failed": bulk_upload.failed_files,
-            "error": str(e),
-        }
-
-
-@shared_task(bind=True)
-def bulk_reprocess_audio_analysis(self, task_id, dataset_ids, user_id):
-    """
-    Bulk reprocess audio analysis for multiple datasets with progress tracking
-    """
-    from .models import BulkReprocessingTask
-    from django.utils import timezone
-
-    try:
-        # Get the task record
-        task_record = BulkReprocessingTask.objects.get(task_id=task_id)
-        task_record.status = "processing"
-        task_record.started_at = timezone.now()
-        task_record.total_datasets = len(dataset_ids)
-        task_record.save()
-
-        logger.info(
-            f"Starting bulk reprocessing task {task_id} for {len(dataset_ids)} datasets"
-        )
-
-        successful_count = 0
-        failed_count = 0
-        failed_dataset_ids = []
-
-        for i, dataset_id in enumerate(dataset_ids):
-            try:
-                # Check if task was cancelled
-                task_record.refresh_from_db()
-                if task_record.status == "cancelled":
-                    logger.info(f"Task {task_id} was cancelled")
-                    break
-
-                # Process the dataset
-                process_audio_task.delay(dataset_id)
-                successful_count += 1
-
-                # Update progress
-                task_record.processed_datasets = i + 1
-                task_record.successful_datasets = successful_count
-                task_record.failed_datasets = failed_count
-                task_record.save()
-
-                # Update task state for monitoring
-                self.update_state(
-                    state="PROGRESS",
-                    meta={
-                        "current": i + 1,
-                        "total": len(dataset_ids),
-                        "successful": successful_count,
-                        "failed": failed_count,
-                        "task_id": task_id,
-                    },
-                )
-
-                logger.info(
-                    f"Processed dataset {dataset_id} ({i+1}/{len(dataset_ids)})"
-                )
-
-            except Exception as e:
-                logger.error(f"Failed to process dataset {dataset_id}: {str(e)}")
-                failed_count += 1
-                failed_dataset_ids.append(dataset_id)
-
-                # Update progress
-                task_record.processed_datasets = i + 1
-                task_record.successful_datasets = successful_count
-                task_record.failed_datasets = failed_count
-                task_record.failed_dataset_ids = failed_dataset_ids
-                task_record.save()
-
-        # Mark task as completed
-        task_record.status = "completed"
-        task_record.completed_at = timezone.now()
-        task_record.save()
-
-        logger.info(
-            f"Bulk reprocessing task {task_id} completed. "
-            f"Successful: {successful_count}, Failed: {failed_count}"
-        )
-
-        return {
-            "task_id": task_id,
-            "total": len(dataset_ids),
-            "successful": successful_count,
-            "failed": failed_count,
-            "failed_dataset_ids": failed_dataset_ids,
-        }
-
-    except BulkReprocessingTask.DoesNotExist:
-        logger.error(f"BulkReprocessingTask with ID {task_id} not found")
-        return {
-            "task_id": task_id,
-            "error": "Task record not found",
-        }
-    except Exception as e:
-        logger.error(f"Critical error in bulk reprocessing task {task_id}: {str(e)}")
-
-        # Update task record with error
-        try:
-            task_record = BulkReprocessingTask.objects.get(task_id=task_id)
-            task_record.status = "failed"
-            task_record.error_message = str(e)
-            task_record.completed_at = timezone.now()
-            task_record.save()
-        except:
-            pass
-
-        return {
-            "task_id": task_id,
             "error": str(e),
         }
 

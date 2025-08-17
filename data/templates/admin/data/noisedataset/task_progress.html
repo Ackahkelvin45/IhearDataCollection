@@ -1,0 +1,282 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static admin_list %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .progress-container {
+      margin: 20px 0;
+      padding: 20px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background-color: #f9fafb;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 20px;
+      background-color: #e5e7eb;
+      border-radius: 10px;
+      overflow: hidden;
+      margin: 10px 0;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #3b82f6, #1d4ed8);
+      transition: width 0.3s ease;
+      border-radius: 10px;
+    }
+    .progress-text {
+      text-align: center;
+      font-weight: 500;
+      color: #374151;
+      margin: 5px 0;
+    }
+    .status-card {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      margin: 10px 0;
+      border-left: 4px solid #3b82f6;
+    }
+    .status-completed {
+      border-left-color: #10b981;
+    }
+    .status-failed {
+      border-left-color: #ef4444;
+    }
+    .status-processing {
+      border-left-color: #f59e0b;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 15px;
+      margin: 20px 0;
+    }
+    .stat-item {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      text-align: center;
+      border: 1px solid #e5e7eb;
+    }
+    .stat-number {
+      font-size: 24px;
+      font-weight: bold;
+      color: #3b82f6;
+    }
+    .stat-label {
+      color: #6b7280;
+      font-size: 14px;
+      margin-top: 5px;
+    }
+    .failed-datasets {
+      margin-top: 20px;
+      padding: 15px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+    }
+    .failed-datasets h4 {
+      color: #dc2626;
+      margin-top: 0;
+    }
+    .failed-item {
+      background: white;
+      padding: 10px;
+      margin: 5px 0;
+      border-radius: 4px;
+      border-left: 3px solid #dc2626;
+    }
+    .refresh-button {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .refresh-button:hover {
+      background: #2563eb;
+    }
+    .auto-refresh {
+      margin: 10px 0;
+      padding: 10px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 4px;
+    }
+  </style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; <a href="{% url 'admin:data_noisedataset_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+&rsaquo; <a href="{% url 'admin:data_noisedataset_missing_analysis' %}">{% trans 'Missing Analysis' %}</a>
+&rsaquo; {% trans 'Task Progress' %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <div class="module filtered">
+    <h2>Task Progress - {{ task.task_id }}</h2>
+
+    <div class="auto-refresh">
+      <strong>Auto-refresh:</strong> This page will automatically update every 5 seconds while the task is running.
+      <button class="refresh-button" onclick="refreshStatus()">Refresh Now</button>
+    </div>
+
+    <!-- Progress Bar -->
+    <div class="progress-container">
+      <h3>Processing Progress</h3>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill" style="width: {{ task.progress_percentage }}%"></div>
+      </div>
+      <div class="progress-text" id="progressText">
+        {{ task.current_progress }} / {{ task.total_datasets }} datasets processed ({{ task.progress_percentage|floatformat:1 }}%)
+      </div>
+    </div>
+
+    <!-- Status Card -->
+    <div class="status-card status-{{ task.status }}" id="statusCard">
+      <h4>Current Status: <span id="statusText">{{ task.get_status_display }}</span></h4>
+      <p id="statusMessage">{{ task.current_status_message|default:"Initializing..." }}</p>
+    </div>
+
+    <!-- Statistics -->
+    <div class="stats-grid">
+      <div class="stat-item">
+        <div class="stat-number" id="totalDatasets">{{ task.total_datasets }}</div>
+        <div class="stat-label">Total Datasets</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-number" id="processedDatasets">{{ task.processed_datasets }}</div>
+        <div class="stat-label">Processed</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-number" id="failedDatasets">{{ task.failed_datasets }}</div>
+        <div class="stat-label">Failed</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-number" id="progressPercentage">{{ task.progress_percentage|floatformat:1 }}%</div>
+        <div class="stat-label">Progress</div>
+      </div>
+    </div>
+
+    <!-- Failed Datasets -->
+    {% if task.failed_dataset_details %}
+    <div class="failed-datasets">
+      <h4>Failed Datasets ({{ task.failed_datasets }})</h4>
+      <div id="failedDatasetsList">
+        {% for failed in task.failed_dataset_details %}
+        <div class="failed-item">
+          <strong>Dataset ID:</strong> {{ failed.id }}
+          {% if failed.noise_id %}<strong>Noise ID:</strong> {{ failed.noise_id }}{% endif %}
+          <br>
+          <strong>Error:</strong> {{ failed.error }}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Task Details -->
+    <div class="status-card">
+      <h4>Task Details</h4>
+      <p><strong>Task ID:</strong> {{ task.task_id }}</p>
+      <p><strong>Created by:</strong> {{ task.user.username }}</p>
+      <p><strong>Started:</strong> {{ task.created_at|date:"Y-m-d H:i:s" }}</p>
+      <p><strong>Last Updated:</strong> {{ task.updated_at|date:"Y-m-d H:i:s" }}</p>
+    </div>
+
+    <!-- Action Buttons -->
+    <div style="margin-top: 20px;">
+      <a href="{% url 'admin:data_noisedataset_missing_analysis' %}" class="button">← Back to Missing Analysis</a>
+      <a href="{% url 'admin:data_noisedataset_changelist' %}" class="button">← Back to Dataset List</a>
+    </div>
+  </div>
+</div>
+
+<script>
+let refreshInterval;
+const taskId = '{{ task.task_id }}';
+
+function refreshStatus() {
+    fetch(`{% url 'admin:data_noisedataset_task_status' task.task_id %}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                console.error('Error fetching status:', data.error);
+                return;
+            }
+
+            // Update progress bar
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            const statusText = document.getElementById('statusText');
+            const statusMessage = document.getElementById('statusMessage');
+            const statusCard = document.getElementById('statusCard');
+
+            progressFill.style.width = data.progress_percentage + '%';
+            progressText.textContent = `${data.current_progress} / ${data.total_datasets} datasets processed (${data.progress_percentage.toFixed(1)}%)`;
+
+            // Update status
+            statusText.textContent = data.status.replace('_', ' ').toUpperCase();
+            statusMessage.textContent = data.current_status_message || 'Processing...';
+
+            // Update statistics
+            document.getElementById('totalDatasets').textContent = data.total_datasets;
+            document.getElementById('processedDatasets').textContent = data.processed_datasets;
+            document.getElementById('failedDatasets').textContent = data.failed_datasets;
+            document.getElementById('progressPercentage').textContent = data.progress_percentage.toFixed(1) + '%';
+
+            // Update status card class
+            statusCard.className = `status-card status-${data.status}`;
+
+            // Update failed datasets list
+            if (data.failed_dataset_details && data.failed_dataset_details.length > 0) {
+                const failedList = document.getElementById('failedDatasetsList');
+                if (failedList) {
+                    failedList.innerHTML = data.failed_dataset_details.map(failed => `
+                        <div class="failed-item">
+                            <strong>Dataset ID:</strong> ${failed.id}
+                            ${failed.noise_id ? `<strong>Noise ID:</strong> ${failed.noise_id}` : ''}
+                            <br>
+                            <strong>Error:</strong> ${failed.error}
+                        </div>
+                    `).join('');
+                }
+            }
+
+            // Stop auto-refresh if task is completed
+            if (data.is_completed) {
+                clearInterval(refreshInterval);
+                console.log('Task completed, stopped auto-refresh');
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching task status:', error);
+        });
+}
+
+// Start auto-refresh
+document.addEventListener('DOMContentLoaded', function() {
+    // Initial refresh
+    refreshStatus();
+
+    // Set up auto-refresh every 5 seconds
+    refreshInterval = setInterval(refreshStatus, 5000);
+});
+
+// Clean up interval when page is unloaded
+window.addEventListener('beforeunload', function() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+});
+</script>
+{% endblock %}

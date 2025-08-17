@@ -239,79 +239,6 @@ class VisualizationPreset(models.Model):
         return f"{self.name} ({self.chart_type})"
 
 
-class BulkReprocessingTask(models.Model):
-    """Tracks progress of bulk audio analysis reprocessing"""
-
-    STATUS_CHOICES = [
-        ("pending", "Pending"),
-        ("processing", "Processing"),
-        ("completed", "Completed"),
-        ("failed", "Failed"),
-        ("cancelled", "Cancelled"),
-    ]
-
-    task_id = models.CharField(max_length=255, unique=True, help_text="Celery task ID")
-    created_by = models.ForeignKey(
-        CustomUser, on_delete=models.CASCADE, help_text="User who initiated the task"
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
-
-    # Progress tracking
-    total_datasets = models.IntegerField(
-        default=0, help_text="Total number of datasets to process"
-    )
-    processed_datasets = models.IntegerField(
-        default=0, help_text="Number of datasets processed"
-    )
-    failed_datasets = models.IntegerField(
-        default=0, help_text="Number of datasets that failed"
-    )
-    successful_datasets = models.IntegerField(
-        default=0, help_text="Number of datasets processed successfully"
-    )
-
-    # Error tracking
-    error_message = models.TextField(
-        blank=True, null=True, help_text="Error message if task failed"
-    )
-    failed_dataset_ids = models.JSONField(
-        default=list, help_text="List of dataset IDs that failed"
-    )
-
-    # Task metadata
-    started_at = models.DateTimeField(
-        null=True, blank=True, help_text="When processing started"
-    )
-    completed_at = models.DateTimeField(
-        null=True, blank=True, help_text="When processing completed"
-    )
-
-    class Meta:
-        ordering = ["-created_at"]
-
-    def __str__(self):
-        return f"Bulk Reprocessing Task {self.task_id} - {self.status}"
-
-    @property
-    def progress_percentage(self):
-        """Calculate progress percentage"""
-        if self.total_datasets == 0:
-            return 0
-        return int((self.processed_datasets / self.total_datasets) * 100)
-
-    @property
-    def is_completed(self):
-        """Check if task is completed (success or failure)"""
-        return self.status in ["completed", "failed", "cancelled"]
-
-    @property
-    def is_running(self):
-        """Check if task is currently running"""
-        return self.status == "processing"
-
-
 class BulkAudioUpload(models.Model):
     STATUS_CHOICES = [
         ("pending", "Pending"),
@@ -358,3 +285,57 @@ class BulkAudioUpload(models.Model):
             raise ValidationError(
                 "Invalid recording_date format. Use ISO format (YYYY-MM-DD)"
             )
+
+
+class BulkReprocessingTask(models.Model):
+    """Track bulk reprocessing tasks for progress monitoring"""
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("processing", "Processing"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+        ("completed_with_errors", "Completed With Errors"),
+        ("cancelled", "Cancelled"),
+    ]
+
+    task_id = models.CharField(max_length=255, unique=True, help_text="Celery task ID")
+    user = models.ForeignKey(
+        CustomUser, on_delete=models.CASCADE, help_text="User who initiated the task"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default="pending")
+
+    # Task details
+    total_datasets = models.IntegerField(default=0)
+    processed_datasets = models.IntegerField(default=0)
+    failed_datasets = models.IntegerField(default=0)
+
+    # Progress tracking
+    current_progress = models.IntegerField(default=0)
+    progress_percentage = models.FloatField(default=0.0)
+    current_status_message = models.TextField(blank=True)
+
+    # Results
+    failed_dataset_details = models.JSONField(default=list, blank=True)
+    result_summary = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Bulk Reprocessing Task {self.task_id} - {self.status}"
+
+    @property
+    def is_completed(self):
+        return self.status in [
+            "completed",
+            "completed_with_errors",
+            "failed",
+            "cancelled",
+        ]
+
+    @property
+    def is_running(self):
+        return self.status in ["pending", "processing"]

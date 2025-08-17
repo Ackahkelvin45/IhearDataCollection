@@ -3,19 +3,18 @@ from .models import (
     NoiseDataset,
     AudioFeature,
     NoiseAnalysis,
-    BulkReprocessingTask,
     VisualizationPreset,
+    BulkReprocessingTask,
 )
 from unfold.admin import ModelAdmin
 from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.urls import path
-from django.http import HttpResponseRedirect
+from django.http import HttpResponseRedirect, JsonResponse
 from django.db.models import Q
-from .tasks import process_audio_task
+from .tasks import process_audio_task, bulk_reprocess_audio_analysis
 from celery import group
 import logging
-
 
 logger = logging.getLogger(__name__)
 
@@ -161,9 +160,14 @@ class NoiseDatasetAdmin(ModelAdmin):
                 name="data_noisedataset_redo_analysis",
             ),
             path(
-                "progress/<str:task_id>/",
-                self.admin_site.admin_view(self.progress_view),
-                name="data_noisedataset_progress",
+                "task-progress/<str:task_id>/",
+                self.admin_site.admin_view(self.task_progress_view),
+                name="data_noisedataset_task_progress",
+            ),
+            path(
+                "api/task-status/<str:task_id>/",
+                self.admin_site.admin_view(self.task_status_api),
+                name="data_noisedataset_task_status",
             ),
         ]
         return custom_urls + urls
@@ -204,13 +208,6 @@ class NoiseDatasetAdmin(ModelAdmin):
             audio__isnull=True,
         ).select_related("collector", "category", "region", "community")
 
-        # Get active bulk reprocessing tasks
-        from .models import BulkReprocessingTask
-
-        active_tasks = BulkReprocessingTask.objects.filter(
-            status__in=["pending", "processing"]
-        ).order_by("-created_at")[:5]
-
         context = {
             "title": "Datasets with Missing Audio Analysis",
             "datasets_missing_audio_features": datasets_missing_audio_features,
@@ -223,22 +220,10 @@ class NoiseDatasetAdmin(ModelAdmin):
             "total_missing_both": datasets_missing_both.count(),
             "total_missing_either": datasets_missing_either.count(),
             "total_without_audio": datasets_without_audio.count(),
-            "active_tasks": active_tasks,
             "opts": self.model._meta,
-            "site_title": self.admin_site.site_title,
-            "site_header": self.admin_site.site_header,
-            "has_permission": self.has_view_permission(request),
-            "is_popup": False,
-            "is_nav_sidebar_enabled": True,
-            "available_apps": self.admin_site.get_app_list(request),
         }
 
-        # Use the admin site's template response
-        from django.template.response import TemplateResponse
-
-        return TemplateResponse(
-            request, "admin/data/noisedataset/missing_analysis.html", context
-        )
+        return render(request, "admin/data/noisedataset/missing_analysis.html", context)
 
     def redo_analysis_view(self, request):
         """Admin view to reprocess all datasets with missing analysis"""
@@ -251,39 +236,30 @@ class NoiseDatasetAdmin(ModelAdmin):
             ).values_list("id", flat=True)
 
             if datasets_to_process:
-                # Create a unique task ID
-                import uuid
-
-                task_id = f"bulk_reprocess_{uuid.uuid4().hex[:8]}"
-
-                # Create task record
-                from .models import BulkReprocessingTask
-
-                task_record = BulkReprocessingTask.objects.create(
-                    task_id=task_id,
-                    created_by=request.user,
-                    total_datasets=len(datasets_to_process),
-                    status="pending",
+                # Start the bulk reprocessing task
+                task = bulk_reprocess_audio_analysis.delay(
+                    list(datasets_to_process), user_id=request.user.id
                 )
 
-                # Start the bulk reprocessing task
-                from .tasks import bulk_reprocess_audio_analysis
-
-                bulk_reprocess_audio_analysis.delay(
-                    task_id=task_id,
-                    dataset_ids=list(datasets_to_process),
-                    user_id=request.user.id,
+                # Create tracking record
+                BulkReprocessingTask.objects.create(
+                    task_id=task.id,
+                    user=request.user,
+                    total_datasets=len(datasets_to_process),
+                    status="pending",
                 )
 
                 messages.success(
                     request,
                     f"Started bulk reprocessing for {len(datasets_to_process)} datasets. "
-                    f"Task ID: {task_id}. You can track progress in the admin.",
+                    f"Task ID: {task.id}. You can monitor progress on the task tracking page.",
                 )
+
+                # Redirect to task progress page
+                return HttpResponseRedirect(f"../task-progress/{task.id}/")
             else:
                 messages.info(request, "No datasets found that need reprocessing.")
-
-            return HttpResponseRedirect("../missing-analysis/")
+                return HttpResponseRedirect("../missing-analysis/")
 
         # GET request - show confirmation page
         datasets_to_process = NoiseDataset.objects.filter(
@@ -303,47 +279,10 @@ class NoiseDatasetAdmin(ModelAdmin):
             "total_datasets": datasets_to_process.count(),
             "datasets_without_audio": datasets_without_audio,
             "opts": self.model._meta,
-            "site_title": self.admin_site.site_title,
-            "site_header": self.admin_site.site_header,
-            "has_permission": self.has_view_permission(request),
-            "is_popup": False,
-            "is_nav_sidebar_enabled": True,
-            "available_apps": self.admin_site.get_app_list(request),
         }
 
-        # Use the admin site's template response
-        from django.template.response import TemplateResponse
-
-        return TemplateResponse(
+        return render(
             request, "admin/data/noisedataset/redo_analysis_confirm.html", context
-        )
-
-    def progress_view(self, request, task_id):
-        """Admin view to show progress of a bulk reprocessing task"""
-        from .models import BulkReprocessingTask
-
-        try:
-            task = BulkReprocessingTask.objects.get(task_id=task_id)
-        except BulkReprocessingTask.DoesNotExist:
-            messages.error(request, f"Task {task_id} not found.")
-            return HttpResponseRedirect("../missing-analysis/")
-
-        context = {
-            "title": f"Progress - Task {task_id}",
-            "task": task,
-            "opts": self.model._meta,
-            "site_title": self.admin_site.site_title,
-            "site_header": self.admin_site.site_header,
-            "has_permission": self.has_view_permission(request),
-            "is_popup": False,
-            "is_nav_sidebar_enabled": True,
-            "available_apps": self.admin_site.get_app_list(request),
-        }
-
-        from django.template.response import TemplateResponse
-
-        return TemplateResponse(
-            request, "admin/data/noisedataset/progress.html", context
         )
 
     def changelist_view(self, request, extra_context=None):
@@ -378,6 +317,82 @@ class NoiseDatasetAdmin(ModelAdmin):
 
         return super().changelist_view(request, extra_context)
 
+    def task_progress_view(self, request, task_id):
+        """Admin view to show task progress"""
+        try:
+            task_record = BulkReprocessingTask.objects.get(task_id=task_id)
+        except BulkReprocessingTask.DoesNotExist:
+            messages.error(request, f"Task {task_id} not found.")
+            return HttpResponseRedirect("../missing-analysis/")
+
+        context = {
+            "title": f"Task Progress - {task_id}",
+            "task": task_record,
+            "opts": self.model._meta,
+        }
+
+        return render(request, "admin/data/noisedataset/task_progress.html", context)
+
+    def task_status_api(self, request, task_id):
+        """API endpoint to get task status for AJAX updates"""
+        try:
+            task_record = BulkReprocessingTask.objects.get(task_id=task_id)
+
+            # Try to get current task status from Celery
+            from celery.result import AsyncResult
+
+            celery_result = AsyncResult(task_id)
+
+            # Update task record with current progress if available
+            if celery_result.state == "PROGRESS" and celery_result.info:
+                info = celery_result.info
+                task_record.current_progress = info.get("current", 0)
+                task_record.progress_percentage = info.get("progress_percentage", 0)
+                task_record.current_status_message = info.get("status", "")
+                task_record.processed_datasets = info.get("processed", 0)
+                task_record.failed_datasets = info.get("failed", 0)
+                task_record.failed_dataset_details = info.get("failed_datasets", [])
+                task_record.save()
+
+            # Update status based on Celery result
+            if celery_result.ready():
+                if celery_result.successful():
+                    result = celery_result.result
+                    if result.get("final_status") == "completed":
+                        task_record.status = "completed"
+                    elif result.get("final_status") == "completed_with_errors":
+                        task_record.status = "completed_with_errors"
+                    else:
+                        task_record.status = "failed"
+
+                    task_record.result_summary = result.get("status", "")
+                    task_record.save()
+                else:
+                    task_record.status = "failed"
+                    task_record.result_summary = str(celery_result.info)
+                    task_record.save()
+
+            return JsonResponse(
+                {
+                    "task_id": task_id,
+                    "status": task_record.status,
+                    "current_progress": task_record.current_progress,
+                    "total_datasets": task_record.total_datasets,
+                    "progress_percentage": task_record.progress_percentage,
+                    "current_status_message": task_record.current_status_message,
+                    "processed_datasets": task_record.processed_datasets,
+                    "failed_datasets": task_record.failed_datasets,
+                    "failed_dataset_details": task_record.failed_dataset_details,
+                    "is_completed": task_record.is_completed,
+                    "celery_state": celery_result.state,
+                }
+            )
+
+        except BulkReprocessingTask.DoesNotExist:
+            return JsonResponse({"error": "Task not found"}, status=404)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
 
 @admin.register(AudioFeature)
 class AudioFeatureAdmin(ModelAdmin):
@@ -410,70 +425,59 @@ class NoiseAnalysisAdmin(ModelAdmin):
     list_select_related = ("noise_dataset",)
 
 
-@admin.register(BulkReprocessingTask)
-class BulkReprocessingTaskAdmin(ModelAdmin):
-    list_display = (
-        "task_id",
-        "created_by",
-        "status",
-        "progress_percentage",
-        "total_datasets",
-        "processed_datasets",
-        "created_at",
-    )
-    list_filter = ("status", "created_at")
-    search_fields = ("task_id", "created_by__username")
-    readonly_fields = (
-        "task_id",
-        "created_by",
-        "created_at",
-        "updated_at",
-        "started_at",
-        "completed_at",
-        "progress_percentage",
-    )
-    list_select_related = ("created_by",)
-
-    fieldsets = (
-        (
-            "Task Information",
-            {"fields": ("task_id", "created_by", "status", "created_at", "updated_at")},
-        ),
-        (
-            "Progress Tracking",
-            {
-                "fields": (
-                    "total_datasets",
-                    "processed_datasets",
-                    "successful_datasets",
-                    "failed_datasets",
-                    "progress_percentage",
-                )
-            },
-        ),
-        ("Timing", {"fields": ("started_at", "completed_at")}),
-        (
-            "Error Information",
-            {
-                "fields": ("error_message", "failed_dataset_ids"),
-                "classes": ("collapse",),
-            },
-        ),
-    )
-
-    def has_add_permission(self, request):
-        return False  # Tasks should only be created by the system
-
-    def has_change_permission(self, request, obj=None):
-        return False  # Tasks should not be manually edited
-
-    def has_delete_permission(self, request, obj=None):
-        return request.user.is_superuser  # Only superusers can delete tasks
-
-
 @admin.register(VisualizationPreset)
 class VisualizationPresetAdmin(ModelAdmin):
     list_display = ("name", "chart_type", "high_contrast")
     list_filter = ("chart_type", "high_contrast")
     search_fields = ("name", "description")
     filter_horizontal = ()
+
+
+@admin.register(BulkReprocessingTask)
+class BulkReprocessingTaskAdmin(ModelAdmin):
+    list_display = (
+        "task_id",
+        "user",
+        "status",
+        "total_datasets",
+        "processed_datasets",
+        "failed_datasets",
+        "progress_percentage",
+        "created_at",
+    )
+    list_filter = ("status", "created_at")
+    search_fields = ("task_id", "user__username")
+    readonly_fields = (
+        "task_id",
+        "created_at",
+        "updated_at",
+        "current_progress",
+        "progress_percentage",
+        "current_status_message",
+        "failed_dataset_details",
+        "result_summary",
+    )
+
+    fieldsets = (
+        (
+            "Task Information",
+            {"fields": ("task_id", "user", "status", "created_at", "updated_at")},
+        ),
+        (
+            "Progress",
+            {
+                "fields": (
+                    "total_datasets",
+                    "processed_datasets",
+                    "failed_datasets",
+                    "current_progress",
+                    "progress_percentage",
+                    "current_status_message",
+                )
+            },
+        ),
+        ("Results", {"fields": ("failed_dataset_details", "result_summary")}),
+    )
+
+    def has_add_permission(self, request):
+        return False  # Tasks should only be created by the system

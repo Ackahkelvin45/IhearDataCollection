@@ -19,22 +19,22 @@
 
 {% block content %}
   {% if missing_either_count > 0 %}
-    <div style="margin-bottom: 20px; padding: 12px; background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px;">
-      <h4 style="margin-top: 0; color: #856404; font-size: 14px;">⚠️ Missing Audio Analysis Detected</h4>
-      <p style="margin-bottom: 10px; font-size: 13px;">
+    <div style="margin-bottom: 20px; padding: 15px; background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px;">
+      <h4 style="margin-top: 0; color: #856404;">⚠️ Missing Audio Analysis Detected</h4>
+      <p style="margin-bottom: 10px;">
         <strong>{{ missing_either_count }}</strong> datasets are missing audio analysis:
       </p>
-      <ul style="margin-bottom: 15px; font-size: 13px;">
+      <ul style="margin-bottom: 15px;">
         <li><strong>{{ missing_audio_features_count }}</strong> missing audio features</li>
         <li><strong>{{ missing_noise_analysis_count }}</strong> missing noise analysis</li>
       </ul>
       <div>
         <a href="{% url 'admin:data_noisedataset_missing_analysis' %}"
-           style="display: inline-block; padding: 6px 12px; background-color: #79aec8; color: white; text-decoration: none; border-radius: 3px; margin-right: 8px; font-size: 13px;">
+           style="display: inline-block; padding: 8px 16px; background-color: #007cba; color: white; text-decoration: none; border-radius: 3px; margin-right: 10px;">
           🔍 View Details
         </a>
         <a href="{% url 'admin:data_noisedataset_redo_analysis' %}"
-           style="display: inline-block; padding: 6px 12px; background-color: #ba8b00; color: white; text-decoration: none; border-radius: 3px; font-size: 13px;">
+           style="display: inline-block; padding: 8px 16px; background-color: #ffc107; color: #212529; text-decoration: none; border-radius: 3px;">
           🔄 Reprocess All
         </a>
       </div>
