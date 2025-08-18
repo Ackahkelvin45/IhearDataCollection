@@ -418,10 +418,6 @@ def extract_basic_features(y: np.ndarray, sr: int) -> dict:
             "waveform_data": waveform_data,
             "harmonic_ratio": harmonic_ratio,
             "percussive_ratio": percussive_ratio,
-            "peak_count": peak_count,
-            "peak_interval_mean": peak_interval_mean,
-            "dominant_frequency": dominant_frequency,
-            "frequency_range": frequency_range,
         }
 
     except Exception as e:
@@ -539,26 +535,10 @@ def extract_noise_analysis(y: np.ndarray, sr: int) -> dict:
         # Frequency range
         frequency_range = pos_freqs[-1] - pos_freqs[0]
 
-        # Spectral centroid
-        spectral_centroid = (
-            np.sum(pos_freqs * pos_fft) / np.sum(pos_fft) if np.sum(pos_fft) > 0 else 0
-        )
-
-        # Spectral bandwidth
-        spectral_bandwidth = (
-            np.sqrt(
-                np.sum(((pos_freqs - spectral_centroid) ** 2) * pos_fft)
-                / np.sum(pos_fft)
-            )
-            if np.sum(pos_fft) > 0
-            else 0
-        )
-
-        # Spectral rolloff
-        cumulative_energy = np.cumsum(pos_fft)
-        rolloff_threshold = 0.85 * cumulative_energy[-1]
-        rolloff_idx = np.where(cumulative_energy >= rolloff_threshold)[0]
-        spectral_rolloff = pos_freqs[rolloff_idx[0]] if len(rolloff_idx) > 0 else 0
+        # Event detection (simplified)
+        # Use peak detection to identify events
+        event_count = peak_count  # Use peak count as event count for now
+        event_durations = [0.1] * event_count if event_count > 0 else []  # Placeholder durations
 
         return {
             "mean_db": mean_db,
@@ -568,10 +548,9 @@ def extract_noise_analysis(y: np.ndarray, sr: int) -> dict:
             "peak_count": peak_count,
             "peak_interval_mean": peak_interval_mean,
             "dominant_frequency": float(dominant_frequency),
-            "frequency_range": float(frequency_range),
-            "spectral_centroid": float(spectral_centroid),
-            "spectral_bandwidth": float(spectral_bandwidth),
-            "spectral_rolloff": float(spectral_rolloff),
+            "frequency_range": f"{pos_freqs[0]:.1f}-{pos_freqs[-1]:.1f}",
+            "event_count": event_count,
+            "event_durations": event_durations,
         }
 
     except Exception as e:
