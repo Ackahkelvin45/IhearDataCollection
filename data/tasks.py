@@ -1,6 +1,6 @@
 # tasks.py
 from celery import shared_task
-from .utils import process_audio_file
+from .utils import process_audio_file, safe_process_audio_file
 from django.core.files import File
 import os
 from .models import BulkAudioUpload, NoiseDataset
@@ -23,12 +23,23 @@ logger = logging.getLogger(__name__)
 def process_audio_task(noise_dataset_id):
     try:
         instance = NoiseDataset.objects.get(id=noise_dataset_id)
-        process_audio_file(instance)
+        safe_process_audio_file(instance)
     except NoiseDataset.DoesNotExist:
         # Log and skip if instance was deleted
         import logging
 
         logging.warning(f"NoiseDataset with ID {noise_dataset_id} not found.")
+
+
+@shared_task
+def check_task_revocation(task_id):
+    """Check if a task has been revoked - separate from main processing to avoid Numba issues"""
+    try:
+        from celery.result import AsyncResult
+        result = AsyncResult(task_id)
+        return result.revoked()
+    except Exception:
+        return False
 
 
 @shared_task(bind=True, time_limit=3600*6, soft_time_limit=3600*5)
@@ -60,19 +71,6 @@ def bulk_reprocess_audio_analysis(self, dataset_ids, user_id=None):
         },
     )
 
-    def is_task_revoked():
-        """Check if the task has been revoked"""
-        try:
-            # Check if task is revoked via request
-            if hasattr(self.request, 'revoked') and self.request.revoked:
-                return True
-            # Check if task is revoked via AsyncResult
-            from celery.result import AsyncResult
-            result = AsyncResult(self.request.id)
-            return result.revoked()
-        except Exception:
-            return False
-
     try:
         # Process in smaller batches to prevent memory issues
         batch_size = 50
@@ -87,11 +85,6 @@ def bulk_reprocess_audio_analysis(self, dataset_ids, user_id=None):
                 dataset = None  # Initialize dataset variable
                 
                 try:
-                    # Check if task was revoked
-                    if is_task_revoked():
-                        logger.info("Bulk reprocessing task was revoked")
-                        break
-
                     # Get the dataset with select_related to reduce DB queries
                     try:
                         dataset = NoiseDataset.objects.select_related(
@@ -120,7 +113,7 @@ def bulk_reprocess_audio_analysis(self, dataset_ids, user_id=None):
 
                     # Process the audio file
                     logger.info(f"Processing dataset {dataset_id} ({global_index+1}/{total_datasets})")
-                    process_audio_file(dataset)
+                    safe_process_audio_file(dataset)
 
                     processed_count += 1
                     logger.info(f"Successfully processed dataset {dataset_id}")
@@ -152,10 +145,6 @@ def bulk_reprocess_audio_analysis(self, dataset_ids, user_id=None):
                             "progress_percentage": progress_percentage,
                         },
                     )
-            
-            # Check if task was revoked after each batch
-            if is_task_revoked():
-                break
                 
     except Exception as e:
         logger.error(f"Critical error in bulk reprocessing: {str(e)}")

@@ -482,3 +482,25 @@ def generate_noise_id(user):
         user.speaker_id if hasattr(user, "speaker_id") and user.speaker_id else "UNK"
     )
     return f"NSE-{speaker_id}-{timestamp}-{random_chars}"
+
+
+def safe_process_audio_file(instance: NoiseDataset):
+    """Safe audio processing function that won't conflict with Numba JIT compilation"""
+    try:
+        # Import here to avoid Numba compilation issues
+        import numba
+        original_disable = numba.config.DISABLE_JIT
+        
+        # Temporarily disable JIT for this function
+        numba.config.DISABLE_JIT = True
+        
+        try:
+            # Call the original processing function
+            process_audio_file(instance)
+        finally:
+            # Restore original setting
+            numba.config.DISABLE_JIT = original_disable
+            
+    except Exception as e:
+        logger.error(f"Error in safe audio processing: {e}")
+        raise
