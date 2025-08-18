@@ -8,10 +8,25 @@ ENV PYTHONUNBUFFERED 1
 # Create and set work directory called `app`
 RUN mkdir -p /code
 WORKDIR /code
+
+# Install system dependencies for audio processing
 RUN --mount=target=/var/lib/apt/lists,type=cache,sharing=locked \
     --mount=target=/var/cache/apt,type=cache,sharing=locked \
     apt update && \
-    apt upgrade -y
+    apt upgrade -y && \
+    apt install -y \
+        ffmpeg \
+        libsndfile1 \
+        libasound2-dev \
+        portaudio19-dev \
+        python3-dev \
+        gcc \
+        g++ \
+        make \
+        pkg-config \
+        libffi-dev \
+        libssl-dev \
+        && apt-get clean
 
 # Install dependencies
 COPY requirements.txt /tmp/requirements.txt

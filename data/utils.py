@@ -491,10 +491,10 @@ def safe_process_audio_file(instance: NoiseDataset):
         try:
             import numba
             import os
-            
+
             # Set environment variable to disable numba JIT completely
-            os.environ['NUMBA_DISABLE_JIT'] = '1'
-            
+            os.environ["NUMBA_DISABLE_JIT"] = "1"
+
             # Also disable JIT in numba config
             original_disable = numba.config.DISABLE_JIT
             numba.config.DISABLE_JIT = True
@@ -504,7 +504,9 @@ def safe_process_audio_file(instance: NoiseDataset):
                 process_audio_file(instance)
             except AttributeError as e:
                 if "get_call_template" in str(e):
-                    logger.warning(f"Numba compatibility issue detected for {instance.noise_id}, retrying with different approach")
+                    logger.warning(
+                        f"Numba compatibility issue detected for {instance.noise_id}, retrying with different approach"
+                    )
                     # Try processing without numba entirely
                     _process_audio_without_numba(instance)
                 else:
@@ -513,12 +515,14 @@ def safe_process_audio_file(instance: NoiseDataset):
                 # Restore original setting
                 numba.config.DISABLE_JIT = original_disable
                 # Remove environment variable
-                if 'NUMBA_DISABLE_JIT' in os.environ:
-                    del os.environ['NUMBA_DISABLE_JIT']
-                    
+                if "NUMBA_DISABLE_JIT" in os.environ:
+                    del os.environ["NUMBA_DISABLE_JIT"]
+
         except ImportError:
             # Numba is not installed, use the simple processing approach
-            logger.info(f"Numba not available, using simple processing for {instance.noise_id}")
+            logger.info(
+                f"Numba not available, using simple processing for {instance.noise_id}"
+            )
             _process_audio_without_numba(instance)
 
     except Exception as e:
@@ -530,7 +534,7 @@ def _process_audio_without_numba(instance: NoiseDataset):
     """Process audio without using numba-optimized functions"""
     try:
         logger.info(f"Processing audio without numba for {instance.noise_id}")
-        
+
         if not instance.audio:
             logger.warning(f"No audio file found for NoiseDataset {instance.id}")
             return
@@ -599,7 +603,9 @@ def _process_audio_without_numba(instance: NoiseDataset):
                     )
 
     except Exception as e:
-        logger.error(f"Error in non-numba audio processing pipeline: {e}", exc_info=True)
+        logger.error(
+            f"Error in non-numba audio processing pipeline: {e}", exc_info=True
+        )
         raise
 
 
@@ -624,11 +630,17 @@ def _extract_audio_features_simple(instance, audio_path, file_ext):
         # Basic features only to avoid numba issues
         rms_energy = float(np.mean(librosa.feature.rms(y=y)[0]))
         zcr = float(np.mean(librosa.feature.zero_crossing_rate(y=y)[0]))
-        
+
         # Spectral features
-        spectral_centroid = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)[0]))
-        spectral_bandwidth = float(np.mean(librosa.feature.spectral_bandwidth(y=y, sr=sr)[0]))
-        spectral_rolloff = float(np.mean(librosa.feature.spectral_rolloff(y=y, sr=sr)[0]))
+        spectral_centroid = float(
+            np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)[0])
+        )
+        spectral_bandwidth = float(
+            np.mean(librosa.feature.spectral_bandwidth(y=y, sr=sr)[0])
+        )
+        spectral_rolloff = float(
+            np.mean(librosa.feature.spectral_rolloff(y=y, sr=sr)[0])
+        )
         spectral_flatness = float(np.mean(librosa.feature.spectral_flatness(y=y)[0]))
 
         # MFCCs (simplified)
@@ -668,7 +680,9 @@ def _extract_audio_features_simple(instance, audio_path, file_ext):
             },
         )
 
-        logger.info(f"Successfully extracted features for {instance.noise_id} (simple mode)")
+        logger.info(
+            f"Successfully extracted features for {instance.noise_id} (simple mode)"
+        )
 
     except Exception as e:
         logger.error(
@@ -737,7 +751,9 @@ def _perform_noise_analysis_simple(instance, audio_path, file_ext):
             },
         )
 
-        logger.info(f"Successfully performed noise analysis for {instance.noise_id} (simple mode)")
+        logger.info(
+            f"Successfully performed noise analysis for {instance.noise_id} (simple mode)"
+        )
 
     except Exception as e:
         logger.error(
