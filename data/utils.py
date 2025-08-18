@@ -490,45 +490,49 @@ def safe_process_audio_file(instance: NoiseDataset):
         # Import here to avoid Numba compilation issues
         import numba
         import os
-        
+
         # Store original environment and config
-        original_env = os.environ.get('NUMBA_DISABLE_JIT')
-        original_disable = getattr(numba.config, 'DISABLE_JIT', False)
-        
+        original_env = os.environ.get("NUMBA_DISABLE_JIT")
+        original_disable = getattr(numba.config, "DISABLE_JIT", False)
+
         try:
             # Disable Numba JIT compilation completely
-            os.environ['NUMBA_DISABLE_JIT'] = '1'
+            os.environ["NUMBA_DISABLE_JIT"] = "1"
             numba.config.DISABLE_JIT = True
-            
+
             # Also try to disable any existing JIT compilation
             try:
                 numba.config.CUDA_LOW_OCCUPANCY_WARNINGS = False
                 numba.config.CUDA_LOG_LEVEL = 20  # WARNING level
             except:
                 pass  # Ignore if these configs don't exist
-            
+
             # Call the original processing function
             process_audio_file(instance)
             return True
-            
+
         except Exception as processing_error:
-            logger.error(f"Error in audio processing for {instance.noise_id}: {processing_error}")
+            logger.error(
+                f"Error in audio processing for {instance.noise_id}: {processing_error}"
+            )
             # Don't raise the error, just log it to prevent task failure
             return False
-            
+
         finally:
             # Restore original settings
             if original_env is not None:
-                os.environ['NUMBA_DISABLE_JIT'] = original_env
-            elif 'NUMBA_DISABLE_JIT' in os.environ:
-                del os.environ['NUMBA_DISABLE_JIT']
-                
+                os.environ["NUMBA_DISABLE_JIT"] = original_env
+            elif "NUMBA_DISABLE_JIT" in os.environ:
+                del os.environ["NUMBA_DISABLE_JIT"]
+
             try:
                 numba.config.DISABLE_JIT = original_disable
             except:
                 pass  # Ignore if config restoration fails
 
     except Exception as e:
-        logger.error(f"Error in safe audio processing setup for {instance.noise_id}: {e}")
+        logger.error(
+            f"Error in safe audio processing setup for {instance.noise_id}: {e}"
+        )
         # Don't raise the error, just log it to prevent task failure
         return False

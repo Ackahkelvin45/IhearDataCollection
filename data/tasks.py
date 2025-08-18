@@ -25,7 +25,9 @@ def process_audio_task(noise_dataset_id):
         instance = NoiseDataset.objects.get(id=noise_dataset_id)
         success = safe_process_audio_file(instance)
         if not success:
-            logger.warning(f"Audio processing failed for NoiseDataset {noise_dataset_id}")
+            logger.warning(
+                f"Audio processing failed for NoiseDataset {noise_dataset_id}"
+            )
     except NoiseDataset.DoesNotExist:
         # Log and skip if instance was deleted
         import logging
@@ -125,7 +127,7 @@ def bulk_reprocess_audio_analysis(self, dataset_ids, user_id=None):
                         f"Processing dataset {dataset_id} ({global_index+1}/{total_datasets})"
                     )
                     success = safe_process_audio_file(dataset)
-                    
+
                     if success:
                         processed_count += 1
                         logger.info(f"Successfully processed dataset {dataset_id}")

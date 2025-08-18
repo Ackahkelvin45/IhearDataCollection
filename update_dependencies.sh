@@ -29,4 +29,4 @@ echo "Verifying installation..."
 python -c "import numba; import numpy; print(f'Numba version: {numba.__version__}'); print(f'NumPy version: {numpy.__version__}')"
 
 echo "Dependencies updated successfully!"
-echo "You can now restart your Celery worker to test the audio processing." 
+echo "You can now restart your Celery worker to test the audio processing."
