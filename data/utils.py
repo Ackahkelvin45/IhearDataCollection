@@ -1,6 +1,5 @@
 import os
 import numpy as np
-import librosa
 import tempfile
 import logging
 from scipy import signal as scipy_signal
@@ -11,111 +10,23 @@ from .models import NoiseDataset, AudioFeature, NoiseAnalysis, VisualizationPres
 import uuid
 from datetime import datetime
 from django.utils import timezone
+from .audio_processing import (
+    get_file_extension, 
+    is_supported_extension, 
+    load_audio_file,
+    process_audio_file_alternative
+)
 
 logger = logging.getLogger(__name__)
 
-# Supported audio formats and their common extensions
-SUPPORTED_FORMATS = {
-    "wav": [".wav", ".wave"],
-    "mp3": [".mp3"],
-    "flac": [".flac"],
-    "ogg": [".ogg", ".oga", ".opus"],
-    "aiff": [".aiff", ".aif"],
-    "m4a": [".m4a"],
-}
+# Removed old audio format functions - now using alternative processing module
 
 
-def check_audio_backends():
-    """Check if required audio backends are available"""
-    try:
-        # Test soundfile backend
-        with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
-            sf.write(tmp.name, np.zeros(1000), 44100)
-            sf.read(tmp.name)
-
-        # Test audioread backend
-        with tempfile.NamedTemporaryFile(suffix=".mp3") as tmp:
-            try:
-                with audioread.audio_open(tmp.name):
-                    pass
-            except audioread.exceptions.NoBackendError:
-                logger.warning("audiored MP3 backend not available")
-
-        return True
-    except Exception as e:
-        logger.error(f"Audio backend check failed: {e}")
-        return False
-
-
-def get_file_extension(filename: str) -> Optional[str]:
-    """Get normalized file extension from filename"""
-    if not filename:
-        return None
-
-    # Get the last part after dot (handle multiple dots like .tar.gz)
-    base, ext = os.path.splitext(filename.lower())
-    ext = ext.strip()
-
-    # Check for compound extensions
-    if not ext and "." in base:
-        ext = "." + base.split(".")[-1]
-
-    return ext if ext else None
-
-
-def is_supported_extension(ext: str) -> bool:
-    """Check if extension is in our supported formats list"""
-    if not ext:
-        return False
-    return any(ext in extensions for extensions in SUPPORTED_FORMATS.values())
-
-
-def get_audio_format(ext: str) -> Optional[str]:
-    """Get audio format from extension"""
-    for fmt, extensions in SUPPORTED_FORMATS.items():
-        if ext in extensions:
-            return fmt
-    return None
-
-
-def load_audio_file(audio_path: str, ext: str):
-    """Robust audio file loading with multiple fallback strategies"""
-    try:
-        # First try librosa with native sample rate
-        y, sr = librosa.load(audio_path, sr=None)
-        logger.info(f"Loaded {audio_path} with librosa (native SR)")
-        return y, sr
-    except Exception as primary_error:
-        logger.warning(f"Primary load failed for {audio_path}: {primary_error}")
-
-        # Try with soundfile if format is supported
-        if (
-            ext
-            in SUPPORTED_FORMATS["wav"]
-            + SUPPORTED_FORMATS["flac"]
-            + SUPPORTED_FORMATS["aiff"]
-        ):
-            try:
-                y, sr = sf.read(audio_path)
-                logger.info(f"Loaded {audio_path} with soundfile")
-                return y, sr
-            except Exception as sf_error:
-                logger.warning(f"Soundfile load failed: {sf_error}")
-
-        # Try with standard sample rate as last resort
-        try:
-            y, sr = librosa.load(audio_path, sr=22050)
-            logger.info(f"Loaded {audio_path} with librosa (standard SR)")
-            return y, sr
-        except Exception as fallback_error:
-            logger.error(
-                f"All loading attempts failed for {audio_path}: {fallback_error}"
-            )
-            raise
+# Removed old load_audio_file function - now using alternative processing
 
 
 def process_audio_file(instance: NoiseDataset):
-    """Full audio processing pipeline that mimics post_save signal"""
+    """Full audio processing pipeline using alternative methods (no librosa)"""
     if not instance.audio:
         logger.warning(f"No audio file found for NoiseDataset {instance.id}")
         return
@@ -166,9 +77,26 @@ def process_audio_file(instance: NoiseDataset):
             if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
                 raise ValueError("Temporary audio file is empty or doesn't exist")
 
-            extract_audio_features(instance, audio_path, file_ext)
-            perform_noise_analysis(instance, audio_path, file_ext)
+            # Use alternative processing (no librosa)
+            audio_features, noise_analysis = process_audio_file_alternative(audio_path, file_ext)
+            
+            # Create/update audio features
+            AudioFeature.objects.update_or_create(
+                noise_dataset=instance,
+                defaults=audio_features,
+            )
+
+            # Create/update noise analysis
+            NoiseAnalysis.objects.update_or_create(
+                noise_dataset=instance,
+                defaults=noise_analysis,
+            )
+
+            # Create visualization presets
             create_visualization_presets(instance)
+            
+            logger.info(f"Successfully processed audio file for {instance.noise_id}")
+
         except Exception as processing_error:
             logger.error(
                 f"Error processing audio file {audio_path}: {processing_error}",
@@ -189,179 +117,7 @@ def process_audio_file(instance: NoiseDataset):
         raise
 
 
-def extract_audio_features(instance, audio_path, file_ext):
-    """Extract audio features with robust error handling"""
-    try:
-        logger.info(f"Extracting features from {audio_path}")
-
-        # Load audio with our robust loader
-        y, sr = load_audio_file(audio_path, file_ext)
-
-        duration = librosa.get_duration(y=y, sr=sr)
-        logger.info(
-            f"Audio loaded successfully: duration={duration:.2f}s, sr={sr}, samples={len(y)}"
-        )
-
-        # Convert to mono if needed
-        if len(y.shape) > 1:
-            y = librosa.to_mono(y)
-            logger.info(f"Converted audio to mono, new shape: {y.shape}")
-
-        # RMS Energy
-        rms_energy = librosa.feature.rms(y=y)[0]
-
-        # Zero Crossing Rate
-        zcr = librosa.feature.zero_crossing_rate(y=y)[0]
-
-        # Spectral Features
-        spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
-        spectral_bandwidth = librosa.feature.spectral_bandwidth(y=y, sr=sr)[0]
-        spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)[0]
-        spectral_flatness = librosa.feature.spectral_flatness(y=y)[0]
-
-        # MFCCs
-        mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
-        mfccs_mean = np.mean(mfccs, axis=1).tolist()
-
-        # Chroma Features
-        chroma = librosa.feature.chroma_stft(y=y, sr=sr)
-        chroma_mean = np.mean(chroma, axis=1).tolist()
-
-        # Mel Spectrogram
-        mel_spec = librosa.feature.melspectrogram(y=y, sr=sr)
-        mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
-
-        # Waveform data (downsampled for visualization)
-        waveform_data = y[:: max(1, len(y) // 1000)].tolist()
-
-        # Harmonic/Percussive Separation
-        y_harmonic, y_percussive = librosa.effects.hpss(y)
-        harmonic_ratio = float(np.sum(y_harmonic**2) / np.sum(y**2))
-        percussive_ratio = float(np.sum(y_percussive**2) / np.sum(y**2))
-
-        # Create/update audio features
-        AudioFeature.objects.update_or_create(
-            noise_dataset=instance,
-            defaults={
-                "sample_rate": sr,
-                "num_samples": len(y),
-                "duration": duration,
-                "rms_energy": float(np.mean(rms_energy)),
-                "zero_crossing_rate": float(np.mean(zcr)),
-                "spectral_centroid": float(np.mean(spectral_centroid)),
-                "spectral_bandwidth": float(np.mean(spectral_bandwidth)),
-                "spectral_rolloff": float(np.mean(spectral_rolloff)),
-                "spectral_flatness": float(np.mean(spectral_flatness)),
-                "mfccs": mfccs_mean,
-                "chroma_stft": chroma_mean,
-                "mel_spectrogram": mel_spec_db.tolist(),
-                "waveform_data": waveform_data,
-                "harmonic_ratio": harmonic_ratio,
-                "percussive_ratio": percussive_ratio,
-            },
-        )
-
-        logger.info(f"Successfully extracted features for {instance.noise_id}")
-
-    except Exception as e:
-        logger.error(
-            f"Error extracting audio features from {audio_path}: {e}", exc_info=True
-        )
-        raise
-
-
-def perform_noise_analysis(instance, audio_path, file_ext):
-    """Perform detailed noise analysis with robust error handling"""
-    try:
-        logger.info(f"Performing noise analysis on {audio_path}")
-
-        # Load audio with our robust loader
-        y, sr = load_audio_file(audio_path, file_ext)
-
-        # Convert to mono if needed
-        if len(y.shape) > 1:
-            y = librosa.to_mono(y)
-
-        y_db = librosa.amplitude_to_db(np.abs(y), ref=np.max)
-
-        # Basic dB statistics
-        mean_db = float(np.mean(y_db))
-        max_db = float(np.max(y_db))
-        min_db = float(np.min(y_db))
-        std_db = float(np.std(y_db))
-
-        # Peak detection
-        peaks, _ = scipy_signal.find_peaks(np.abs(y), height=np.std(y) * 2)
-        peak_count = len(peaks)
-        peak_interval_mean = (
-            float(np.mean(np.diff(peaks) / sr)) if len(peaks) > 1 else 0.0
-        )
-
-        # Frequency analysis
-        fft = np.fft.fft(y)
-        freqs = np.fft.fftfreq(len(fft), 1 / sr)
-        magnitude = np.abs(fft)
-        dominant_freq_idx = np.argmax(magnitude[: len(magnitude) // 2])
-        dominant_frequency = float(abs(freqs[dominant_freq_idx]))
-
-        # Frequency range containing 90% of energy
-        energy_cumsum = np.cumsum(magnitude[: len(magnitude) // 2])
-        total_energy = energy_cumsum[-1]
-        freq_range_low = freqs[np.where(energy_cumsum >= 0.05 * total_energy)[0][0]]
-        freq_range_high = freqs[np.where(energy_cumsum >= 0.95 * total_energy)[0][0]]
-        frequency_range = f"{freq_range_low:.1f}-{freq_range_high:.1f}"
-
-        # Event detection
-        frame_length = sr // 10  # 100ms frames
-        frames = [y[i : i + frame_length] for i in range(0, len(y), frame_length)]
-        frame_energies = [
-            np.sum(frame**2) for frame in frames if len(frame) == frame_length
-        ]
-        energy_threshold = np.mean(frame_energies) + 2 * np.std(frame_energies)
-        event_frames = [
-            i for i, energy in enumerate(frame_energies) if energy > energy_threshold
-        ]
-
-        # Cluster consecutive events
-        events = []
-        if event_frames:
-            current_event = [event_frames[0], event_frames[0]]
-            for frame in event_frames[1:]:
-                if frame == current_event[1] + 1:
-                    current_event[1] = frame
-                else:
-                    events.append(current_event)
-                    current_event = [frame, frame]
-            events.append(current_event)
-
-        event_count = len(events)
-        event_durations = [
-            float((end - start + 1) * 0.1) for start, end in events
-        ]  # Convert to seconds
-
-        NoiseAnalysis.objects.update_or_create(
-            noise_dataset=instance,
-            defaults={
-                "mean_db": mean_db,
-                "max_db": max_db,
-                "min_db": min_db,
-                "std_db": std_db,
-                "peak_count": peak_count,
-                "peak_interval_mean": peak_interval_mean,
-                "dominant_frequency": dominant_frequency,
-                "frequency_range": frequency_range,
-                "event_count": event_count,
-                "event_durations": event_durations,
-            },
-        )
-
-        logger.info(f"Completed noise analysis for {instance.noise_id}")
-
-    except Exception as e:
-        logger.error(
-            f"Error performing noise analysis on {audio_path}: {e}", exc_info=True
-        )
-        raise
+# Removed old librosa-based functions - now using alternative processing
 
 
 def create_visualization_presets(instance):
@@ -485,54 +241,15 @@ def generate_noise_id(user):
 
 
 def safe_process_audio_file(instance: NoiseDataset):
-    """Safe audio processing function that won't conflict with Numba JIT compilation"""
+    """Safe audio processing function with Numba JIT already disabled at module level"""
     try:
-        # Import here to avoid Numba compilation issues
-        import numba
-        import os
-
-        # Store original environment and config
-        original_env = os.environ.get("NUMBA_DISABLE_JIT")
-        original_disable = getattr(numba.config, "DISABLE_JIT", False)
-
-        try:
-            # Disable Numba JIT compilation completely
-            os.environ["NUMBA_DISABLE_JIT"] = "1"
-            numba.config.DISABLE_JIT = True
-
-            # Also try to disable any existing JIT compilation
-            try:
-                numba.config.CUDA_LOW_OCCUPANCY_WARNINGS = False
-                numba.config.CUDA_LOG_LEVEL = 20  # WARNING level
-            except:
-                pass  # Ignore if these configs don't exist
-
-            # Call the original processing function
-            process_audio_file(instance)
-            return True
-
-        except Exception as processing_error:
-            logger.error(
-                f"Error in audio processing for {instance.noise_id}: {processing_error}"
-            )
-            # Don't raise the error, just log it to prevent task failure
-            return False
-
-        finally:
-            # Restore original settings
-            if original_env is not None:
-                os.environ["NUMBA_DISABLE_JIT"] = original_env
-            elif "NUMBA_DISABLE_JIT" in os.environ:
-                del os.environ["NUMBA_DISABLE_JIT"]
-
-            try:
-                numba.config.DISABLE_JIT = original_disable
-            except:
-                pass  # Ignore if config restoration fails
-
-    except Exception as e:
+        # Call the original processing function directly since Numba is already disabled
+        process_audio_file(instance)
+        return True
+        
+    except Exception as processing_error:
         logger.error(
-            f"Error in safe audio processing setup for {instance.noise_id}: {e}"
+            f"Error in audio processing for {instance.noise_id}: {processing_error}"
         )
         # Don't raise the error, just log it to prevent task failure
         return False
