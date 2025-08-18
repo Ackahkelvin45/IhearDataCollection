@@ -60,6 +60,19 @@ def bulk_reprocess_audio_analysis(self, dataset_ids, user_id=None):
         },
     )
 
+    def is_task_revoked():
+        """Check if the task has been revoked"""
+        try:
+            # Check if task is revoked via request
+            if hasattr(self.request, 'revoked') and self.request.revoked:
+                return True
+            # Check if task is revoked via AsyncResult
+            from celery.result import AsyncResult
+            result = AsyncResult(self.request.id)
+            return result.revoked()
+        except Exception:
+            return False
+
     try:
         # Process in smaller batches to prevent memory issues
         batch_size = 50
@@ -71,11 +84,12 @@ def bulk_reprocess_audio_analysis(self, dataset_ids, user_id=None):
             
             for i, dataset_id in enumerate(batch_ids):
                 global_index = batch_start + i
+                dataset = None  # Initialize dataset variable
                 
                 try:
-                    # Check if task was revoked or timed out
-                    if self.is_aborted():
-                        logger.info("Bulk reprocessing task was aborted")
+                    # Check if task was revoked
+                    if is_task_revoked():
+                        logger.info("Bulk reprocessing task was revoked")
                         break
 
                     # Get the dataset with select_related to reduce DB queries
@@ -118,7 +132,7 @@ def bulk_reprocess_audio_analysis(self, dataset_ids, user_id=None):
                         failed_datasets.append(
                             {
                                 "id": dataset_id,
-                                "noise_id": getattr(dataset, "noise_id", "Unknown"),
+                                "noise_id": getattr(dataset, "noise_id", "Unknown") if dataset else "Unknown",
                                 "error": str(e)[:200],  # Limit error message length
                             }
                         )
@@ -139,8 +153,8 @@ def bulk_reprocess_audio_analysis(self, dataset_ids, user_id=None):
                         },
                     )
             
-            # Check if task was aborted after each batch
-            if self.is_aborted():
+            # Check if task was revoked after each batch
+            if is_task_revoked():
                 break
                 
     except Exception as e:
