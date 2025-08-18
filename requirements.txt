@@ -105,7 +105,7 @@ nodeenv==1.9.1
 notebook==7.4.4
 notebook_shim==0.2.4
 numba==0.58.1
-numpy==2.2.6
+numpy==1.26.4
 openpyxl==3.1.5
 overrides==7.7.0
 packaging==25.0
