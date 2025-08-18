@@ -23,7 +23,9 @@ logger = logging.getLogger(__name__)
 def process_audio_task(noise_dataset_id):
     try:
         instance = NoiseDataset.objects.get(id=noise_dataset_id)
-        safe_process_audio_file(instance)
+        success = safe_process_audio_file(instance)
+        if not success:
+            logger.warning(f"Audio processing failed for NoiseDataset {noise_dataset_id}")
     except NoiseDataset.DoesNotExist:
         # Log and skip if instance was deleted
         import logging
@@ -122,10 +124,26 @@ def bulk_reprocess_audio_analysis(self, dataset_ids, user_id=None):
                     logger.info(
                         f"Processing dataset {dataset_id} ({global_index+1}/{total_datasets})"
                     )
-                    safe_process_audio_file(dataset)
-
-                    processed_count += 1
-                    logger.info(f"Successfully processed dataset {dataset_id}")
+                    success = safe_process_audio_file(dataset)
+                    
+                    if success:
+                        processed_count += 1
+                        logger.info(f"Successfully processed dataset {dataset_id}")
+                    else:
+                        failed_count += 1
+                        logger.warning(f"Failed to process dataset {dataset_id}")
+                        if len(failed_datasets) < MAX_FAILED_DETAILS:
+                            failed_datasets.append(
+                                {
+                                    "id": dataset_id,
+                                    "noise_id": (
+                                        getattr(dataset, "noise_id", "Unknown")
+                                        if dataset
+                                        else "Unknown"
+                                    ),
+                                    "error": "Audio processing failed",
+                                }
+                            )
 
                 except Exception as e:
                     logger.error(f"Failed to process dataset {dataset_id}: {str(e)}")
