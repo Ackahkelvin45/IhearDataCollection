@@ -11,10 +11,10 @@ import uuid
 from datetime import datetime
 from django.utils import timezone
 from .audio_processing import (
-    get_file_extension, 
-    is_supported_extension, 
+    get_file_extension,
+    is_supported_extension,
     load_audio_file,
-    process_audio_file_alternative
+    process_audio_file_alternative,
 )
 
 logger = logging.getLogger(__name__)
@@ -78,8 +78,10 @@ def process_audio_file(instance: NoiseDataset):
                 raise ValueError("Temporary audio file is empty or doesn't exist")
 
             # Use alternative processing (no librosa)
-            audio_features, noise_analysis = process_audio_file_alternative(audio_path, file_ext)
-            
+            audio_features, noise_analysis = process_audio_file_alternative(
+                audio_path, file_ext
+            )
+
             # Create/update audio features
             AudioFeature.objects.update_or_create(
                 noise_dataset=instance,
@@ -94,7 +96,7 @@ def process_audio_file(instance: NoiseDataset):
 
             # Create visualization presets
             create_visualization_presets(instance)
-            
+
             logger.info(f"Successfully processed audio file for {instance.noise_id}")
 
         except Exception as processing_error:
@@ -246,7 +248,7 @@ def safe_process_audio_file(instance: NoiseDataset):
         # Call the original processing function directly since Numba is already disabled
         process_audio_file(instance)
         return True
-        
+
     except Exception as processing_error:
         logger.error(
             f"Error in audio processing for {instance.noise_id}: {processing_error}"
