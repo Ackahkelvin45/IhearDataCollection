@@ -50,28 +50,133 @@ def is_supported_extension(ext: str) -> bool:
 
 
 def load_audio_file(audio_path: str, ext: str) -> Tuple[np.ndarray, int]:
-    """Load audio file using soundfile or audioread, avoiding librosa"""
+    """Load audio file using soundfile and audioread with better error handling"""
     try:
-        # Try with soundfile first for supported formats
-        if (
-            ext
-            in SUPPORTED_FORMATS["wav"]
+        logger.info(f"Attempting to load audio file: {audio_path} (extension: {ext})")
+        
+        # Check if file exists and has content
+        if not os.path.exists(audio_path):
+            raise ValueError(f"Audio file does not exist: {audio_path}")
+        
+        file_size = os.path.getsize(audio_path)
+        if file_size == 0:
+            raise ValueError(f"Audio file is empty: {audio_path}")
+        
+        logger.info(f"File size: {file_size} bytes")
+        
+        # Try soundfile first for supported formats
+        if ext.lower() in (
+            SUPPORTED_FORMATS["wav"]
             + SUPPORTED_FORMATS["flac"]
             + SUPPORTED_FORMATS["aiff"]
         ):
             try:
                 y, sr = sf.read(audio_path)
-                logger.info(f"Loaded {audio_path} with soundfile")
+                logger.info(f"Successfully loaded {audio_path} with soundfile (shape: {y.shape}, sr: {sr})")
                 return y, sr
             except Exception as sf_error:
                 logger.warning(f"Soundfile failed for {audio_path}: {sf_error}")
 
-        # Try with audioread for other formats
+        # For M4A and other formats, try multiple approaches
+        if ext.lower() in SUPPORTED_FORMATS["m4a"]:
+            logger.info(f"Processing M4A file: {audio_path}")
+            
+            # Try audioread with better error handling
+            try:
+                with audioread.audio_open(audio_path) as audio_file:
+                    sr = audio_file.samplerate
+                    channels = audio_file.channels
+                    duration = audio_file.duration
+                    
+                    logger.info(f"Audioread info - sr: {sr}, channels: {channels}, duration: {duration}")
+
+                    # Read all samples
+                    samples = []
+                    for buf in audio_file:
+                        samples.append(buf)
+
+                    # Convert to numpy array
+                    audio_data = b"".join(samples)
+                    
+                    # Determine data type based on sample rate and format
+                    if len(audio_data) > 0:
+                        # Try different data types
+                        try:
+                            # Try 16-bit first
+                            y = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+                        except:
+                            try:
+                                # Try 32-bit float
+                                y = np.frombuffer(audio_data, dtype=np.float32)
+                            except:
+                                # Try 32-bit int
+                                y = np.frombuffer(audio_data, dtype=np.int32).astype(np.float32) / 2147483648.0
+
+                        # Convert to mono if stereo
+                        if channels == 2 and len(y) > 1:
+                            y = y.reshape(-1, 2).mean(axis=1)
+                        elif channels > 2:
+                            # For multi-channel, take first channel
+                            y = y.reshape(-1, channels)[:, 0]
+
+                        logger.info(f"Successfully loaded M4A with audioread (shape: {y.shape}, sr: {sr})")
+                        return y, sr
+                    else:
+                        raise ValueError("No audio data read from file")
+
+            except Exception as ar_error:
+                logger.warning(f"Audioread failed for {audio_path}: {ar_error}")
+                
+                # Try alternative approach for M4A
+                try:
+                    logger.info("Attempting alternative M4A loading method...")
+                    
+                    # Try with pydub if available
+                    try:
+                        from pydub import AudioSegment
+                        audio = AudioSegment.from_file(audio_path, format="m4a")
+                        samples = np.array(audio.get_array_of_samples())
+                        sr = audio.frame_rate
+                        
+                        # Convert to float
+                        if audio.sample_width == 2:  # 16-bit
+                            y = samples.astype(np.float32) / 32768.0
+                        elif audio.sample_width == 4:  # 32-bit
+                            y = samples.astype(np.float32) / 2147483648.0
+                        else:
+                            y = samples.astype(np.float32)
+                        
+                        # Convert to mono if needed
+                        if audio.channels == 2:
+                            y = y.reshape(-1, 2).mean(axis=1)
+                        
+                        logger.info(f"Successfully loaded M4A with pydub (shape: {y.shape}, sr: {sr})")
+                        return y, sr
+                        
+                    except ImportError:
+                        logger.warning("pydub not available for M4A fallback")
+                    except Exception as pydub_error:
+                        logger.warning(f"pydub failed for {audio_path}: {pydub_error}")
+                
+                except Exception as alt_error:
+                    logger.warning(f"Alternative M4A loading failed: {alt_error}")
+                    
+                    # Final fallback: try ffmpeg conversion
+                    try:
+                        logger.info("Attempting ffmpeg conversion fallback...")
+                        y, sr = convert_m4a_to_wav_fallback(audio_path)
+                        return y, sr
+                    except Exception as ffmpeg_error:
+                        logger.warning(f"ffmpeg conversion failed: {ffmpeg_error}")
+
+        # Try audioread for other formats (MP3, OGG, etc.)
         try:
             with audioread.audio_open(audio_path) as audio_file:
                 sr = audio_file.samplerate
                 channels = audio_file.channels
                 duration = audio_file.duration
+
+                logger.info(f"Audioread info - sr: {sr}, channels: {channels}, duration: {duration}")
 
                 # Read all samples
                 samples = []
@@ -80,32 +185,110 @@ def load_audio_file(audio_path: str, ext: str) -> Tuple[np.ndarray, int]:
 
                 # Convert to numpy array
                 audio_data = b"".join(samples)
-                if audio_file.samplerate == 44100:
-                    # 16-bit audio
-                    y = (
-                        np.frombuffer(audio_data, dtype=np.int16).astype(np.float32)
-                        / 32768.0
-                    )
+                
+                if len(audio_data) > 0:
+                    # Try different data types
+                    try:
+                        # Try 16-bit first
+                        y = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+                    except:
+                        try:
+                            # Try 32-bit float
+                            y = np.frombuffer(audio_data, dtype=np.float32)
+                        except:
+                            # Try 32-bit int
+                            y = np.frombuffer(audio_data, dtype=np.int32).astype(np.float32) / 2147483648.0
+
+                    # Convert to mono if stereo
+                    if channels == 2 and len(y) > 1:
+                        y = y.reshape(-1, 2).mean(axis=1)
+                    elif channels > 2:
+                        # For multi-channel, take first channel
+                        y = y.reshape(-1, channels)[:, 0]
+
+                    logger.info(f"Successfully loaded with audioread (shape: {y.shape}, sr: {sr})")
+                    return y, sr
                 else:
-                    # Assume 32-bit float
-                    y = np.frombuffer(audio_data, dtype=np.float32)
-
-                # Convert to mono if stereo
-                if channels == 2:
-                    y = y.reshape(-1, 2).mean(axis=1)
-
-                logger.info(f"Loaded {audio_path} with audioread")
-                return y, sr
+                    raise ValueError("No audio data read from file")
 
         except Exception as ar_error:
             logger.warning(f"Audioread failed for {audio_path}: {ar_error}")
 
+        # If we get here, no method worked
         raise ValueError(
-            f"Could not load audio file {audio_path} with any available backend"
+            f"Could not load audio file {audio_path} with any available backend. "
+            f"File extension: {ext}, File size: {file_size} bytes. "
+            f"Please ensure the file is a valid audio file and the necessary codecs are installed."
         )
 
     except Exception as e:
         logger.error(f"Error loading audio file {audio_path}: {e}")
+        raise
+
+
+def convert_m4a_to_wav_fallback(audio_path: str) -> Tuple[np.ndarray, int]:
+    """Fallback method to convert M4A to WAV using ffmpeg if available"""
+    try:
+        logger.info(f"Attempting M4A to WAV conversion for: {audio_path}")
+        
+        # Create temporary WAV file
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_wav:
+            wav_path = tmp_wav.name
+        
+        try:
+            # Try using ffmpeg directly
+            import subprocess
+            
+            # Convert M4A to WAV using ffmpeg
+            cmd = [
+                'ffmpeg', '-i', audio_path, 
+                '-acodec', 'pcm_s16le',  # 16-bit PCM
+                '-ar', '44100',          # 44.1kHz sample rate
+                '-ac', '1',              # Mono
+                '-y',                    # Overwrite output
+                wav_path
+            ]
+            
+            logger.info(f"Running ffmpeg command: {' '.join(cmd)}")
+            
+            result = subprocess.run(
+                cmd, 
+                capture_output=True, 
+                text=True, 
+                timeout=30  # 30 second timeout
+            )
+            
+            if result.returncode == 0:
+                logger.info(f"Successfully converted M4A to WAV: {wav_path}")
+                
+                # Load the converted WAV file
+                y, sr = sf.read(wav_path)
+                logger.info(f"Loaded converted WAV: shape={y.shape}, sr={sr}")
+                
+                return y, sr
+            else:
+                logger.warning(f"ffmpeg conversion failed: {result.stderr}")
+                raise ValueError(f"ffmpeg conversion failed: {result.stderr}")
+                
+        except FileNotFoundError:
+            logger.warning("ffmpeg not found in system PATH")
+            raise ValueError("ffmpeg not available for M4A conversion")
+        except subprocess.TimeoutExpired:
+            logger.warning("ffmpeg conversion timed out")
+            raise ValueError("M4A conversion timed out")
+        except Exception as e:
+            logger.warning(f"ffmpeg conversion error: {e}")
+            raise ValueError(f"M4A conversion error: {e}")
+        finally:
+            # Clean up temporary WAV file
+            if os.path.exists(wav_path):
+                try:
+                    os.unlink(wav_path)
+                except Exception as cleanup_error:
+                    logger.warning(f"Could not delete temp WAV file {wav_path}: {cleanup_error}")
+                    
+    except Exception as e:
+        logger.error(f"Error in M4A to WAV conversion: {e}")
         raise
 
 
@@ -399,6 +582,9 @@ def extract_noise_analysis(y: np.ndarray, sr: int) -> dict:
 def process_audio_file_alternative(audio_path: str, ext: str) -> Tuple[dict, dict]:
     """Process audio file using alternative methods (no librosa)"""
     try:
+        # Log audio backend status for debugging
+        log_audio_backend_status()
+        
         # Load audio
         y, sr = load_audio_file(audio_path, ext)
 
@@ -411,3 +597,64 @@ def process_audio_file_alternative(audio_path: str, ext: str) -> Tuple[dict, dic
     except Exception as e:
         logger.error(f"Error in alternative audio processing: {e}")
         raise
+
+
+def check_audio_backends():
+    """Check what audio backends are available and working"""
+    backends = {}
+    
+    # Check soundfile
+    try:
+        import soundfile as sf
+        backends['soundfile'] = {
+            'available': True,
+            'formats': sf.available_formats(),
+            'subtypes': sf.available_subtypes()
+        }
+    except ImportError:
+        backends['soundfile'] = {'available': False, 'error': 'Not installed'}
+    except Exception as e:
+        backends['soundfile'] = {'available': False, 'error': str(e)}
+    
+    # Check audioread
+    try:
+        import audioread
+        backends['audioread'] = {
+            'available': True,
+            'backends': audioread.available_backends()
+        }
+    except ImportError:
+        backends['audioread'] = {'available': False, 'error': 'Not installed'}
+    except Exception as e:
+        backends['audioread'] = {'available': False, 'error': str(e)}
+    
+    # Check pydub
+    try:
+        from pydub import AudioSegment
+        backends['pydub'] = {
+            'available': True,
+            'version': AudioSegment.__version__ if hasattr(AudioSegment, '__version__') else 'Unknown'
+        }
+    except ImportError:
+        backends['pydub'] = {'available': False, 'error': 'Not installed'}
+    except Exception as e:
+        backends['pydub'] = {'available': False, 'error': str(e)}
+    
+    return backends
+
+
+def log_audio_backend_status():
+    """Log the status of available audio backends"""
+    backends = check_audio_backends()
+    
+    logger.info("=== Audio Backend Status ===")
+    for backend_name, status in backends.items():
+        if status['available']:
+            logger.info(f"✅ {backend_name}: Available")
+            if 'formats' in status:
+                logger.info(f"   Formats: {status['formats']}")
+            if 'backends' in status:
+                logger.info(f"   Backends: {status['backends']}")
+        else:
+            logger.warning(f"❌ {backend_name}: {status.get('error', 'Unknown error')}")
+    logger.info("===========================")

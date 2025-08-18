@@ -16,6 +16,19 @@ RUN --mount=target=/var/lib/apt/lists,type=cache,sharing=locked \
 # Install dependencies
 COPY requirements.txt /tmp/requirements.txt
 
+# Install system dependencies including ffmpeg for audio processing
+RUN --mount=target=/var/lib/apt/lists,type=cache,sharing=locked \
+    --mount=target=/var/cache/apt,type=cache,sharing=locked \
+    apt-get update && \
+    apt-get install -y \
+        ffmpeg \
+        libavcodec-extra \
+        libavformat-dev \
+        libavutil-dev \
+        libswresample-dev \
+        libavfilter-dev \
+        && rm -rf /var/lib/apt/lists/*
+
 RUN  --mount=type=cache,target=/root/.cache set -ex && \
     pip install --upgrade pip && \
     pip install -r /tmp/requirements.txt
