@@ -487,33 +487,39 @@ def generate_noise_id(user):
 def safe_process_audio_file(instance: NoiseDataset):
     """Safe audio processing function that won't conflict with Numba JIT compilation"""
     try:
-        # Import here to avoid Numba compilation issues
-        import numba
-        import os
-
-        # Set environment variable to disable numba JIT completely
-        os.environ['NUMBA_DISABLE_JIT'] = '1'
-        
-        # Also disable JIT in numba config
-        original_disable = numba.config.DISABLE_JIT
-        numba.config.DISABLE_JIT = True
-
+        # Try to import numba, but don't fail if it's not available
         try:
-            # Call the original processing function
-            process_audio_file(instance)
-        except AttributeError as e:
-            if "get_call_template" in str(e):
-                logger.warning(f"Numba compatibility issue detected for {instance.noise_id}, retrying with different approach")
-                # Try processing without numba entirely
-                _process_audio_without_numba(instance)
-            else:
-                raise
-        finally:
-            # Restore original setting
-            numba.config.DISABLE_JIT = original_disable
-            # Remove environment variable
-            if 'NUMBA_DISABLE_JIT' in os.environ:
-                del os.environ['NUMBA_DISABLE_JIT']
+            import numba
+            import os
+            
+            # Set environment variable to disable numba JIT completely
+            os.environ['NUMBA_DISABLE_JIT'] = '1'
+            
+            # Also disable JIT in numba config
+            original_disable = numba.config.DISABLE_JIT
+            numba.config.DISABLE_JIT = True
+
+            try:
+                # Call the original processing function
+                process_audio_file(instance)
+            except AttributeError as e:
+                if "get_call_template" in str(e):
+                    logger.warning(f"Numba compatibility issue detected for {instance.noise_id}, retrying with different approach")
+                    # Try processing without numba entirely
+                    _process_audio_without_numba(instance)
+                else:
+                    raise
+            finally:
+                # Restore original setting
+                numba.config.DISABLE_JIT = original_disable
+                # Remove environment variable
+                if 'NUMBA_DISABLE_JIT' in os.environ:
+                    del os.environ['NUMBA_DISABLE_JIT']
+                    
+        except ImportError:
+            # Numba is not installed, use the simple processing approach
+            logger.info(f"Numba not available, using simple processing for {instance.noise_id}")
+            _process_audio_without_numba(instance)
 
     except Exception as e:
         logger.error(f"Error in safe audio processing: {e}")

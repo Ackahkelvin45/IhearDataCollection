@@ -1,5 +1,5 @@
-# Pull base image
-FROM python:3.13-slim-bullseye
+# Pull base image - Using Python 3.11 for better numba compatibility
+FROM python:3.11-slim-bullseye
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
