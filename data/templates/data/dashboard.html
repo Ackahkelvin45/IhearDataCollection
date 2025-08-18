@@ -109,6 +109,30 @@
         </div>
       </div>
     </div>
+
+    <!-- Card 5: Total Duration -->
+    <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 sm:flex-none xl:mb-0 xl:w-1/4">
+      <div class="relative flex flex-col min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+        <div class="flex-auto p-4">
+          <div class="flex flex-row -mx-3">
+            <div class="flex-none w-2/3 max-w-full px-3">
+              <div>
+                <p class="mb-0 font-sans text-sm font-semibold leading-normal uppercase dark:text-white dark:opacity-60">Total Duration</p>
+                <h5 class="mb-2 mt-4 font-bold dark:text-white">{{ total_duration_hours }}</h5>
+                <p class="mb-0 text-xs text-slate-500 dark:text-white/60">
+                  <span class="font-bold">Hours of audio</span>
+                </p>
+              </div>
+            </div>
+            <div class="px-3 text-right basis-1/3">
+              <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-purple-500 to-indigo-500">
+                <i class="ni leading-none ni-time-alarm text-lg relative top-3.5 text-white"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- row 2 - Main Charts -->
@@ -171,6 +195,39 @@
         <div class="flex-auto p-4">
           <div class="h-300-px">
             <canvas id="audioRadarChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- row 4 - Duration Charts -->
+  <div class="flex flex-wrap mt-6 -mx-3">
+    <!-- Bar Chart: Duration by Region -->
+    <div class="w-full px-3 mb-6 lg:mb-0 lg:w-1/2 lg:flex-none">
+      <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+        <div class="p-4 pb-0 rounded-t-4">
+          <h6 class="mb-1 dark:text-white">Duration by Region</h6>
+          <p class="text-sm leading-normal dark:text-white dark:opacity-60">Total hours of audio recordings per region</p>
+        </div>
+        <div class="flex-auto p-4">
+          <div class="h-300-px">
+            <canvas id="durationRegionChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pie Chart: Duration Distribution -->
+    <div class="w-full px-3 lg:w-1/2 lg:flex-none">
+      <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+        <div class="p-4 pb-0 rounded-t-4">
+          <h6 class="mb-1 dark:text-white">Duration Distribution</h6>
+          <p class="text-sm leading-normal dark:text-white dark:opacity-60">Proportion of audio duration across regions</p>
+        </div>
+        <div class="flex-auto p-4">
+          <div class="h-300-px">
+            <canvas id="durationPieChart"></canvas>
           </div>
         </div>
       </div>
@@ -533,5 +590,111 @@
 
     // Initial state
     document.getElementById('liveChartPlay').classList.add('bg-blue-600');
+
+    // Duration by Region Bar Chart
+    const durationRegionCtx = document.getElementById('durationRegionChart').getContext('2d');
+    const durationRegionChart = new Chart(durationRegionCtx, {
+      type: 'bar',
+      data: {
+        labels: {{ duration_region_labels|safe }},
+        datasets: [{
+          label: 'Hours',
+          data: {{ duration_region_hours|safe }},
+          backgroundColor: 'rgba(147, 51, 234, 0.7)',
+          borderColor: 'rgba(147, 51, 234, 1)',
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            beginAtZero: true,
+            grid: {
+              color: gridColor
+            },
+            ticks: {
+              color: textColor,
+              callback: function(value) {
+                return value + ' hrs';
+              }
+            }
+          },
+          x: {
+            grid: {
+              color: gridColor
+            },
+            ticks: {
+              color: textColor
+            }
+          }
+        },
+        plugins: {
+          legend: {
+            labels: {
+              color: textColor
+            }
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return context.dataset.label + ': ' + context.parsed.y + ' hours';
+              }
+            }
+          }
+        }
+      }
+    });
+
+    // Duration Distribution Pie Chart
+    const durationPieCtx = document.getElementById('durationPieChart').getContext('2d');
+    const durationPieChart = new Chart(durationPieCtx, {
+      type: 'pie',
+      data: {
+        labels: {{ duration_region_labels|safe }},
+        datasets: [{
+          data: {{ duration_region_hours|safe }},
+          backgroundColor: [
+            'rgba(147, 51, 234, 0.7)',
+            'rgba(59, 130, 246, 0.7)',
+            'rgba(16, 185, 129, 0.7)',
+            'rgba(245, 158, 11, 0.7)',
+            'rgba(239, 68, 68, 0.7)',
+            'rgba(168, 85, 247, 0.7)'
+          ],
+          borderColor: [
+            'rgba(147, 51, 234, 1)',
+            'rgba(59, 130, 246, 1)',
+            'rgba(16, 185, 129, 1)',
+            'rgba(245, 158, 11, 1)',
+            'rgba(239, 68, 68, 1)',
+            'rgba(168, 85, 247, 1)'
+          ],
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: {
+            position: 'right',
+            labels: {
+              color: textColor
+            }
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                const label = context.label || '';
+                const value = context.raw || 0;
+                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                const percentage = Math.round((value / total) * 100);
+                return `${label}: ${value} hrs (${percentage}%)`;
+              }
+            }
+          }
+        }
+      }
+    });
   </script>
 {% endblock %}

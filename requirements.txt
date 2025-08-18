@@ -8,7 +8,7 @@ asgiref==3.8.1
 asttokens==3.0.0
 async-lru==2.0.5
 attrs==25.3.0
-# audioop-lts==0.2.1  # Requires Python 3.13+, removed for Python 3.11 compatibility
+audioop-lts==0.2.1
 audioread==3.0.1
 babel==2.17.0
 beautifulsoup4==4.13.4
@@ -86,7 +86,7 @@ kiwisolver==1.4.8
 kombu==5.5.4
 lazy_loader==0.4
 librosa==0.11.0
-llvmlite==0.41.1
+llvmlite==0.44.0
 markdown-it-py==3.0.0
 MarkupSafe==3.0.2
 matplotlib==3.10.3
@@ -104,8 +104,8 @@ nest-asyncio==1.6.0
 nodeenv==1.9.1
 notebook==7.4.4
 notebook_shim==0.2.4
-numba==0.58.1
-numpy==1.26.4
+numba==0.61.2
+numpy==2.2.6
 openpyxl==3.1.5
 overrides==7.7.0
 packaging==25.0

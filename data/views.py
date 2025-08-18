@@ -7,7 +7,7 @@ from django.shortcuts import get_object_or_404
 import plotly.graph_objects as go
 import numpy as np
 import json
-from django.db.models import Count, Avg
+from django.db.models import Count, Avg, Sum
 from django.utils import timezone
 from django.contrib.auth.mixins import LoginRequiredMixin
 import hashlib
@@ -53,6 +53,12 @@ def view_dashboard(request):
     categories_count = Category.objects.count()
     regions_count = Region.objects.count()
 
+    # Calculate total duration in hours
+    total_duration_seconds = AudioFeature.objects.aggregate(
+        total_duration=Sum('duration')
+    )['total_duration'] or 0
+    total_duration_hours = round(total_duration_seconds / 3600, 2)
+
     # Data for category pie chart
     category_data = (
         NoiseDataset.objects.values("category__name")
@@ -70,6 +76,16 @@ def view_dashboard(request):
     )
     region_labels = [item["region__name"] for item in region_data]
     region_counts = [item["count"] for item in region_data]
+
+    # Data for duration by region chart
+    duration_by_region = (
+        AudioFeature.objects.select_related('noise_dataset__region')
+        .values('noise_dataset__region__name')
+        .annotate(total_duration=Sum('duration'))
+        .order_by('-total_duration')
+    )
+    duration_region_labels = [item.get('noise_dataset__region__name') or 'Unknown' for item in duration_by_region]
+    duration_region_hours = [round(item['total_duration'] / 3600, 2) if item['total_duration'] else 0 for item in duration_by_region]
 
     # Data for time line chart (last 12 months)
     time_labels = []
@@ -111,10 +127,13 @@ def view_dashboard(request):
         "user_recordings": user_recordings,
         "categories_count": categories_count,
         "regions_count": regions_count,
+        "total_duration_hours": total_duration_hours,
         "category_labels": json.dumps(category_labels),
         "category_data": json.dumps(category_counts),
         "region_labels": json.dumps(region_labels),
         "region_data": json.dumps(region_counts),
+        "duration_region_labels": json.dumps(duration_region_labels),
+        "duration_region_hours": json.dumps(duration_region_hours),
         "time_labels": json.dumps(time_labels),
         "time_data": json.dumps(time_counts),
         "audio_features_data": json.dumps(audio_features_data),
