@@ -42,4 +42,4 @@ COPY . /code/
 EXPOSE 8000
 
 # Use gunicorn on port 8000
-CMD ["gunicorn", "--bind", ":8000", "--workers", "2", "datacollection.wsgi"]
+CMD ["uvicorn", "--host", "0.0.0.0", "--port", "8000", "datacollection.asgi:application"]

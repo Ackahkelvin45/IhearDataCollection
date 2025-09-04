@@ -1,11 +1,8 @@
 from rest_framework import serializers
+from .models import ChatMessage,ChatSession
 from django.utils import timezone
 from django.core.validators import MinLengthValidator
 import re
-
-from ai_insight.models import ChatSession, ChatMessage
-
-
 class ChatMessageListSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChatMessage
@@ -13,12 +10,11 @@ class ChatMessageListSerializer(serializers.ModelSerializer):
             "id",
             "user_input",
             "assistant_response",
-            "tool_call",
-            "status",
             "created_at",
-            "processing_time_ms",
+            "status",
+            "visulization",
         ]
-        read_only_fields = fields
+
 
 
 class ChatMessageDetailSerializer(serializers.ModelSerializer):
@@ -28,12 +24,14 @@ class ChatMessageDetailSerializer(serializers.ModelSerializer):
             "id",
             "user_input",
             "assistant_response",
-            "status",
-            "tool_call",
-            "processing_time_ms",
             "created_at",
+            "status",
+            "visulization",
+            "tool_called",
+            "updated_at",
         ]
-        read_only_fields = fields
+
+
 
 
 class ChatMessageCreateSerializer(serializers.Serializer):
@@ -69,18 +67,6 @@ class ChatMessageCreateSerializer(serializers.Serializer):
     def create(self, validated_data):
         raise NotImplementedError("Use ChatMessageCreateSerializer for validation only")
 
-
-class ChatSessionListSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ChatSession
-        fields = [
-            "id",
-            "title",
-            "status",
-            "total_messages",
-            "created_at",
-        ]
-        read_only_fields = fields
 
 
 class ChatSessionDetailSerializer(serializers.ModelSerializer):
@@ -164,11 +150,4 @@ class MessageStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChatMessage
         fields = ["id", "status", "processing_time_ms"]
-        read_only_fields = fields
-
-
-class ChatSessionArchiveSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ChatSession
-        fields = ["id", "title", "status", "archived_at"]
         read_only_fields = fields

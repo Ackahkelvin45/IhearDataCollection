@@ -27,8 +27,8 @@ services:
         order: start-first
       resources:
         limits:
-          cpus: '1.0'
-          memory: 2G
+          cpus: '0.5'
+          memory: 1G
     restart: always
     command: [ "uvicorn", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--log-level", "info", "datacollection.asgi:application" ]
     volumes:

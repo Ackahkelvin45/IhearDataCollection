@@ -383,5 +383,44 @@ CELERY_TASK_REJECT_ON_WORKER_LOST = True  # Reject task if worker dies
 # Directory for assembling large/chunked uploads before background processing
 # Can be overridden via env var SHARED_UPLOADS_DIR
 SHARED_UPLOADS_DIR = os.getenv(
-    "SHARED_UPLOADS_DIR", os.path.join(BASE_DIR, "shared_uploads")
+    "SHARED_UPLOADS_DIR", "/shared_uploads"
 )
+
+
+
+#open ai 
+
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", default="o3")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+
+AI_INSIGHT = {
+    "DATABASE": {
+        "USER": os.getenv("POSTGRES_USER", "admin"),
+        "PASSWORD": os.getenv("POSTGRES_PASSWORD", "localhost"),
+        "HOST": os.getenv("POSTGRES_HOST", "db"),
+        "PORT": int(os.getenv("POSTGRES_PORT", 5432)),
+        "NAME": os.getenv("POSTGRES_DB", "brainbox-crm"),
+        "MAX_CONNECTIONS": int(os.getenv("AI_INSIGHT_DB_MAX_CONNECTIONS", 20)),
+        "CONNECTION_TIMEOUT": int(os.getenv("AI_INSIGHT_DB_CONNECTION_TIMEOUT", 30)),
+    },
+    "AGENT": {
+        "MODEL": OPENAI_MODEL,
+        "MAX_RETRIES": int(os.getenv("AI_INSIGHT_MAX_RETRIES", 3)),
+        "TIMEOUT_SECONDS": int(os.getenv("AI_INSIGHT_TIMEOUT_SECONDS", 120)),
+        "DEFAULT_TOP_K": int(os.getenv("AI_INSIGHT_DEFAULT_TOP_K", 100)),
+        "MAX_TOP_K": int(os.getenv("AI_INSIGHT_MAX_TOP_K", 1000)),
+        "ENABLE_CACHING": as_bool(os.getenv("AI_INSIGHT_ENABLE_CACHING", "True")),
+    },
+    "SECURITY": {
+        "DEFAULT_ALLOWED_TABLES": [
+            
+        ],
+        "MAX_SESSIONS_PER_USER": int(os.getenv("AI_INSIGHT_MAX_SESSIONS_PER_USER", 10)),
+        "SESSION_INACTIVITY_HOURS": int(
+            os.getenv("AI_INSIGHT_SESSION_INACTIVITY_HOURS", 24)
+        ),
+        "RATE_LIMIT_PER_MINUTE": int(os.getenv("AI_INSIGHT_RATE_LIMIT_PER_MINUTE", 30)),
+        "MAX_MESSAGE_LENGTH": int(os.getenv("AI_INSIGHT_MAX_MESSAGE_LENGTH", 10000)),
+    },
+}

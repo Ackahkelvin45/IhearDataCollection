@@ -418,9 +418,9 @@ class TextToSQLAgent:
         top_k: int = 100,
         max_retries: int = 1,
     ):
-        assert (
-            DB_USER and DB_PASSWORD and DB_HOST and DB_PORT
-        ), "Missing database credentials"
+        assert DB_USER and DB_PASSWORD and DB_HOST and DB_PORT, (
+            "Missing database credentials"
+        )
 
         engine = create_engine(
             f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
@@ -623,9 +623,7 @@ class TextToSQLAgent:
             res = self.db.run(query, include_columns=True)  # type: ignore
 
             if not res:
-                res: str = (
-                    "Error: No results found. Verify that your query is correct and try again."
-                )
+                res: str = "Error: No results found. Verify that your query is correct and try again."
             if tool_call is not None:
                 tool_name = tool_call["type"]
                 tool_id = tool_call["id"]
