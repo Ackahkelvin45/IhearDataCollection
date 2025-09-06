@@ -351,18 +351,18 @@
             </div>
           </div>
           <div class="flex-auto p-6">
-            {% if noise_dataset.audio %}
+            {% if audio_available %}
               <div class="mb-4">
                 <audio controls class="w-full rounded-lg" id="audioPlayer">
-                  <source src="{{ noise_dataset.audio.url }}" type="audio/mpeg">
+                  <source src="{{ audio_url }}" type="audio/mpeg">
                   Your browser does not support the audio element.
                 </audio>
                 <div class="flex justify-between mt-2">
-                  <a href="{{ noise_dataset.audio.url }}" download class="text-blue-500 hover:text-blue-700 text-sm">
+                  <a href="{{ audio_url }}" download class="text-blue-500 hover:text-blue-700 text-sm">
                     <i class="fas fa-download mr-1"></i>Download Audio
                   </a>
                   <span class="text-gray-500 text-sm">
-                    <i class="fas fa-hashtag mr-1"></i>Hash: {{ noise_dataset.get_audio_hash }}
+                    <i class="fas fa-hashtag mr-1"></i>Hash: {{ audio_hash|default:"-" }}
                   </span>
                 </div>
               </div>
@@ -395,7 +395,7 @@
                 </div>
               </div>
             {% else %}
-              <p class="text-gray-700 dark:text-gray-300">No audio file available</p>
+              <p class="text-gray-700 dark:text-gray-300">Audio file not found in storage.</p>
             {% endif %}
           </div>
         </div>
@@ -520,14 +520,14 @@
             <div class="mb-4">
               <label class="inline-block mb-1 font-bold text-xs text-slate-700 dark:text-white/80">File Size</label>
               <p class="dark:text-white text-sm">
-                {{ noise_dataset.audio.size|filesizeformat|default:"-" }}
+                {% if audio_size %}{{ audio_size|filesizeformat }}{% else %}-{% endif %}
               </p>
             </div>
             
             <div class="mb-4">
               <label class="inline-block mb-1 font-bold text-xs text-slate-700 dark:text-white/80">File Type</label>
               <p class="dark:text-white text-sm">
-                {{ noise_dataset.audio.name|slice:"-4:"|upper|default:"-" }}
+                {{ file_extension|upper|default:"-" }}
               </p>
             </div>
           </div>

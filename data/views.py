@@ -625,11 +625,53 @@ def noise_detail(request, dataset_id):
     audio_features = getattr(dataset, "audio_features", None)
     noise_analysis = getattr(dataset, "noise_analysis", None)
 
+    # Compute safe audio metadata (avoid direct storage.size/url in templates)
+    audio_available = False
+    audio_url = None
+    audio_size = None
+    audio_hash = None
+    file_extension = None
+
+    try:
+        if dataset.audio and getattr(dataset.audio, "name", None):
+            storage = dataset.audio.storage
+            name = dataset.audio.name
+            # exists() should return False rather than raising when missing
+            if storage.exists(name):
+                audio_available = True
+                # Only access url/size when we know it exists
+                try:
+                    audio_url = storage.url(name)
+                except Exception:
+                    audio_url = None
+                try:
+                    audio_size = storage.size(name)
+                except Exception:
+                    audio_size = None
+                try:
+                    audio_hash = dataset.get_audio_hash()
+                except Exception:
+                    audio_hash = None
+            # Derive file extension from stored name regardless of existence
+            try:
+                _, ext = os.path.splitext(name)
+                file_extension = (ext or "").lstrip(".")
+            except Exception:
+                file_extension = None
+    except Exception:
+        # Any unexpected storage error: keep defaults
+        pass
+
     # Prepare visualization data
     context = {
         "noise_dataset": dataset,
         "audio_features": audio_features,
         "noise_analysis": noise_analysis,
+        "audio_available": audio_available,
+        "audio_url": audio_url,
+        "audio_size": audio_size,
+        "audio_hash": audio_hash,
+        "file_extension": file_extension,
     }
 
     # Add visualizations if features exist

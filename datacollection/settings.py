@@ -382,13 +382,10 @@ CELERY_TASK_REJECT_ON_WORKER_LOST = True  # Reject task if worker dies
 
 # Directory for assembling large/chunked uploads before background processing
 # Can be overridden via env var SHARED_UPLOADS_DIR
-SHARED_UPLOADS_DIR = os.getenv(
-    "SHARED_UPLOADS_DIR", "/shared_uploads"
-)
+SHARED_UPLOADS_DIR = os.getenv("SHARED_UPLOADS_DIR", "/shared_uploads")
 
 
-
-#open ai 
+# open ai
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", default="o3")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -413,9 +410,7 @@ AI_INSIGHT = {
         "ENABLE_CACHING": as_bool(os.getenv("AI_INSIGHT_ENABLE_CACHING", "True")),
     },
     "SECURITY": {
-        "DEFAULT_ALLOWED_TABLES": [
-            
-        ],
+        "DEFAULT_ALLOWED_TABLES": [],
         "MAX_SESSIONS_PER_USER": int(os.getenv("AI_INSIGHT_MAX_SESSIONS_PER_USER", 10)),
         "SESSION_INACTIVITY_HOURS": int(
             os.getenv("AI_INSIGHT_SESSION_INACTIVITY_HOURS", 24)

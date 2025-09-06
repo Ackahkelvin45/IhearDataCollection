@@ -1,8 +1,10 @@
 from rest_framework import serializers
-from .models import ChatMessage,ChatSession
+from .models import ChatMessage, ChatSession
 from django.utils import timezone
 from django.core.validators import MinLengthValidator
 import re
+
+
 class ChatMessageListSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChatMessage
@@ -14,7 +16,6 @@ class ChatMessageListSerializer(serializers.ModelSerializer):
             "status",
             "visulization",
         ]
-
 
 
 class ChatMessageDetailSerializer(serializers.ModelSerializer):
@@ -30,8 +31,6 @@ class ChatMessageDetailSerializer(serializers.ModelSerializer):
             "tool_called",
             "updated_at",
         ]
-
-
 
 
 class ChatMessageCreateSerializer(serializers.Serializer):
@@ -68,86 +67,3 @@ class ChatMessageCreateSerializer(serializers.Serializer):
         raise NotImplementedError("Use ChatMessageCreateSerializer for validation only")
 
 
-
-class ChatSessionDetailSerializer(serializers.ModelSerializer):
-    messages = ChatMessageListSerializer(many=True, read_only=True)
-
-    class Meta:
-        model = ChatSession
-        fields = [
-            "id",
-            "title",
-            "status",
-            "total_messages",
-            "created_at",
-            "updated_at",
-            "archived_at",
-            "messages",
-        ]
-        read_only_fields = [
-            "id",
-            "total_messages",
-            "created_at",
-            "updated_at",
-            "archived_at",
-            "messages",
-        ]
-
-
-class ChatSessionCreateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ChatSession
-        fields = [
-            "id",
-            "title",
-        ]
-        read_only_fields = ["id"]
-
-    def validate_title(self, value):
-        value = value.strip()
-        if len(value) < 3:
-            raise serializers.ValidationError(
-                "Title must be at least 3 characters long"
-            )
-        return value
-
-
-class ChatSessionUpdateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ChatSession
-        fields = [
-            "title",
-            "status",
-        ]
-
-    def validate_status(self, value):
-        if self.instance:
-            current_status = self.instance.status
-
-            allowed_transitions = {
-                ChatSession.Status.ACTIVE: [ChatSession.Status.ARCHIVED],
-                ChatSession.Status.ARCHIVED: [ChatSession.Status.ACTIVE],
-                ChatSession.Status.DELETED: [],
-            }
-
-            if value not in allowed_transitions.get(current_status, []):
-                raise serializers.ValidationError(
-                    f"Cannot transition from {current_status} to {value}"
-                )
-
-        return value
-
-    def update(self, instance, validated_data):
-        if validated_data.get("status") == ChatSession.Status.ARCHIVED:
-            validated_data["archived_at"] = timezone.now()
-        elif validated_data.get("status") == ChatSession.Status.ACTIVE:
-            validated_data["archived_at"] = None
-
-        return super().update(instance, validated_data)
-
-
-class MessageStatusSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ChatMessage
-        fields = ["id", "status", "processing_time_ms"]
-        read_only_fields = fields

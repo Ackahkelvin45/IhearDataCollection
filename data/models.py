@@ -86,16 +86,21 @@ class NoiseDataset(models.Model):
 
     def get_audio_hash(self):
         """Generate MD5 hash of the audio file content"""
-        if not self.audio:
+        if not self.audio or not getattr(self.audio, "name", None):
             return None
 
-        if self.audio.size < 10 * 1024 * 1024:  # 10MB
-            return hashlib.md5(self.audio.read()).hexdigest()
-        else:
+        # Avoid calling self.audio.size or self.audio.chunks() because they
+        # may trigger a storage.size() lookup that raises when the file is missing.
+        try:
             hash_md5 = hashlib.md5()
-            for chunk in self.audio.chunks():
-                hash_md5.update(chunk)
+            with self.audio.storage.open(self.audio.name, "rb") as fp:
+                for chunk in iter(lambda: fp.read(8192), b""):
+                    hash_md5.update(chunk)
             return hash_md5.hexdigest()
+        except Exception:
+            # If the file cannot be opened (e.g., not found in storage),
+            # return None so templates can handle gracefully.
+            return None
 
     def __str__(self):
         return f"{self.name}-{self.noise_id}"

@@ -11,10 +11,13 @@ class ChatSession(models.Model):
         ACTIVE = "active"
         INACTIVE = "inactive"
         ARCHIVED = "archived"
+
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     session_id = models.UUIDField(unique=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=255)
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.ACTIVE
+    )
     total_messages = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     archived_at = models.DateTimeField(null=True, blank=True)
@@ -25,45 +28,41 @@ class ChatSession(models.Model):
         self.archived_at = self.updated_at
         self.save()
 
-    def increment_total_messages(self): 
+    def increment_total_messages(self):
         self.total_messages += 1
         self.save()
-    
-
 
     def __str__(self):
         return self.title
-    
 
-  
 
 class ChatMessage(models.Model):
     class MessageStatus(models.TextChoices):
-        PENDING="pending"
-        PROCESSING="processing"
-        COMPLETED="completed"
-        FAILED="failed"
-        CANCELLED="cancelled"
+        PENDING = "pending"
+        PROCESSING = "processing"
+        COMPLETED = "completed"
+        FAILED = "failed"
+        CANCELLED = "cancelled"
 
-    id =models.BigAutoField(primary_key=True)
-    session = models.ForeignKey(ChatSession, on_delete=models.CASCADE,related_name="messages")
+    id = models.BigAutoField(primary_key=True)
+    session = models.ForeignKey(
+        ChatSession, on_delete=models.CASCADE, related_name="messages"
+    )
     user_input = models.TextField(validators=[MaxLengthValidator(10000)])
     assistant_response = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     visulization = models.JSONField(null=True)
-    status=models.CharField(max_length=20, choices=MessageStatus.choices, default=MessageStatus.PENDING)
-    tool_called=models.JSONField(null=True)
+    status = models.CharField(
+        max_length=20, choices=MessageStatus.choices, default=MessageStatus.PENDING
+    )
+    tool_called = models.JSONField(null=True)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ["-created_at"]
 
     def __str__(self):
         return self.user_input
-
-
-
-
 
 
 class QueryCacheModel(models.Model):

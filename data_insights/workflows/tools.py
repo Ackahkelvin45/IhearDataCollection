@@ -1,4 +1,4 @@
-from pydantic import BaseModel ,Field,model_validator
+from pydantic import BaseModel, Field, model_validator
 from typing import Dict, List, Any, Literal, Optional
 from typing import Optional, Dict, Any
 from pydantic import BaseModel
@@ -29,32 +29,33 @@ DB_URI = (
     f"{DB_CONFIG.get('PORT', 5432)}/"
     f"{DB_CONFIG.get('NAME', 'database')}"
 )
-from data.models import NoiseDataset,AudioFeature,BulkAudioUpload,BulkReprocessingTask
-
+from data.models import (
+    NoiseDataset,
+    AudioFeature,
+    BulkAudioUpload,
+    BulkReprocessingTask,
+)
 
 
 class NoiseDatasetSearchInput(BaseModel):
     """input for noise dataset search"""
-    
-    filter_criteria:Optional[Dict[
-        Literal[
-            "name",
-            "collector",
-            "category",
-            "region",
-            "recording_date",
-            "time_of_day",
-            "community",
-            "class_name",
-            "microphone_type",
-            "subclass",
+
+    filter_criteria: Optional[
+        Dict[
+            Literal[
+                "name",
+                "collector",
+                "category",
+                "region",
+                "recording_date",
+                "time_of_day",
+                "community",
+                "class_name",
+                "microphone_type",
+                "subclass",
+            ]
         ]
-    ]]= Field(default_factory=dict, description="Filter criteria for noise dataset")
-
-
-
-
-
+    ] = Field(default_factory=dict, description="Filter criteria for noise dataset")
 
 
 class AudioFeatureSearchInput(BaseModel):
@@ -119,10 +120,6 @@ class AudioFeatureSearchInput(BaseModel):
     offset: int = Field(default=0, description="Offset for pagination")
 
 
-
-
-
-
 class NoiseDetailInput(BaseModel):
     """Input schema for getting detailed noise dataset information"""
 
@@ -141,19 +138,16 @@ class NoiseDetailInput(BaseModel):
         default=True, description="Include collector (user) details"
     )
     include_metadata: bool = Field(
-        default=True, description="Include region, category, class, and related metadata"
+        default=True,
+        description="Include region, category, class, and related metadata",
     )
-
-
-
-
 
 
 # Tool implementation for searching Noise Datasets
 class NoiseDatasetSearchTool(BaseTool):
     name: str = "search_noise_datasets"
-    description: str = """Search for noise datasets based on criteria. 
-    Returns a query handle for large result sets. 
+    description: str = """Search for noise datasets based on criteria.
+    Returns a query handle for large result sets.
     Use this to find datasets by name, location, noise_level, date range, etc."""
 
     def _run(
@@ -174,16 +168,24 @@ class NoiseDatasetSearchTool(BaseTool):
                 queryset = queryset.filter(name__icontains=filter_criteria["name"])
 
             if "location" in filter_criteria:
-                queryset = queryset.filter(location__icontains=filter_criteria["location"])
+                queryset = queryset.filter(
+                    location__icontains=filter_criteria["location"]
+                )
 
             if "noise_level_min" in filter_criteria:
-                queryset = queryset.filter(noise_level__gte=filter_criteria["noise_level_min"])
+                queryset = queryset.filter(
+                    noise_level__gte=filter_criteria["noise_level_min"]
+                )
 
             if "noise_level_max" in filter_criteria:
-                queryset = queryset.filter(noise_level__lte=filter_criteria["noise_level_max"])
+                queryset = queryset.filter(
+                    noise_level__lte=filter_criteria["noise_level_max"]
+                )
 
             if "date_from" in filter_criteria:
-                queryset = queryset.filter(recorded_at__gte=filter_criteria["date_from"])
+                queryset = queryset.filter(
+                    recorded_at__gte=filter_criteria["date_from"]
+                )
 
             if "date_to" in filter_criteria:
                 queryset = queryset.filter(recorded_at__lte=filter_criteria["date_to"])
@@ -243,8 +245,12 @@ class NoiseDatasetSearchTool(BaseTool):
                         features = dataset.features
                         dataset_data["features"] = {
                             "rms": getattr(features, "rms", None),
-                            "spectral_centroid": getattr(features, "spectral_centroid", None),
-                            "zero_crossing_rate": getattr(features, "zero_crossing_rate", None),
+                            "spectral_centroid": getattr(
+                                features, "spectral_centroid", None
+                            ),
+                            "zero_crossing_rate": getattr(
+                                features, "zero_crossing_rate", None
+                            ),
                         }
 
                     result_data.append(dataset_data)
@@ -258,7 +264,6 @@ class NoiseDatasetSearchTool(BaseTool):
         except Exception as e:
             logger.error(f"Error in noise dataset search: {str(e)}")
             return {"error": f"Noise dataset search failed: {str(e)}"}
-
 
 
 class AudioFeatureSearchTool(BaseTool):
@@ -351,7 +356,7 @@ class AudioFeatureSearchTool(BaseTool):
 
 class NoiseDetailTool(BaseTool):
     name: str = "get_noise_dataset_details"
-    description: str = """Get detailed information about a specific noise dataset 
+    description: str = """Get detailed information about a specific noise dataset
     including metadata, audio features, analysis results, and visualizations."""
 
     def _run(
@@ -436,28 +441,18 @@ class NoiseDetailTool(BaseTool):
             return {"error": f"Failed to get noise dataset details: {str(e)}"}
 
 
-
-
 llm = ChatOpenAI(model=AGENT_CONFIG.get("MODEL", "gpt-4"))
 
 allowed_tables = SECURITY_CONFIG.get("DEFAULT_ALLOWED_TABLES", [])
-
 
 
 class DataAnalysisInput(BaseModel):
     query: str = Field(description="The natural language query to analyst")
 
 
-
-
-
-
-
-
-
 class DataAnalysisTool(BaseTool):
     name: str = "data_analysis"
-    description: str = """Use this tool to analyze data based on a natural language query. 
+    description: str = """Use this tool to analyze data based on a natural language query.
     It can be used to analyze data from a database or any other source."""
     agent: Any = None
     top_k: int = 10
@@ -466,7 +461,7 @@ class DataAnalysisTool(BaseTool):
     @model_validator(mode="before")
     def add_agent(cls, data: Dict[str, Any]):
         """Inject a TextToSQL agent before initialization"""
-        from  .prompt import SQL_SYSTEM_TEMPLATE
+        from .prompt import SQL_SYSTEM_TEMPLATE
 
         top_k = data.get("top_k", 10)
         data["agent"] = TextToSQLAgent(
@@ -493,7 +488,3 @@ class DataAnalysisTool(BaseTool):
         except Exception as e:
             logger.error(f"Error in data analysis tool: {e}")
             return {"message": "Error in data analysis tool"}
-
-
-
-
