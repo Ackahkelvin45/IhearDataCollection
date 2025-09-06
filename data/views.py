@@ -625,59 +625,59 @@ def noise_detail(request, dataset_id):
     audio_features = getattr(dataset, "audio_features", None)
     noise_analysis = getattr(dataset, "noise_analysis", None)
 
-    # Compute safe audio metadata (avoid direct storage.size/url in templates)
-    audio_available = False
-    audio_url = None
-    audio_size = None
-    audio_hash = None
-    file_extension = None
+    # Precompute safe audio fields to avoid storage errors in templates
+    safe_audio_url = None
+    safe_audio_size = None
+    safe_audio_ext = None
+    audio_exists = False
 
     try:
-        if dataset.audio and getattr(dataset.audio, "name", None):
-            storage = dataset.audio.storage
-            name = dataset.audio.name
-            # exists() should return False rather than raising when missing
-            if storage.exists(name):
-                audio_available = True
-                # Only access url/size when we know it exists
-                try:
-                    audio_url = storage.url(name)
-                except Exception:
-                    audio_url = None
-                try:
-                    audio_size = storage.size(name)
-                except Exception:
-                    audio_size = None
-                try:
-                    audio_hash = dataset.get_audio_hash()
-                except Exception:
-                    audio_hash = None
-            # Derive file extension from stored name regardless of existence
+        if dataset.audio:
+            # Check url
             try:
-                _, ext = os.path.splitext(name)
-                file_extension = (ext or "").lstrip(".")
-            except Exception:
-                file_extension = None
-    except Exception:
-        # Any unexpected storage error: keep defaults
-        pass
+                safe_audio_url = dataset.audio.url
+                audio_exists = True
+            except Exception as url_exc:
+                print(f"[noise_detail] Failed to resolve audio URL for {dataset.pk}: {url_exc}")
+                safe_audio_url = None
+                audio_exists = False
+
+            # Size and extension are optional in UI; compute only if URL exists
+            if audio_exists:
+                try:
+                    safe_audio_size = dataset.audio.size
+                except Exception as size_exc:
+                    print(f"[noise_detail] Failed to resolve audio size for {dataset.pk}: {size_exc}")
+                    safe_audio_size = None
+
+                try:
+                    audio_name = dataset.audio.name or ""
+                    safe_audio_ext = (audio_name[-4:].upper() if len(audio_name) >= 4 else audio_name.upper()) or None
+                except Exception as ext_exc:
+                    print(f"[noise_detail] Failed to resolve audio extension for {dataset.pk}: {ext_exc}")
+                    safe_audio_ext = None
+    except Exception as audio_exc:
+        print(f"[noise_detail] Unexpected audio resolution error for {dataset.pk}: {audio_exc}")
+        safe_audio_url = None
+        safe_audio_size = None
+        safe_audio_ext = None
+        audio_exists = False
 
     # Prepare visualization data
     context = {
         "noise_dataset": dataset,
         "audio_features": audio_features,
         "noise_analysis": noise_analysis,
-        "audio_available": audio_available,
-        "audio_url": audio_url,
-        "audio_size": audio_size,
-        "audio_hash": audio_hash,
-        "file_extension": file_extension,
+        # Safe audio fields for template
+        "audio_url": safe_audio_url,
+        "audio_exists": audio_exists,
+        "audio_size": safe_audio_size,
+        "audio_ext": safe_audio_ext,
     }
 
     # Add visualizations if features exist
     if audio_features:
         # Waveform plot
-
         if audio_features.waveform_data:
             waveform_fig = create_waveform_plot(audio_features.waveform_data)
             context["waveform_plot"] = waveform_fig.to_html(full_html=False)
@@ -689,7 +689,6 @@ def noise_detail(request, dataset_id):
 
         # MFCC plot
         if audio_features.mfccs:
-
             mfcc_fig = create_mfcc_plot(audio_features.mfccs)
             context["mfcc_plot"] = mfcc_fig.to_html(full_html=False)
 

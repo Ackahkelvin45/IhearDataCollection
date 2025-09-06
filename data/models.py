@@ -85,21 +85,48 @@ class NoiseDataset(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def get_audio_hash(self):
-        """Generate MD5 hash of the audio file content"""
-        if not self.audio or not getattr(self.audio, "name", None):
-            return None
-
-        # Avoid calling self.audio.size or self.audio.chunks() because they
-        # may trigger a storage.size() lookup that raises when the file is missing.
+        """Generate MD5 hash of the audio file content safely.
+        Returns None if file is missing or unreadable.
+        """
         try:
-            hash_md5 = hashlib.md5()
-            with self.audio.storage.open(self.audio.name, "rb") as fp:
-                for chunk in iter(lambda: fp.read(8192), b""):
-                    hash_md5.update(chunk)
-            return hash_md5.hexdigest()
-        except Exception:
-            # If the file cannot be opened (e.g., not found in storage),
-            # return None so templates can handle gracefully.
+            if not self.audio:
+                print("[get_audio_hash] No audio attached for dataset:", self.pk)
+                return None
+
+            # Accessing size may trigger a storage HEAD call (e.g., S3). Guard it.
+            try:
+                file_size = self.audio.size
+            except Exception as size_exc:
+                print(f"[get_audio_hash] Failed to read size for {self.audio.name}: {size_exc}")
+                return None
+
+            if file_size < 10 * 1024 * 1024:  # 10MB
+                try:
+                    # Ensure pointer at start
+                    if hasattr(self.audio, 'seek'):
+                        self.audio.seek(0)
+                    content = self.audio.read()
+                    if hasattr(self.audio, 'seek'):
+                        self.audio.seek(0)
+                    return hashlib.md5(content).hexdigest()
+                except Exception as read_exc:
+                    print(f"[get_audio_hash] Failed to read small file {self.audio.name}: {read_exc}")
+                    return None
+            else:
+                hash_md5 = hashlib.md5()
+                try:
+                    if hasattr(self.audio, 'seek'):
+                        self.audio.seek(0)
+                    for chunk in self.audio.chunks():
+                        hash_md5.update(chunk)
+                    if hasattr(self.audio, 'seek'):
+                        self.audio.seek(0)
+                    return hash_md5.hexdigest()
+                except Exception as chunk_exc:
+                    print(f"[get_audio_hash] Failed to stream chunks for {self.audio.name}: {chunk_exc}")
+                    return None
+        except Exception as exc:
+            print(f"[get_audio_hash] Unexpected error for dataset {self.pk}: {exc}")
             return None
 
     def __str__(self):

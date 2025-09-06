@@ -351,7 +351,7 @@
             </div>
           </div>
           <div class="flex-auto p-6">
-            {% if audio_available %}
+            {% if audio_exists and audio_url %}
               <div class="mb-4">
                 <audio controls class="w-full rounded-lg" id="audioPlayer">
                   <source src="{{ audio_url }}" type="audio/mpeg">
@@ -362,7 +362,7 @@
                     <i class="fas fa-download mr-1"></i>Download Audio
                   </a>
                   <span class="text-gray-500 text-sm">
-                    <i class="fas fa-hashtag mr-1"></i>Hash: {{ audio_hash|default:"-" }}
+                    <i class="fas fa-hashtag mr-1"></i>Hash: {{ noise_dataset.get_audio_hash|default:"-" }}
                   </span>
                 </div>
               </div>
@@ -395,7 +395,11 @@
                 </div>
               </div>
             {% else %}
-              <p class="text-gray-700 dark:text-gray-300">Audio file not found in storage.</p>
+              <div class="p-3 rounded bg-gray-50 border border-gray-200">
+                <p class="text-gray-700 dark:text-gray-300 text-sm">
+                  Audio file is missing or unavailable in storage.
+                </p>
+              </div>
             {% endif %}
           </div>
         </div>
@@ -527,7 +531,7 @@
             <div class="mb-4">
               <label class="inline-block mb-1 font-bold text-xs text-slate-700 dark:text-white/80">File Type</label>
               <p class="dark:text-white text-sm">
-                {{ file_extension|upper|default:"-" }}
+                {{ audio_ext|default:"-" }}
               </p>
             </div>
           </div>
