@@ -25,6 +25,7 @@ import os
 from .utils import generate_dataset_name, generate_noise_id
 import glob
 from django.conf import settings
+from plotly.utils import PlotlyJSONEncoder
 
 logger = logging.getLogger(__name__)
 
@@ -54,10 +55,26 @@ def view_dashboard(request):
     regions_count = Region.objects.count()
 
     # Calculate total duration in hours
-    total_duration_seconds = AudioFeature.objects.aggregate(
-        total_duration=Sum('duration')
-    )['total_duration'] or 0
+    total_duration_seconds = (
+        AudioFeature.objects.aggregate(total_duration=Sum("duration"))["total_duration"]
+        or 0
+    )
     total_duration_hours = round(total_duration_seconds / 3600, 2)
+
+    # Duration by class (in hours)
+    duration_by_class = (
+        AudioFeature.objects.select_related("noise_dataset__class_name")
+        .values("noise_dataset__class_name__name")
+        .annotate(total_duration=Sum("duration"))
+        .order_by("-total_duration")
+    )
+    class_hours = [
+        {
+            "label": item.get("noise_dataset__class_name__name") or "Unknown",
+            "hours": round((item.get("total_duration") or 0) / 3600, 2),
+        }
+        for item in duration_by_class
+    ]
 
     # Data for category pie chart
     category_data = (
@@ -79,13 +96,19 @@ def view_dashboard(request):
 
     # Data for duration by region chart
     duration_by_region = (
-        AudioFeature.objects.select_related('noise_dataset__region')
-        .values('noise_dataset__region__name')
-        .annotate(total_duration=Sum('duration'))
-        .order_by('-total_duration')
+        AudioFeature.objects.select_related("noise_dataset__region")
+        .values("noise_dataset__region__name")
+        .annotate(total_duration=Sum("duration"))
+        .order_by("-total_duration")
     )
-    duration_region_labels = [item.get('noise_dataset__region__name') or 'Unknown' for item in duration_by_region]
-    duration_region_hours = [round(item['total_duration'] / 3600, 2) if item['total_duration'] else 0 for item in duration_by_region]
+    duration_region_labels = [
+        item.get("noise_dataset__region__name") or "Unknown"
+        for item in duration_by_region
+    ]
+    duration_region_hours = [
+        round(item["total_duration"] / 3600, 2) if item["total_duration"] else 0
+        for item in duration_by_region
+    ]
 
     # Data for time line chart (last 12 months)
     time_labels = []
@@ -128,6 +151,8 @@ def view_dashboard(request):
         "categories_count": categories_count,
         "regions_count": regions_count,
         "total_duration_hours": total_duration_hours,
+        # class hours cards
+        "class_hours": class_hours,
         "category_labels": json.dumps(category_labels),
         "category_data": json.dumps(category_counts),
         "region_labels": json.dumps(region_labels),
@@ -638,7 +663,9 @@ def noise_detail(request, dataset_id):
                 safe_audio_url = dataset.audio.url
                 audio_exists = True
             except Exception as url_exc:
-                print(f"[noise_detail] Failed to resolve audio URL for {dataset.pk}: {url_exc}")
+                print(
+                    f"[noise_detail] Failed to resolve audio URL for {dataset.pk}: {url_exc}"
+                )
                 safe_audio_url = None
                 audio_exists = False
 
@@ -647,23 +674,33 @@ def noise_detail(request, dataset_id):
                 try:
                     safe_audio_size = dataset.audio.size
                 except Exception as size_exc:
-                    print(f"[noise_detail] Failed to resolve audio size for {dataset.pk}: {size_exc}")
+                    print(
+                        f"[noise_detail] Failed to resolve audio size for {dataset.pk}: {size_exc}"
+                    )
                     safe_audio_size = None
 
                 try:
                     audio_name = dataset.audio.name or ""
-                    safe_audio_ext = (audio_name[-4:].upper() if len(audio_name) >= 4 else audio_name.upper()) or None
+                    safe_audio_ext = (
+                        audio_name[-4:].upper()
+                        if len(audio_name) >= 4
+                        else audio_name.upper()
+                    ) or None
                 except Exception as ext_exc:
-                    print(f"[noise_detail] Failed to resolve audio extension for {dataset.pk}: {ext_exc}")
+                    print(
+                        f"[noise_detail] Failed to resolve audio extension for {dataset.pk}: {ext_exc}"
+                    )
                     safe_audio_ext = None
     except Exception as audio_exc:
-        print(f"[noise_detail] Unexpected audio resolution error for {dataset.pk}: {audio_exc}")
+        print(
+            f"[noise_detail] Unexpected audio resolution error for {dataset.pk}: {audio_exc}"
+        )
         safe_audio_url = None
         safe_audio_size = None
         safe_audio_ext = None
         audio_exists = False
 
-    # Prepare visualization data
+    # Prepare visualization data (plots are now fetched via API for faster load)
     context = {
         "noise_dataset": dataset,
         "audio_features": audio_features,
@@ -675,28 +712,51 @@ def noise_detail(request, dataset_id):
         "audio_ext": safe_audio_ext,
     }
 
-    # Add visualizations if features exist
-    if audio_features:
-        # Waveform plot
-        if audio_features.waveform_data:
-            waveform_fig = create_waveform_plot(audio_features.waveform_data)
-            context["waveform_plot"] = waveform_fig.to_html(full_html=False)
-
-        # Spectrogram plot
-        if audio_features.mel_spectrogram:
-            spectrogram_fig = create_spectrogram_plot(audio_features.mel_spectrogram)
-            context["spectrogram_plot"] = spectrogram_fig.to_html(full_html=False)
-
-        # MFCC plot
-        if audio_features.mfccs:
-            mfcc_fig = create_mfcc_plot(audio_features.mfccs)
-            context["mfcc_plot"] = mfcc_fig.to_html(full_html=False)
-
-        # Frequency features plot
-        freq_fig = create_frequency_features_plot(audio_features)
-        context["freq_plot"] = freq_fig.to_html(full_html=False)
-
     return render(request, "data/Noise_detail.html", context)
+
+
+@login_required
+def api_waveform(request, dataset_id):
+    dataset = get_object_or_404(NoiseDataset, pk=dataset_id)
+    audio_features = getattr(dataset, "audio_features", None)
+    if not audio_features or not audio_features.waveform_data:
+        return JsonResponse({"success": False, "reason": "no_waveform"})
+    fig = create_waveform_plot(audio_features.waveform_data)
+    fig_dict = json.loads(json.dumps(fig.to_dict(), cls=PlotlyJSONEncoder))
+    return JsonResponse({"success": True, "figure": fig_dict})
+
+
+@login_required
+def api_spectrogram(request, dataset_id):
+    dataset = get_object_or_404(NoiseDataset, pk=dataset_id)
+    audio_features = getattr(dataset, "audio_features", None)
+    if not audio_features or not audio_features.mel_spectrogram:
+        return JsonResponse({"success": False, "reason": "no_spectrogram"})
+    fig = create_spectrogram_plot(audio_features.mel_spectrogram)
+    fig_dict = json.loads(json.dumps(fig.to_dict(), cls=PlotlyJSONEncoder))
+    return JsonResponse({"success": True, "figure": fig_dict})
+
+
+@login_required
+def api_mfcc(request, dataset_id):
+    dataset = get_object_or_404(NoiseDataset, pk=dataset_id)
+    audio_features = getattr(dataset, "audio_features", None)
+    if not audio_features or not audio_features.mfccs:
+        return JsonResponse({"success": False, "reason": "no_mfcc"})
+    fig = create_mfcc_plot(audio_features.mfccs)
+    fig_dict = json.loads(json.dumps(fig.to_dict(), cls=PlotlyJSONEncoder))
+    return JsonResponse({"success": True, "figure": fig_dict})
+
+
+@login_required
+def api_freq_features(request, dataset_id):
+    dataset = get_object_or_404(NoiseDataset, pk=dataset_id)
+    audio_features = getattr(dataset, "audio_features", None)
+    if not audio_features:
+        return JsonResponse({"success": False, "reason": "no_features"})
+    fig = create_frequency_features_plot(audio_features)
+    fig_dict = json.loads(json.dumps(fig.to_dict(), cls=PlotlyJSONEncoder))
+    return JsonResponse({"success": True, "figure": fig_dict})
 
 
 def create_waveform_plot(waveform_data):

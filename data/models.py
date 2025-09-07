@@ -97,33 +97,39 @@ class NoiseDataset(models.Model):
             try:
                 file_size = self.audio.size
             except Exception as size_exc:
-                print(f"[get_audio_hash] Failed to read size for {self.audio.name}: {size_exc}")
+                print(
+                    f"[get_audio_hash] Failed to read size for {self.audio.name}: {size_exc}"
+                )
                 return None
 
             if file_size < 10 * 1024 * 1024:  # 10MB
                 try:
                     # Ensure pointer at start
-                    if hasattr(self.audio, 'seek'):
+                    if hasattr(self.audio, "seek"):
                         self.audio.seek(0)
                     content = self.audio.read()
-                    if hasattr(self.audio, 'seek'):
+                    if hasattr(self.audio, "seek"):
                         self.audio.seek(0)
                     return hashlib.md5(content).hexdigest()
                 except Exception as read_exc:
-                    print(f"[get_audio_hash] Failed to read small file {self.audio.name}: {read_exc}")
+                    print(
+                        f"[get_audio_hash] Failed to read small file {self.audio.name}: {read_exc}"
+                    )
                     return None
             else:
                 hash_md5 = hashlib.md5()
                 try:
-                    if hasattr(self.audio, 'seek'):
+                    if hasattr(self.audio, "seek"):
                         self.audio.seek(0)
                     for chunk in self.audio.chunks():
                         hash_md5.update(chunk)
-                    if hasattr(self.audio, 'seek'):
+                    if hasattr(self.audio, "seek"):
                         self.audio.seek(0)
                     return hash_md5.hexdigest()
                 except Exception as chunk_exc:
-                    print(f"[get_audio_hash] Failed to stream chunks for {self.audio.name}: {chunk_exc}")
+                    print(
+                        f"[get_audio_hash] Failed to stream chunks for {self.audio.name}: {chunk_exc}"
+                    )
                     return None
         except Exception as exc:
             print(f"[get_audio_hash] Unexpected error for dataset {self.pk}: {exc}")

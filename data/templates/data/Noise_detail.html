@@ -87,17 +87,14 @@
                 </button>
               </div>
               <div id="waveform-container" class="plot-container">
-                {% if waveform_plot %}
-                  {{ waveform_plot|safe }}
-                {% else %}
-                  <p class="text-gray-500">No waveform data available</p>
-                {% endif %}
+                <div id="waveform-plot"></div>
+                <p id="waveform-empty" class="text-gray-500 hidden">No waveform data available</p>
               </div>
               <p class="text-xs text-gray-500 mt-2">
                 Shows the amplitude of the audio signal over time. Peaks indicate louder sections.
               </p>
             </div>
-            
+
             <!-- Spectrogram Plot -->
             <div class="mb-8">
               <div class="flex justify-between items-center mb-4">
@@ -107,17 +104,14 @@
                 </button>
               </div>
               <div id="spectrogram-container" class="plot-container">
-                {% if spectrogram_plot %}
-                  {{ spectrogram_plot|safe }}
-                {% else %}
-                  <p class="text-gray-500">No spectrogram data available</p>
-                {% endif %}
+                <div id="spectrogram-plot"></div>
+                <p id="spectrogram-empty" class="text-gray-500 hidden">No spectrogram data available</p>
               </div>
               <p class="text-xs text-gray-500 mt-2">
                 Visual representation of the spectrum of frequencies as they vary with time. Warmer colors indicate more energy.
               </p>
             </div>
-            
+
             <!-- MFCC Plot -->
             <div class="mb-8">
               <div class="flex justify-between items-center mb-4">
@@ -127,17 +121,14 @@
                 </button>
               </div>
               <div id="mfcc-container" class="plot-container">
-                {% if mfcc_plot %}
-                  {{ mfcc_plot|safe }}
-                {% else %}
-                  <p class="text-gray-500">No MFCC data available</p>
-                {% endif %}
+                <div id="mfcc-plot"></div>
+                <p id="mfcc-empty" class="text-gray-500 hidden">No MFCC data available</p>
               </div>
               <p class="text-xs text-gray-500 mt-2">
                 Mel-frequency cepstral coefficients represent the short-term power spectrum of sound.
               </p>
             </div>
-            
+
             <!-- Frequency Features Plot -->
             <div>
               <div class="flex justify-between items-center mb-4">
@@ -147,11 +138,8 @@
                 </button>
               </div>
               <div id="freq-container" class="plot-container">
-                {% if freq_plot %}
-                  {{ freq_plot|safe }}
-                {% else %}
-                  <p class="text-gray-500">No frequency feature data available</p>
-                {% endif %}
+                <div id="freq-plot"></div>
+                <p id="freq-empty" class="text-gray-500 hidden">No frequency feature data available</p>
               </div>
               <p class="text-xs text-gray-500 mt-2">
                 Comparison of key spectral features: Centroid (brightness), Bandwidth (frequency range), Rolloff (high-frequency cutoff).
@@ -333,8 +321,8 @@
                     </p>
                   </div>
                 </div>
-           
-            
+
+
               </div>
             </div>
           </div>
@@ -366,7 +354,7 @@
                   </span>
                 </div>
               </div>
-              
+
               <!-- Audio Metadata -->
               <div class="grid grid-cols-2 gap-4">
                 <div>
@@ -431,7 +419,7 @@
                   </div>
                 </div>
               </div>
-              
+
               <!-- Frequency-domain features -->
               <div class="col-span-2 mt-3">
                 <h6 class="font-semibold text-sm mb-2 dark:text-white/80">Frequency Domain</h6>
@@ -462,7 +450,7 @@
                   </div>
                 </div>
               </div>
-              
+
               <!-- Advanced features -->
               <div class="col-span-2 mt-3">
                 <h6 class="font-semibold text-sm mb-2 dark:text-white/80">Advanced Features</h6>
@@ -499,35 +487,35 @@
                 {{ noise_dataset.recording_device|default:"-" }}
               </p>
             </div>
-            
+
             <div class="mb-4">
               <label class="inline-block mb-1 font-bold text-xs text-slate-700 dark:text-white/80">Microphone Type</label>
               <p class="dark:text-white text-sm">
                 {{ noise_dataset.microphone_type.name|default:"-" }}
               </p>
             </div>
-            
+
             <div class="mb-4">
               <label class="inline-block mb-1 font-bold text-xs text-slate-700 dark:text-white/80">Created At</label>
               <p class="dark:text-white text-sm">
                 {{ noise_dataset.created_at|date:"F j, Y, g:i a" }}
               </p>
             </div>
-            
+
             <div class="mb-4">
               <label class="inline-block mb-1 font-bold text-xs text-slate-700 dark:text-white/80">Last Updated</label>
               <p class="dark:text-white text-sm">
                 {{ noise_dataset.updated_at|date:"F j, Y, g:i a" }}
               </p>
             </div>
-            
+
             <div class="mb-4">
               <label class="inline-block mb-1 font-bold text-xs text-slate-700 dark:text-white/80">File Size</label>
               <p class="dark:text-white text-sm">
                 {% if audio_size %}{{ audio_size|filesizeformat }}{% else %}-{% endif %}
               </p>
             </div>
-            
+
             <div class="mb-4">
               <label class="inline-block mb-1 font-bold text-xs text-slate-700 dark:text-white/80">File Type</label>
               <p class="dark:text-white text-sm">
@@ -549,7 +537,6 @@
 function toggleFullscreen(containerId) {
     const container = document.getElementById(containerId);
     if (!container) return;
-    
     if (!document.fullscreenElement) {
         container.requestFullscreen().catch(err => {
             console.error(`Error attempting to enable fullscreen: ${err.message}`);
@@ -577,24 +564,48 @@ function toggleFreqFullscreen() {
     toggleFullscreen('freq-container');
 }
 
+// Helper to render plotly figure from API
+async function loadPlot(url, plotId, emptyId) {
+    try {
+        const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!data.success) {
+            document.getElementById(emptyId)?.classList.remove('hidden');
+            return;
+        }
+        const fig = data.figure || {};
+        const traces = fig.data || [];
+        const layout = fig.layout || {};
+        Plotly.newPlot(plotId, traces, layout, {responsive: true});
+        document.getElementById(emptyId)?.classList.add('hidden');
+    } catch (e) {
+        console.error('Failed to load plot', url, e);
+        document.getElementById(emptyId)?.classList.remove('hidden');
+    }
+}
+
+// Kick off async loads after DOMContentLoaded
+document.addEventListener('DOMContentLoaded', function() {
+    const datasetId = {{ noise_dataset.id }};
+    loadPlot(`/api/dataset/${datasetId}/plot/waveform/`, 'waveform-plot', 'waveform-empty');
+    loadPlot(`/api/dataset/${datasetId}/plot/spectrogram/`, 'spectrogram-plot', 'spectrogram-empty');
+    loadPlot(`/api/dataset/${datasetId}/plot/mfcc/`, 'mfcc-plot', 'mfcc-empty');
+    loadPlot(`/api/dataset/${datasetId}/plot/freq-features/`, 'freq-plot', 'freq-empty');
+});
+
 // Audio player synchronization with visualizations
 document.addEventListener('DOMContentLoaded', function() {
     const audioPlayer = document.getElementById('audioPlayer');
     if (!audioPlayer) return;
-    
-    // Add event listeners for visualization synchronization
     audioPlayer.addEventListener('play', function() {
         console.log('Audio playback started');
-        // You could add visualization animation here
     });
-    
     audioPlayer.addEventListener('pause', function() {
         console.log('Audio playback paused');
     });
-    
     audioPlayer.addEventListener('timeupdate', function() {
-        // Update visualization markers based on current playback time
-        // This would require more advanced integration with Plotly
+        // Placeholder for future sync
     });
 });
 
@@ -645,4 +656,4 @@ window.addEventListener('resize', function() {
     fill: #e2e8f0 !important;
 }
 </style>
-{%endblock %}  
+{%endblock %}

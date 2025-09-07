@@ -42,4 +42,25 @@ urlpatterns = [
         views.cancel_upload,
         name="cancel_upload",
     ),
+    # New plot APIs
+    path(
+        "api/dataset/<int:dataset_id>/plot/waveform/",
+        views.api_waveform,
+        name="api_plot_waveform",
+    ),
+    path(
+        "api/dataset/<int:dataset_id>/plot/spectrogram/",
+        views.api_spectrogram,
+        name="api_plot_spectrogram",
+    ),
+    path(
+        "api/dataset/<int:dataset_id>/plot/mfcc/",
+        views.api_mfcc,
+        name="api_plot_mfcc",
+    ),
+    path(
+        "api/dataset/<int:dataset_id>/plot/freq-features/",
+        views.api_freq_features,
+        name="api_plot_freq_features",
+    ),
 ]
