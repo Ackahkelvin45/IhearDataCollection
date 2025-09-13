@@ -15,7 +15,31 @@ from django.core.exceptions import ValidationError
 from dateutil.parser import parse
 
 
+class Dataset(models.Model):
+    DATASET_TYPES = [
+        ("noise", "Noise"),
+        ("clean_speech", "Clean Speech"),
+        ("mixed", "Mixed (Noise and Clean)"),
+        ("non_standard_speech", "Non-standard Speech"),
+        ("animals", "Animals"),
+    ]
+
+    name = models.CharField(max_length=255, choices=DATASET_TYPES, unique=True)
+    description = models.TextField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.get_name_display()
+
+
 class NoiseDataset(models.Model):
+
+    dataset_type = models.OneToOneField(
+        Dataset, on_delete=models.CASCADE, related_name="noise_dataset", null=True
+    )
+
     name = models.CharField(
         max_length=255, null=True, help_text="Name of Data set, auto generated"
     )
@@ -134,6 +158,20 @@ class NoiseDataset(models.Model):
         except Exception as exc:
             print(f"[get_audio_hash] Unexpected error for dataset {self.pk}: {exc}")
             return None
+
+    def save(self, *args, **kwargs):
+
+        # Ensure dataset type is always "noise"
+        if not self.id:
+            # create a Dataset of type noise if one doesn't exist
+            noise_dataset, _ = Dataset.objects.get_or_create(
+                name="noise", defaults={"description": "Noise dataset"}
+            )
+            self.dataset_type = noise_dataset
+        else:
+            self.dataset_type.name = "noise"
+            self.dataset_type.save()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.name}-{self.noise_id}"

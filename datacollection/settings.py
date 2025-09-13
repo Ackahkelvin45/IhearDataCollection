@@ -78,6 +78,7 @@ INSTALLED_APPS = [
     "approval",
     "datacollection",
     "django_celery_results",
+    "reports",
 ]
 TAILWIND_APP_NAME = "theme"
 
@@ -357,28 +358,34 @@ THROTTLE_RATE = os.getenv("THROTTLE_RATE", "100/s")
 CELERY_ACCEPT_CONTENT = ["application/json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
-CELERY_TASK_ALWAYS_EAGER = False
 CELERY_ENABLE_UTC = True
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = 6 * 60 * 60  # 6 hours for bulk processing
-CELERY_TASK_SOFT_TIME_LIMIT = 5 * 60 * 60  # 5 hours soft limit
+
+# Bulk task timeouts
+CELERY_TASK_TIME_LIMIT = 6 * 60 * 60  # 6 hours
+CELERY_TASK_SOFT_TIME_LIMIT = 5 * 60 * 60  # 5 hours
+
+# Redis broker/backend
 CELERY_BROKER_DB_ID = int(os.getenv("CELERY_BROKER_DB_ID", default="2"))
 CELERY_RESULT_BACKEND_DB_ID = int(os.getenv("CELERY_RESULT_BACKEND_DB_ID", default="3"))
 CELERY_BROKER_URL = f"{REDIS_URL}/{CELERY_BROKER_DB_ID}"
-CELERY_RESULT_BACKEND = f"{REDIS_URL}/3"
+CELERY_RESULT_BACKEND = f"{REDIS_URL}/{CELERY_RESULT_BACKEND_DB_ID}"
 if REDIS_USE_TLS:
     CELERY_BROKER_URL += "?ssl_cert_reqs=required"
     CELERY_RESULT_BACKEND += "?ssl_cert_reqs=required"
+
 CELERY_TASK_ALWAYS_EAGER = as_bool(
     os.getenv("CELERY_TASK_ALWAYS_EAGER", default="False")
 )
 
-# Additional Celery settings for large tasks
-CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Process one task at a time
-CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000  # Restart worker after 1000 tasks
-CELERY_TASK_ACKS_LATE = True  # Acknowledge task after completion
-CELERY_TASK_REJECT_ON_WORKER_LOST = True  # Reject task if worker dies
+# Safety + stability settings
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # One task at a time
+CELERY_TASK_ACKS_LATE = True  # Ack after completion
+CELERY_TASK_REJECT_ON_WORKER_LOST = True  # Requeue if worker dies
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 200  # Restart after 200 tasks
+CELERY_WORKER_MAX_MEMORY_PER_CHILD = 500000  # Restart if >500MB
+
 
 # Directory for assembling large/chunked uploads before background processing
 # Can be overridden via env var SHARED_UPLOADS_DIR

@@ -1,15 +1,15 @@
 {% extends 'datacollection/layout.html'%}
 
 {% block content %}
-  <nav>
-    <!-- breadcrumb -->
-    <ol style="margin-bottom: 30px;" class="flex flex-wrap pt-1 mr-12 bg-transparent rounded-lg sm:mr-16">
-      <li class="text-sm leading-normal">
-        <a class="text-white opacity-50" href="javascript:;">Pages</a>
-      </li>
-      <li class="text-sm pl-2 capitalize leading-normal text-white before:float-left before:pr-2 before:text-white before:content-['/']" aria-current="page">Dashboard</li>
-    </ol>
-    <h6 class="mb-0 font-bold text-white capitalize">Dashboard</h6>
+  <nav class="justify-end flex items-center">
+
+      <select placeholder="Default input" class="focus:shadow-primary-outline text-sm leading-5.6 ease block  w-fit rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
+
+            <option>All</option>
+      </select>
+
+
+
   </nav>
 
   <!-- row 1 - Stats Cards -->
@@ -308,7 +308,7 @@
     // Colors for dark/light mode compatibility
     const textColor = window.matchMedia('(prefers-color-scheme: dark)').matches ? '#fff' : '#000';
     const gridColor = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
-    
+
     // Category Pie Chart
     const categoryCtx = document.getElementById('categoryPieChart').getContext('2d');
     const categoryPieChart = new Chart(categoryCtx, {
@@ -591,7 +591,7 @@
     // Improved Play/Pause functionality
     let isPlaying = true;
     let updateInterval;
-    
+
     // Play button
     document.getElementById('liveChartPlay').addEventListener('click', function() {
       if (!isPlaying) {
@@ -601,7 +601,7 @@
         document.getElementById('liveChartPause').classList.add('bg-gray-600');
       }
     });
-    
+
     // Pause button
     document.getElementById('liveChartPause').addEventListener('click', function() {
       if (isPlaying) {
@@ -611,7 +611,7 @@
         document.getElementById('liveChartPlay').classList.add('bg-blue-500');
       }
     });
-    
+
     // Reset button
     document.getElementById('liveChartReset').addEventListener('click', function() {
       liveLineChart.data.datasets[0].data = [];

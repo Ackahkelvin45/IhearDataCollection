@@ -1,10 +1,11 @@
 from django.contrib import admin
 from .models import (
-    NoiseDataset, 
-    AudioFeature, 
-    NoiseAnalysis, 
+    NoiseDataset,
+    AudioFeature,
+    NoiseAnalysis,
     VisualizationPreset,
     BulkReprocessingTask,
+    Dataset,
 )
 from unfold.admin import ModelAdmin
 from django.shortcuts import render, redirect
@@ -32,6 +33,7 @@ class NoiseDatasetAdmin(ModelAdmin):
         "recording_date",
         "updated_at",
         "processing_status",
+        "dataset_type",
     )
     list_filter = (
         "category",
@@ -53,11 +55,20 @@ class NoiseDatasetAdmin(ModelAdmin):
     list_select_related = ("collector", "category", "region", "community")
     list_per_page = 25
     actions = ["reprocess_audio_analysis"]
-    
+
     fieldsets = (
         (
             "Basic Information",
-            {"fields": ("noise_id", "name", "collector", "description", "audio")},
+            {
+                "fields": (
+                    "noise_id",
+                    "name",
+                    "collector",
+                    "description",
+                    "audio",
+                    "dataset_type",
+                )
+            },
         ),
         ("Location Details", {"fields": ("region", "community")}),
         ("Classification", {"fields": ("category", "class_name", "subclass")}),
@@ -227,27 +238,27 @@ class NoiseDatasetAdmin(ModelAdmin):
 
     def redo_analysis_view(self, request):
         """Admin view to reprocess all datasets with missing analysis"""
-        
+
         if request.method == "POST":
             # Get all datasets missing either audio features or noise analysis AND have audio files
             datasets_to_process = NoiseDataset.objects.filter(
                 Q(audio_features__isnull=True) | Q(noise_analysis__isnull=True),
                 audio__isnull=False,  # Only process datasets with audio files
             ).values_list("id", flat=True)
-            
+
             if datasets_to_process:
                 dataset_list = list(datasets_to_process)
                 total_count = len(dataset_list)
-                
+
                 # Warn user if processing large number of datasets
                 if total_count > 100:
                     messages.warning(
                         request,
                         f"⚠️ Large batch detected: {total_count} datasets. "
                         f"This may take a significant amount of time. "
-                        f"Estimated time: {total_count * 2} seconds ({total_count * 2 / 60:.1f} minutes)."
+                        f"Estimated time: {total_count * 2} seconds ({total_count * 2 / 60:.1f} minutes).",
                     )
-                
+
                 # Start the bulk reprocessing task with timeout
                 task = bulk_reprocess_audio_analysis.apply_async(
                     args=[dataset_list, request.user.id],
@@ -255,7 +266,7 @@ class NoiseDatasetAdmin(ModelAdmin):
                     time_limit=3600 * 6,  # 6 hours timeout
                     soft_time_limit=3600 * 5,  # 5 hours soft timeout
                 )
-                
+
                 # Create tracking record
                 BulkReprocessingTask.objects.create(
                     task_id=task.id,
@@ -263,43 +274,45 @@ class NoiseDatasetAdmin(ModelAdmin):
                     total_datasets=total_count,
                     status="pending",
                 )
-                
+
                 messages.success(
                     request,
                     f"✅ Started bulk reprocessing for {total_count} datasets. "
                     f"Task ID: {task.id}. "
                     f"You can monitor progress on the task tracking page.",
                 )
-                
+
                 # Redirect to task progress page
                 return HttpResponseRedirect(f"../task-progress/{task.id}/")
             else:
                 messages.info(request, "No datasets found that need reprocessing.")
                 return HttpResponseRedirect("../missing-analysis/")
-        
+
         # GET request - show confirmation page
         datasets_to_process = NoiseDataset.objects.filter(
             Q(audio_features__isnull=True) | Q(noise_analysis__isnull=True),
             audio__isnull=False,  # Only show datasets with audio files
         ).select_related("collector", "category", "region", "community")
-        
+
         # Also get datasets without audio files for information
         datasets_without_audio = NoiseDataset.objects.filter(
             Q(audio_features__isnull=True) | Q(noise_analysis__isnull=True),
             audio__isnull=True,
         ).count()
-        
+
         total_count = datasets_to_process.count()
-        
+
         context = {
             "title": "Confirm Reprocessing Audio Analysis",
             "datasets_to_process": datasets_to_process,
             "total_datasets": total_count,
             "datasets_without_audio": datasets_without_audio,
-            "estimated_time_minutes": total_count * 2 / 60,  # Rough estimate: 2 seconds per dataset
+            "estimated_time_minutes": total_count
+            * 2
+            / 60,  # Rough estimate: 2 seconds per dataset
             "opts": self.model._meta,
         }
-        
+
         return render(
             request, "admin/data/noisedataset/redo_analysis_confirm.html", context
         )
@@ -411,6 +424,11 @@ class NoiseDatasetAdmin(ModelAdmin):
             return JsonResponse({"error": "Task not found"}, status=404)
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
+
+
+@admin.register(Dataset)
+class DatasetAdmin(ModelAdmin):
+    pass
 
 
 @admin.register(AudioFeature)

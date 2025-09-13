@@ -12,7 +12,7 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 512M
+          memory: 1G
     depends_on:
       - web
 
@@ -62,8 +62,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
-
+          memory: 1G
   migration:
     image: *image
     env_file: *env_file
@@ -91,7 +90,7 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 1G
+          memory: 2G
       update_config:
         parallelism: 2
         delay: 10s
