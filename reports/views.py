@@ -35,7 +35,11 @@ class DependentDropdownQuery(View):
         category_id = request.GET.get("category_id")
         class_id = request.GET.get("class_id")
         region_id = request.GET.get("region_id")
+        datatype_id=request.GET.get("datatype_id")
 
+        if datatype_id:
+            categories = Category.objects.filter(datatype_id=datatype_id).order_by("name")
+            return JsonResponse(list(categories.values("id", "name")), safe=False)
         if category_id:
             classes = Class.objects.filter(category_id=category_id).order_by("name")
             return JsonResponse(list(classes.values("id", "name")), safe=False)
