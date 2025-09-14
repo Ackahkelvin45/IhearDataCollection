@@ -53,6 +53,8 @@ def view_dashboard(request):
     )
     categories_count = Category.objects.count()
     regions_count = Region.objects.count()
+    classes_count = Class.objects.count()
+    sub_classes_count = SubClass.objects.count()
 
     # Calculate total duration in hours
     total_duration_seconds = (
@@ -61,7 +63,7 @@ def view_dashboard(request):
     )
     total_duration_hours = round(total_duration_seconds / 3600, 2)
 
-    # Duration by class (in hours)
+    # Duration by class in hours
     duration_by_class = (
         AudioFeature.objects.select_related("noise_dataset__class_name")
         .values("noise_dataset__class_name__name")
@@ -149,6 +151,8 @@ def view_dashboard(request):
         "total_recordings": total_recordings,
         "user_recordings": user_recordings,
         "categories_count": categories_count,
+        "classes_count": classes_count,
+        "sub_classes_count": sub_classes_count,
         "regions_count": regions_count,
         "total_duration_hours": total_duration_hours,
         # class hours cards
