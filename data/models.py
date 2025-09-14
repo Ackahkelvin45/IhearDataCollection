@@ -36,7 +36,7 @@ class Dataset(models.Model):
 
 class NoiseDataset(models.Model):
 
-    dataset_type = models.ForeignKey(Dataset, on_delete=models.CASCADE,null=True)
+    dataset_type = models.ForeignKey(Dataset, on_delete=models.CASCADE,null=True,blank=True)
 
     name = models.CharField(
         max_length=255, null=True, help_text="Name of Data set, auto generated"
