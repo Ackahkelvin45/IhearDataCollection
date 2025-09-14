@@ -1,5 +1,5 @@
 from django.db import models
-from  data.models import Dataset
+
 # Create your models here.
 
 
@@ -22,7 +22,7 @@ class Community(models.Model):
 class Category(models.Model):
     name = models.CharField(max_length=255, unique=True, null=True)
     description = models.TextField(blank=True, null=True)
-    data_type=models.ForeignKey(Dataset, on_delete=models.PROTECT,null=True)    
+    data_type=models.ForeignKey("data.Dataset", on_delete=models.PROTECT,null=True)    
     
 
     def __str__(self):
