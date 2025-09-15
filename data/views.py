@@ -29,6 +29,7 @@ from plotly.utils import PlotlyJSONEncoder
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,20 @@ class RenamedFile:
 @login_required
 def view_dashboard(request):
     return render(request, "data/dashboard.html",)
+
+def clean_json(obj):
+    """
+    Recursively clean NaN / Infinity / None values from dicts & lists for JSON compliance.
+    """
+    if isinstance(obj, dict):
+        return {k: clean_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_json(v) for v in obj]
+    elif isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return 0
+    elif obj is None:
+        return 0
+    return obj
 
 
 class DashboardView(APIView):
@@ -97,7 +112,7 @@ class DashboardView(APIView):
                 .annotate(count=Count("id"))
                 .order_by("-count")
             )
-            category_labels = [item["category__name"] for item in category_data]
+            category_labels = [item["category__name"] or "Unknown" for item in category_data]
             category_counts = [item["count"] for item in category_data]
 
             # Data for region bar chart
@@ -106,7 +121,7 @@ class DashboardView(APIView):
                 .annotate(count=Count("id"))
                 .order_by("-count")
             )
-            region_labels = [item["region__name"] for item in region_data]
+            region_labels = [item["region__name"] or "Unknown" for item in region_data]
             region_counts = [item["count"] for item in region_data]
 
             # Data for duration by region chart
@@ -152,12 +167,12 @@ class DashboardView(APIView):
                 avg_percussive=Avg("percussive_ratio"),
             )
             audio_features_data = [
-                audio_features["avg_rms"] or 0,
-                audio_features["avg_centroid"] or 0,
-                audio_features["avg_bandwidth"] or 0,
-                audio_features["avg_zcr"] or 0,
-                audio_features["avg_harmonic"] or 0,
-                audio_features["avg_percussive"] or 0,
+                audio_features["avg_rms"],
+                audio_features["avg_centroid"],
+                audio_features["avg_bandwidth"],
+                audio_features["avg_zcr"],
+                audio_features["avg_harmonic"],
+                audio_features["avg_percussive"],
             ]
 
             response_data = {
@@ -192,15 +207,14 @@ class DashboardView(APIView):
                 }
             }
             
-            return Response(response_data)
+            # Clean NaN / Infinity before sending response
+            return Response(clean_json(response_data))
             
         except Exception as e:
             return Response(
                 {"error": "Failed to fetch dashboard data", "detail": str(e)}, 
                 status=500
             )
-
-
 
 class NoiseDatasetDeleteView(LoginRequiredMixin, DeleteView):
     model = NoiseDataset
