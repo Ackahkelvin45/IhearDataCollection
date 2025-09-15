@@ -302,7 +302,10 @@
 
 <!-- Ellipsis Dropdown -->
 <li class="relative flex items-center pr-2">
-   <button dropdown-trigger aria-expanded="false" type="button" class="inline-block px-6 py-3 mr-3 font-bold text-center text-white uppercase align-middle transition-all rounded-lg cursor-pointer bg-gradient-to-tl from-blue-500 to-violet-500 leading-normal text-sm ease-in tracking-tight-rem shadow-md bg-150 bg-x-25 hover:-translate-y-px active:opacity-85 hover:shadow-md">Dropdown</button>
+   <button dropdown-trigger aria-expanded="false" type="button" class="inline-block px-6 py-3 mr-3 font-bold text-center text-white uppercase align-middle transition-all rounded-lg cursor-pointer bg-primary leading-normal text-sm ease-in tracking-tight-rem shadow-md bg-150 bg-x-25 hover:-translate-y-px active:opacity-85 hover:shadow-md">
+    <i class="fa fa-external-link-alt mr-2 text-white"></i>
+
+    Go to </button>
 
 
   <ul dropdown-menu="shortcuts"
@@ -313,7 +316,7 @@
 
     <!-- Add Dataset -->
     <li class="relative mb-2 border-b border-gray-200">
-      <a class="group ease py-2 flex items-center gap-3 w-full whitespace-nowrap rounded-lg bg-transparent px-4 duration-300 hover:bg-gray-200" href="javascript:;">
+      <a href="{% url 'data:noise_dataset_create' %}" class="group ease py-2 flex items-center gap-3 w-full whitespace-nowrap rounded-lg bg-transparent px-4 duration-300 hover:bg-gray-200" href="javascript:;">
         <i class="fa fa-database mr-2 text-green-600"></i>
         <span>Add Dataset</span>
       </a>
@@ -321,7 +324,7 @@
 
     <!-- Bulk Upload -->
     <li class="relative">
-      <a class="group ease py-2 flex items-center gap-3 w-full whitespace-nowrap rounded-lg bg-transparent px-4 duration-300 hover:bg-gray-200" href="javascript:;">
+      <a href="{% url 'data:bulk_upload' %}" class="group ease py-2 flex items-center gap-3 w-full whitespace-nowrap rounded-lg bg-transparent px-4 duration-300 hover:bg-gray-200" href="javascript:;">
         <i class="fa fa-upload mr-2 text-blue-600"></i>
         <span>Bulk Upload</span>
       </a>

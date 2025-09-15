@@ -79,6 +79,7 @@ INSTALLED_APPS = [
     "datacollection",
     "django_celery_results",
     "reports",
+    "rest_framework",
 ]
 TAILWIND_APP_NAME = "theme"
 
@@ -176,6 +177,14 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 
 USE_TZ = True
+
+
+
+
+REST_FRAMEWORK = {
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 100,  # default page size
+}
 
 
 # Static files (CSS, JavaScript, Images)

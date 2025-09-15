@@ -2,316 +2,341 @@
 
 {% block content %}
   <nav class="justify-end flex items-center">
-
-      <select placeholder="Default input" class="focus:shadow-primary-outline text-sm leading-5.6 ease block  w-fit rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
-
+      <select placeholder="Default input" class="focus:shadow-primary-outline text-sm mb-2  leading-5.6 ease block  w-fit rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
             <option>All</option>
       </select>
-
-
-
   </nav>
 
-  <!-- row 1 - Stats Cards -->
-  <div class="flex flex-wrap -mx-3">
-  <!-- Card 1: Total Recordings -->
-  <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
-    <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
-      <div class="flex-auto p-4">
-        <div class="flex flex-row -mx-3">
-          <div class="flex-none w-2/3 px-3">
-            <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Total Recordings</p>
-            <h5 class="mb-2 mt-4 font-bold dark:text-white">{{ total_recordings }}</h5>
-            <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">All users</span></p>
-          </div>
-          <div class="px-3 text-right basis-1/3">
-            <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-blue-500 to-violet-500">
-              <i class="ni ni-sound-wave text-lg relative top-3.5 text-white"></i>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Card 2: Your Recordings -->
-  <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
-    <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
-      <div class="flex-auto p-4">
-        <div class="flex flex-row -mx-3">
-          <div class="flex-none w-2/3 px-3">
-            <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Your Recordings</p>
-            <h5 class="mb-2 mt-4 font-bold dark:text-white">{{ user_recordings }}</h5>
-            <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Your contributions</span></p>
-          </div>
-          <div class="px-3 text-right basis-1/3">
-            <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-emerald-500 to-teal-400">
-              <i class="ni ni-single-02 text-lg relative top-3.5 text-white"></i>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Card 3: Categories -->
-  <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
-    <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
-      <div class="flex-auto p-4">
-        <div class="flex flex-row -mx-3">
-          <div class="flex-none w-2/3 px-3">
-            <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Categories</p>
-            <h5 class="mb-2 mt-4 font-bold dark:text-white">{{ categories_count }}</h5>
-            <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Different types</span></p>
-          </div>
-          <div class="px-3 text-right basis-1/3">
-            <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-orange-500 to-yellow-500">
-              <i class="ni ni-collection text-lg relative top-3.5 text-white"></i>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Card 4: Classes -->
-  <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
-    <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
-      <div class="flex-auto p-4">
-        <div class="flex flex-row -mx-3">
-          <div class="flex-none w-2/3 px-3">
-            <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Classes</p>
-            <h5 class="mb-2 mt-4 font-bold dark:text-white">{{ classes_count }}</h5>
-            <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Different types</span></p>
-          </div>
-          <div class="px-3 text-right basis-1/3">
-            <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-cyan-500 to-sky-500">
-              <i class="ni ni-books text-lg relative top-3.5 text-white"></i>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Card 5: Sub Classes -->
-  <div class="w-full max-w-full px-3 mt-6 sm:w-1/2 xl:w-1/4">
-    <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
-      <div class="flex-auto p-4">
-        <div class="flex flex-row -mx-3">
-          <div class="flex-none w-2/3 px-3">
-            <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Sub Classes</p>
-            <h5 class="mb-2 mt-4 font-bold dark:text-white">{{ sub_classes_count }}</h5>
-            <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Different types</span></p>
-          </div>
-          <div class="px-3 text-right basis-1/3">
-            <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-lime-500 to-green-400">
-              <i class="ni ni-ungroup text-lg relative top-3.5 text-white"></i>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Card 6: Regions -->
-  <div class="w-full max-w-full px-3 mt-6 sm:w-1/2 xl:w-1/4">
-    <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
-      <div class="flex-auto p-4">
-        <div class="flex flex-row -mx-3">
-          <div class="flex-none w-2/3 px-3">
-            <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Regions</p>
-            <h5 class="mb-2 mt-4 font-bold dark:text-white">{{ regions_count }}</h5>
-            <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Covered areas</span></p>
-          </div>
-          <div class="px-3 text-right basis-1/3">
-            <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-red-500 to-pink-500">
-              <i class="ni ni-map-big text-lg relative top-3.5 text-white"></i>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Card 7: Total Duration -->
-  <div class="w-full max-w-full px-3 mt-6 mb-6 sm:w-1/2 xl:w-1/4">
-    <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
-      <div class="flex-auto p-4">
-        <div class="flex flex-row -mx-3">
-          <div class="flex-none w-2/3 px-3">
-            <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Total Duration</p>
-            <h5 class="mb-2 mt-4 font-bold dark:text-white">{{ total_duration_hours }}</h5>
-            <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Hours of audio</span></p>
-          </div>
-          <div class="px-3 text-right basis-1/3">
-            <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-purple-500 to-indigo-500">
-              <i class="ni ni-time-alarm text-lg relative top-3.5 text-white"></i>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-
-  <!-- row 1b - Hours by Class Cards -->
-  {% if class_hours %}
-  <div class="flex flex-wrap -mx-3 mt-6">
-    {% for item in class_hours %}
-    <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4 sm:flex-none">
-      <div class="relative flex flex-col min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
-        <div class="flex-auto p-4">
-          <div class="flex flex-row -mx-3">
-            <div class="flex-none w-2/3 max-w-full px-3">
-              <div>
-                <p class="mb-0 font-sans text-sm font-semibold leading-normal uppercase dark:text-white dark:opacity-60">Hours - {{ item.label }}</p>
-                <h5 class="mb-2 mt-4 font-bold dark:text-white">{{ item.hours }}</h5>
-                <p class="mb-0 text-xs text-slate-500 dark:text-white/60">
-                  <span class="font-bold">Total audio hours</span>
-                </p>
+  <!-- Loading Skeleton -->
+  <div id="loadingSkeleton" class="block">
+    <!-- Stats Cards Skeleton -->
+    <div class="flex flex-wrap -mx-3">
+      {% for i in "1234567" %}
+      <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
+        <div class="relative flex flex-col bg-gray-200 dark:bg-slate-700 shadow-xl rounded-2xl animate-pulse">
+          <div class="flex-auto p-4">
+            <div class="flex flex-row -mx-3">
+              <div class="flex-none w-2/3 px-3">
+                <div class="h-4 bg-gray-300 dark:bg-slate-600 rounded mb-2"></div>
+                <div class="h-6 bg-gray-300 dark:bg-slate-600 rounded mb-2 mt-4"></div>
+                <div class="h-3 bg-gray-300 dark:bg-slate-600 rounded"></div>
               </div>
-            </div>
-            <div class="px-3 text-right basis-1/3">
-              <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-purple-500 to-indigo-500">
-                <i class="ni leading-none ni-collection text-lg relative top-3.5 text-white"></i>
+              <div class="px-3 text-right basis-1/3">
+                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gray-300 dark:bg-slate-600"></div>
               </div>
             </div>
           </div>
         </div>
       </div>
+      {% endfor %}
     </div>
-    {% endfor %}
-  </div>
-  {% endif %}
 
-  <!-- row 2 - Main Charts -->
-  <div class="flex flex-wrap mt-6 -mx-3">
-    <!-- Pie Chart: Recordings by Category -->
-    <div class="w-full px-3 mb-6 lg:mb-0 lg:w-1/2 lg:flex-none">
-      <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
-        <div class="p-4 pb-0 rounded-t-4">
-          <h6 class="mb-1 dark:text-white">Recordings by Category</h6>
-          <p class="text-sm leading-normal dark:text-white dark:opacity-60">Distribution of recordings across different categories</p>
+    <!-- Charts Skeleton -->
+    <div class="flex flex-wrap mt-6 -mx-3">
+      <div class="w-full px-3 mb-6 lg:mb-0 lg:w-1/2 lg:flex-none">
+        <div class="relative flex flex-col h-full min-w-0 break-words bg-gray-200 dark:bg-slate-700 shadow-xl rounded-2xl animate-pulse">
+          <div class="p-4 pb-0 rounded-t-4">
+            <div class="h-6 bg-gray-300 dark:bg-slate-600 rounded mb-2 w-1/2"></div>
+            <div class="h-4 bg-gray-300 dark:bg-slate-600 rounded w-2/3"></div>
+          </div>
+          <div class="flex-auto p-4">
+            <div class="h-64 bg-gray-300 dark:bg-slate-600 rounded"></div>
+          </div>
         </div>
-        <div class="flex-auto p-4">
-          <div class="h-300-px">
-            <canvas id="categoryPieChart"></canvas>
+      </div>
+      <div class="w-full px-3 lg:w-1/2 lg:flex-none">
+        <div class="relative flex flex-col h-full min-w-0 break-words bg-gray-200 dark:bg-slate-700 shadow-xl rounded-2xl animate-pulse">
+          <div class="p-4 pb-0 rounded-t-4">
+            <div class="h-6 bg-gray-300 dark:bg-slate-600 rounded mb-2 w-1/2"></div>
+            <div class="h-4 bg-gray-300 dark:bg-slate-600 rounded w-2/3"></div>
+          </div>
+          <div class="flex-auto p-4">
+            <div class="h-64 bg-gray-300 dark:bg-slate-600 rounded"></div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Bar Chart: Recordings by Region -->
-    <div class="w-full px-3 lg:w-1/2 lg:flex-none">
-      <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
-        <div class="p-4 pb-0 rounded-t-4">
-          <h6 class="mb-1 dark:text-white">Recordings by Region</h6>
-          <p class="text-sm leading-normal dark:text-white dark:opacity-60">Number of recordings collected in each region</p>
-        </div>
-        <div class="flex-auto p-4">
-          <div class="h-300-px">
-            <canvas id="regionBarChart"></canvas>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- Additional rows of skeleton charts would go here -->
   </div>
 
-  <!-- row 3 - Additional Charts -->
-  <div class="flex flex-wrap mt-6 -mx-3">
-    <!-- Line Chart: Recordings Over Time -->
-    <div class="w-full px-3 mb-6 lg:mb-0 lg:w-2/3 lg:flex-none">
-      <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
-        <div class="p-4 pb-0 rounded-t-4">
-          <h6 class="mb-1 dark:text-white">Recordings Over Time</h6>
-          <p class="text-sm leading-normal dark:text-white dark:opacity-60">Monthly progression of recordings collected</p>
-        </div>
-        <div class="flex-auto p-4">
-          <div class="h-300-px">
-            <canvas id="timeLineChart"></canvas>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Radar Chart: Audio Features Analysis -->
-    <div class="w-full px-3 lg:w-1/3 lg:flex-none">
-      <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
-        <div class="p-4 pb-0 rounded-t-4">
-          <h6 class="mb-1 dark:text-white">Audio Features Analysis</h6>
-          <p class="text-sm leading-normal dark:text-white dark:opacity-60">Average values of key audio features</p>
-        </div>
-        <div class="flex-auto p-4">
-          <div class="h-300-px">
-            <canvas id="audioRadarChart"></canvas>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- row 4 - Duration Charts -->
-  <div class="flex flex-wrap mt-6 -mx-3">
-    <!-- Bar Chart: Duration by Region -->
-    <div class="w-full px-3 mb-6 lg:mb-0 lg:w-1/2 lg:flex-none">
-      <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
-        <div class="p-4 pb-0 rounded-t-4">
-          <h6 class="mb-1 dark:text-white">Duration by Region</h6>
-          <p class="text-sm leading-normal dark:text-white dark:opacity-60">Total hours of audio recordings per region</p>
-        </div>
-        <div class="flex-auto p-4">
-          <div class="h-300-px">
-            <canvas id="durationRegionChart"></canvas>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Pie Chart: Duration Distribution -->
-    <div class="w-full px-3 lg:w-1/2 lg:flex-none">
-      <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
-        <div class="p-4 pb-0 rounded-t-4">
-          <h6 class="mb-1 dark:text-white">Duration Distribution</h6>
-          <p class="text-sm leading-normal dark:text-white dark:opacity-60">Proportion of audio duration across regions</p>
-        </div>
-        <div class="flex-auto p-4">
-          <div class="h-300-px">
-            <canvas id="durationPieChart"></canvas>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="flex flex-wrap mt-6 -mx-3">
-    <div class="w-full px-3">
-      <div class="relative flex flex-col min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
-        <div class="p-4 pb-0 rounded-t-4">
-          <div class="flex flex-wrap items-center">
-            <div class="flex items-center justify-center w-full px-3 lg:w-1/2 lg:flex-none">
-              <h6 class="mb-1 dark:text-white">Recent Activity (Last 30 Minutes)</h6>
-            </div>
-            <div class="flex items-center justify-center w-full px-3 lg:w-1/2 lg:flex-none">
-              <div class="flex">
-                <button id="liveChartPlay" class="px-3 py-1 mr-2 text-xs font-bold uppercase bg-blue-500 rounded-md text-white hover:bg-blue-600 transition-colors">
-                  <i class="fas fa-play mr-1"></i> Play
-                </button>
-                <button id="liveChartPause" class="px-3 py-1 text-xs font-bold uppercase bg-gray-500 rounded-md text-white hover:bg-gray-600 transition-colors">
-                  <i class="fas fa-pause mr-1"></i> Pause
-                </button>
-                <button id="liveChartReset" class="px-3 py-1 ml-2 text-xs font-bold uppercase bg-red-500 rounded-md text-white hover:bg-red-600 transition-colors">
-                  <i class="fas fa-sync-alt mr-1"></i> Reset
-                </button>
+  <!-- Dashboard Content (initially hidden) -->
+  <div id="dashboardContent" class="hidden">
+    <!-- row 1 - Stats Cards -->
+    <div class="flex flex-wrap -mx-3">
+      <!-- Card 1: Total Recordings -->
+      <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
+        <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
+          <div class="flex-auto p-4">
+            <div class="flex flex-row -mx-3">
+              <div class="flex-none w-2/3 px-3">
+                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Total Recordings</p>
+                <h5 class="mb-2 mt-4 font-bold dark:text-white" id="totalRecordings">0</h5>
+                <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">All users</span></p>
+              </div>
+              <div class="px-3 text-right basis-1/3">
+                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-blue-500 to-violet-500">
+                  <i class="ni ni-sound-wave text-lg relative top-3.5 text-white"></i>
+                </div>
               </div>
             </div>
           </div>
-          <p class="text-sm leading-normal dark:text-white dark:opacity-60">Live updates of recent recording activity with decibel levels</p>
         </div>
-        <div class="flex-auto p-4">
-          <div class="h-300-px">
-            <canvas id="liveLineChart"></canvas>
+      </div>
+
+      <!-- Card 2: Your Recordings -->
+      <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
+        <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
+          <div class="flex-auto p-4">
+            <div class="flex flex-row -mx-3">
+              <div class="flex-none w-2/3 px-3">
+                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Your Recordings</p>
+                <h5 class="mb-2 mt-4 font-bold dark:text-white" id="userRecordings">0</h5>
+                <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Your contributions</span></p>
+              </div>
+              <div class="px-3 text-right basis-1/3">
+                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-emerald-500 to-teal-400">
+                  <i class="ni ni-single-02 text-lg relative top-3.5 text-white"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 3: Categories -->
+      <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
+        <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
+          <div class="flex-auto p-4">
+            <div class="flex flex-row -mx-3">
+              <div class="flex-none w-2/3 px-3">
+                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Categories</p>
+                <h5 class="mb-2 mt-4 font-bold dark:text-white" id="categoriesCount">0</h5>
+                <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Different types</span></p>
+              </div>
+              <div class="px-3 text-right basis-1/3">
+                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-orange-500 to-yellow-500">
+                  <i class="ni ni-collection text-lg relative top-3.5 text-white"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 4: Classes -->
+      <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
+        <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
+          <div class="flex-auto p-4">
+            <div class="flex flex-row -mx-3">
+              <div class="flex-none w-2/3 px-3">
+                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Classes</p>
+                <h5 class="mb-2 mt-4 font-bold dark:text-white" id="classesCount">0</h5>
+                <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Different types</span></p>
+              </div>
+              <div class="px-3 text-right basis-1/3">
+                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-blue-700 to-cyan-500">
+                  <i class="ni ni-books text-lg relative top-3.5 text-white"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 5: Sub Classes -->
+      <div class="w-full max-w-full px-3 mt-6 sm:w-1/2 xl:w-1/4">
+        <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
+          <div class="flex-auto p-4">
+            <div class="flex flex-row -mx-3">
+              <div class="flex-none w-2/3 px-3">
+                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Sub Classes</p>
+                <h5 class="mb-2 mt-4 font-bold dark:text-white" id="subClassesCount">0</h5>
+                <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Different types</span></p>
+              </div>
+              <div class="px-3 text-right basis-1/3">
+                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-green-600 to-lime-400">
+                  <i class="ni ni-ungroup text-lg relative top-3.5 text-white"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 6: Regions -->
+      <div class="w-full max-w-full px-3 mt-6 sm:w-1/2 xl:w-1/4">
+        <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
+          <div class="flex-auto p-4">
+            <div class="flex flex-row -mx-3">
+              <div class="flex-none w-2/3 px-3">
+                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Regions</p>
+                <h5 class="mb-2 mt-4 font-bold dark:text-white" id="regionsCount">0</h5>
+                <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Covered areas</span></p>
+              </div>
+              <div class="px-3 text-right basis-1/3">
+                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-red-600 to-orange-600">
+                  <i class="ni ni-map-big text-lg relative top-3.5 text-white"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 7: Total Duration -->
+      <div class="w-full max-w-full px-3 mt-6 mb-6 sm:w-1/2 xl:w-1/4">
+        <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
+          <div class="flex-auto p-4">
+            <div class="flex flex-row -mx-3">
+              <div class="flex-none w-2/3 px-3">
+                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Total Duration</p>
+                <h5 class="mb-2 mt-4 font-bold dark:text-white" id="totalDurationHours">0</h5>
+                <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Hours of audio</span></p>
+              </div>
+              <div class="px-3 text-right basis-1/3">
+                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-zinc-800 to-slate-600">
+                  <i class="ni ni-time-alarm text-lg relative top-3.5 text-white"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- row 1b - Hours by Class Cards -->
+    <div id="classHoursContainer" class="flex flex-wrap -mx-3 mt-6">
+      <!-- Will be populated by JavaScript -->
+    </div>
+
+    <!-- row 2 - Main Charts -->
+    <div class="flex flex-wrap mt-6 -mx-3">
+      <!-- Pie Chart: Recordings by Category -->
+      <div class="w-full px-3 mb-6 lg:mb-0 lg:w-1/2 lg:flex-none">
+        <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+          <div class="p-4 pb-0 rounded-t-4">
+            <h6 class="mb-1 dark:text-white">Recordings by Category</h6>
+            <p class="text-sm leading-normal dark:text-white dark:opacity-60">Distribution of recordings across different categories</p>
+          </div>
+          <div class="flex-auto p-4">
+            <div class="h-300-px">
+              <canvas id="categoryPieChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bar Chart: Recordings by Region -->
+      <div class="w-full px-3 lg:w-1/2 lg:flex-none">
+        <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+          <div class="p-4 pb-0 rounded-t-4">
+            <h6 class="mb-1 dark:text-white">Recordings by Region</h6>
+            <p class="text-sm leading-normal dark:text-white dark:opacity-60">Number of recordings collected in each region</p>
+          </div>
+          <div class="flex-auto p-4">
+            <div style="height: 500px;">
+              <canvas style="height: 100%; width: 100%;" id="regionBarChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- row 3 - Additional Charts -->
+    <div class="flex flex-wrap mt-6 -mx-3">
+      <!-- Line Chart: Recordings Over Time -->
+      <div class="w-full px-3 mb-6 lg:mb-0 lg:w-2/3 lg:flex-none">
+        <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+          <div class="p-4 pb-0 rounded-t-4">
+            <h6 class="mb-1 dark:text-white">Recordings Over Time</h6>
+            <p class="text-sm leading-normal dark:text-white dark:opacity-60">Monthly progression of recordings collected</p>
+          </div>
+          <div class="flex-auto p-4">
+            <div style="height: 400px;" >
+              <canvas style="height: 100%; width: 100%;" id="timeLineChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Radar Chart: Audio Features Analysis -->
+      <div class="w-full px-3 lg:w-1/3 lg:flex-none">
+        <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+          <div class="p-4 pb-0 rounded-t-4">
+            <h6 class="mb-1 dark:text-white">Audio Features Analysis</h6>
+            <p class="text-sm leading-normal dark:text-white dark:opacity-60">Average values of key audio features</p>
+          </div>
+          <div class="flex-auto p-4">
+            <div class="h-300-px">
+              <canvas id="audioRadarChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- row 4 - Duration Charts -->
+    <div class="flex flex-wrap mt-6 -mx-3">
+      <!-- Bar Chart: Duration by Region -->
+      <div class="w-full px-3 mb-6 lg:mb-0 lg:w-1/2 lg:flex-none">
+        <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+          <div class="p-4 pb-0 rounded-t-4">
+            <h6 class="mb-1 dark:text-white">Duration by Region</h6>
+            <p class="text-sm leading-normal dark:text-white dark:opacity-60">Total hours of audio recordings per region</p>
+          </div>
+          <div class="flex-auto p-4">
+            <div style="height: 500px;" class="h-300-px">
+              <canvas style="height: 100%; width: 100%;" id="durationRegionChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pie Chart: Duration Distribution -->
+      <div class="w-full px-3 lg:w-1/2 lg:flex-none">
+        <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+          <div class="p-4 pb-0 rounded-t-4">
+            <h6 class="mb-1 dark:text-white">Duration Distribution</h6>
+            <p class="text-sm leading-normal dark:text-white dark:opacity-60">Proportion of audio duration across regions</p>
+          </div>
+          <div class="flex-auto p-4">
+            <div style="height: 500px;">
+              <canvas id="durationPieChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap mt-6 -mx-3">
+      <div class="w-full px-3">
+        <div class="relative flex flex-col min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+          <div class="p-4 pb-0 rounded-t-4">
+            <div class="flex flex-wrap items-center">
+              <div class="flex items-center justify-center w-full px-3 lg:w-1/2 lg:flex-none">
+                <h6 class="mb-1 dark:text-white">Recent Activity (Last 30 Minutes)</h6>
+              </div>
+              <div class="flex items-center justify-center w-full px-3 lg:w-1/2 lg:flex-none">
+                <div class="flex">
+                  <button id="liveChartPlay" class="px-3 py-1 mr-2 text-xs font-bold uppercase bg-blue-500 rounded-md text-white hover:bg-blue-600 transition-colors">
+                    <i class="fas fa-play mr-1"></i> Play
+                  </button>
+                  <button id="liveChartPause" class="px-3 py-1 text-xs font-bold uppercase bg-gray-500 rounded-md text-white hover:bg-gray-600 transition-colors">
+                    <i class="fas fa-pause mr-1"></i> Pause
+                  </button>
+                  <button id="liveChartReset" class="px-3 py-1 ml-2 text-xs font-bold uppercase bg-red-500 rounded-md text-white hover:bg-red-600 transition-colors">
+                    <i class="fas fa-sync-alt mr-1"></i> Reset
+                  </button>
+                </div>
+              </div>
+            </div>
+            <p class="text-sm leading-normal dark:text-white dark:opacity-60">Live updates of recent recording activity with decibel levels</p>
+          </div>
+          <div class="flex-auto p-4">
+            <div class="h-300-px">
+              <canvas id="liveLineChart"></canvas>
+            </div>
           </div>
         </div>
       </div>
@@ -324,428 +349,512 @@
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.2.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-streaming@2.0.0"></script>
 
-  <!-- Chart.js Script -->
   <script>
-    // Colors for dark/light mode compatibility
-    const textColor = window.matchMedia('(prefers-color-scheme: dark)').matches ? '#fff' : '#000';
-    const gridColor = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+    // Function to fetch data from API
+    async function fetchDashboardData() {
+      try {
+        const response = await fetch('/dashboard/');
+        if (!response.ok) {
+          throw new Error('Network response was not ok');
+        }
+        return await response.json();
+      } catch (error) {
+        console.error('Error fetching dashboard data:', error);
+        // Show error message to user
+        alert('Failed to load dashboard data. Please try again later.');
+        return null;
+      }
+    }
 
-    // Category Pie Chart
-    const categoryCtx = document.getElementById('categoryPieChart').getContext('2d');
-    const categoryPieChart = new Chart(categoryCtx, {
-      type: 'pie',
-      data: {
-        labels: {{ category_labels|safe }},
-        datasets: [{
-          data: {{ category_data|safe }},
-          backgroundColor: [
-            'rgba(255, 99, 132, 0.7)',
-            'rgba(54, 162, 235, 0.7)',
-            'rgba(255, 206, 86, 0.7)',
-            'rgba(75, 192, 192, 0.7)',
-            'rgba(153, 102, 255, 0.7)',
-            'rgba(255, 159, 64, 0.7)'
-          ],
-          borderColor: [
-            'rgba(255, 99, 132, 1)',
-            'rgba(54, 162, 235, 1)',
-            'rgba(255, 206, 86, 1)',
-            'rgba(75, 192, 192, 1)',
-            'rgba(153, 102, 255, 1)',
-            'rgba(255, 159, 64, 1)'
-          ],
-          borderWidth: 1
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          legend: {
-            position: 'right',
-            labels: {
-              color: textColor
-            }
-          },
-          tooltip: {
-            callbacks: {
-              label: function(context) {
-                const label = context.label || '';
-                const value = context.raw || 0;
-                const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                const percentage = Math.round((value / total) * 100);
-                return `${label}: ${value} (${percentage}%)`;
+    // Function to update the UI with the fetched data
+    function updateDashboard(data) {
+      if (!data) return;
+      
+      // Update basic stats
+      document.getElementById('totalRecordings').textContent = data.basic_stats.total_recordings;
+      document.getElementById('userRecordings').textContent = data.basic_stats.user_recordings;
+      document.getElementById('categoriesCount').textContent = data.basic_stats.categories_count;
+      document.getElementById('classesCount').textContent = data.basic_stats.classes_count;
+      document.getElementById('subClassesCount').textContent = data.basic_stats.sub_classes_count;
+      document.getElementById('regionsCount').textContent = data.basic_stats.regions_count;
+      document.getElementById('totalDurationHours').textContent = data.basic_stats.total_duration_hours;
+
+      // Update class hours cards
+      const classHoursContainer = document.getElementById('classHoursContainer');
+      classHoursContainer.innerHTML = '';
+      
+      if (data.class_hours && data.class_hours.length > 0) {
+        data.class_hours.forEach(item => {
+          const cardHtml = `
+            <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4 sm:flex-none">
+              <div class="relative flex flex-col min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+                <div class="flex-auto p-4">
+                  <div class="flex flex-row -mx-3">
+                    <div class="flex-none w-2/3 max-w-full px-3">
+                      <div>
+                        <p class="mb-0 font-sans text-sm font-semibold leading-normal uppercase dark:text-white dark:opacity-60">Hours - ${item.label}</p>
+                        <h5 class="mb-2 mt-4 font-bold dark:text-white">${item.hours}</h5>
+                        <p class="mb-0 text-xs text-slate-500 dark:text-white/60">
+                          <span class="font-bold">Total audio hours</span>
+                        </p>
+                      </div>
+                    </div>
+                    <div class="px-3 text-right basis-1/3">
+                      <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-purple-500 to-indigo-500">
+                        <i class="ni leading-none ni-collection text-lg relative top-3.5 text-white"></i>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+          classHoursContainer.innerHTML += cardHtml;
+        });
+      }
+
+      // Initialize charts with the data
+      initCharts(data.charts);
+    }
+
+    // Function to initialize all charts
+    function initCharts(chartData) {
+      // Colors for dark/light mode compatibility
+      const textColor = window.matchMedia('(prefers-color-scheme: dark)').matches ? '#fff' : '#000';
+      const gridColor = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+
+      // Category Pie Chart
+      const categoryCtx = document.getElementById('categoryPieChart').getContext('2d');
+      const categoryPieChart = new Chart(categoryCtx, {
+        type: 'pie',
+        data: {
+          labels: chartData.category.labels,
+          datasets: [{
+            data: chartData.category.data,
+            backgroundColor: [
+              'rgba(255, 99, 132, 0.7)',
+              'rgba(54, 162, 235, 0.7)',
+              'rgba(255, 206, 86, 0.7)',
+              'rgba(75, 192, 192, 0.7)',
+              'rgba(153, 102, 255, 0.7)',
+              'rgba(255, 159, 64, 0.7)'
+            ],
+            borderColor: [
+              'rgba(255, 99, 132, 1)',
+              'rgba(54, 162, 235, 1)',
+              'rgba(255, 206, 86, 1)',
+              'rgba(75, 192, 192, 1)',
+              'rgba(153, 102, 255, 1)',
+              'rgba(255, 159, 64, 1)'
+            ],
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: {
+                color: textColor
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const label = context.label || '';
+                  const value = context.raw || 0;
+                  const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                  const percentage = Math.round((value / total) * 100);
+                  return `${label}: ${value} (${percentage}%)`;
+                }
               }
             }
           }
         }
-      }
-    });
-
-    // Region Bar Chart
-    const regionCtx = document.getElementById('regionBarChart').getContext('2d');
-    const regionBarChart = new Chart(regionCtx, {
-      type: 'bar',
-      data: {
-        labels: {{ region_labels|safe }},
-        datasets: [{
-          label: 'Recordings',
-          data: {{ region_data|safe }},
-          backgroundColor: 'rgba(54, 162, 235, 0.7)',
-          borderColor: 'rgba(54, 162, 235, 1)',
-          borderWidth: 1
-        }]
-      },
-      options: {
-        responsive: true,
-        scales: {
-          y: {
-            beginAtZero: true,
-            grid: {
-              color: gridColor
-            },
-            ticks: {
-              color: textColor
-            }
-          },
-          x: {
-            grid: {
-              color: gridColor
-            },
-            ticks: {
-              color: textColor
-            }
-          }
-        },
-        plugins: {
-          legend: {
-            labels: {
-              color: textColor
-            }
-          }
-        }
-      }
-    });
-
-    // Time Line Chart
-    const timeCtx = document.getElementById('timeLineChart').getContext('2d');
-    const timeLineChart = new Chart(timeCtx, {
-      type: 'line',
-      data: {
-        labels: {{ time_labels|safe }},
-        datasets: [{
-          label: 'Recordings',
-          data: {{ time_data|safe }},
-          fill: false,
-          backgroundColor: 'rgba(75, 192, 192, 0.7)',
-          borderColor: 'rgba(75, 192, 192, 1)',
-          tension: 0.1,
-          borderWidth: 2
-        }]
-      },
-      options: {
-        responsive: true,
-        scales: {
-          y: {
-            beginAtZero: true,
-            grid: {
-              color: gridColor
-            },
-            ticks: {
-              color: textColor
-            }
-          },
-          x: {
-            grid: {
-              color: gridColor
-            },
-            ticks: {
-              color: textColor
-            }
-          }
-        },
-        plugins: {
-          legend: {
-            labels: {
-              color: textColor
-            }
-          }
-        }
-      }
-    });
-
-    // Audio Radar Chart
-    const radarCtx = document.getElementById('audioRadarChart').getContext('2d');
-    const audioRadarChart = new Chart(radarCtx, {
-      type: 'radar',
-      data: {
-        labels: ['RMS Energy', 'Spectral Centroid', 'Spectral Bandwidth', 'Zero Crossing', 'Harmonic Ratio', 'Percussive Ratio'],
-        datasets: [{
-          label: 'Average Values',
-          data: {{ audio_features_data|safe }},
-          backgroundColor: 'rgba(153, 102, 255, 0.2)',
-          borderColor: 'rgba(153, 102, 255, 1)',
-          pointBackgroundColor: 'rgba(153, 102, 255, 1)',
-          pointBorderColor: '#fff',
-          pointHoverBackgroundColor: '#fff',
-          pointHoverBorderColor: 'rgba(153, 102, 255, 1)',
-          borderWidth: 2
-        }]
-      },
-      options: {
-        responsive: true,
-        scales: {
-          r: {
-            angleLines: {
-              color: gridColor
-            },
-            grid: {
-              color: gridColor
-            },
-            pointLabels: {
-              color: textColor
-            },
-            ticks: {
-              color: textColor,
-              backdropColor: 'transparent'
-            }
-          }
-        },
-        plugins: {
-          legend: {
-            labels: {
-              color: textColor
-            }
-          }
-        }
-      }
-    });
-
-        const liveCtx = document.getElementById('liveLineChart').getContext('2d');
-
-    // Generate initial data points for the last 5 minutes
-    const initialData = [];
-    const now = Date.now();
-    for (let i = 4; i >= 0; i--) {
-      initialData.push({
-        x: now - (i * 60000), // 1 minute intervals
-        y: Math.floor(Math.random() * 20) + 60 // Random dB between 60-80
       });
-    }
 
-    const liveLineChart = new Chart(liveCtx, {
-      type: 'line',
-      data: {
-        datasets: [{
-          label: 'Decibel Level',
-          data: initialData,
-          backgroundColor: 'rgba(255, 99, 132, 0.5)',
-          borderColor: 'rgba(255, 99, 132, 1)',
-          borderWidth: 2,
-          pointRadius: 4,
-          pointHoverRadius: 6,
-          fill: false,
-          tension: 0.1
-        }]
-      },
-      options: {
-        responsive: true,
-        scales: {
-          x: {
-            type: 'realtime',
-            realtime: {
-              duration: 300000, // 5 minutes window
-              refresh: 1000, // update every second
-              delay: 4000,
-              onRefresh: chart => {
-                if (isPlaying) {
-                  chart.data.datasets.forEach(dataset => {
-                    dataset.data.push({
-                      x: Date.now(),
-                      y: Math.floor(Math.random() * 25) + 55 // Random dB between 55-80
-                    });
-                  });
+      // Region Bar Chart
+      const regionCtx = document.getElementById('regionBarChart').getContext('2d');
+      const regionBarChart = new Chart(regionCtx, {
+        type: 'bar',
+        data: {
+          labels: chartData.region.labels,
+          datasets: [{
+            label: 'Recordings',
+            data: chartData.region.data,
+            backgroundColor: 'rgba(54, 162, 235, 0.7)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: {
+              beginAtZero: true,
+              grid: {
+                color: gridColor
+              },
+              ticks: {
+                color: textColor
+              }
+            },
+            x: {
+              grid: {
+                color: gridColor
+              },
+              ticks: {
+                color: textColor
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              labels: {
+                color: textColor
+              }
+            }
+          }
+        }
+      });
+
+      // Time Line Chart
+      const timeCtx = document.getElementById('timeLineChart').getContext('2d');
+      const timeLineChart = new Chart(timeCtx, {
+        type: 'line',
+        data: {
+          labels: chartData.time_series.labels,
+          datasets: [{
+            label: 'Recordings',
+            data: chartData.time_series.data,
+            fill: false,
+            backgroundColor: 'rgba(75, 192, 192, 0.7)',
+            borderColor: 'rgba(75, 192, 192, 1)',
+            tension: 0.1,
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: {
+              beginAtZero: true,
+              grid: {
+                color: gridColor
+              },
+              ticks: {
+                color: textColor
+              }
+            },
+            x: {
+              grid: {
+                color: gridColor
+              },
+              ticks: {
+                color: textColor
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              labels: {
+                color: textColor
+              }
+            }
+          }
+        }
+      });
+
+      // Audio Radar Chart
+      const radarCtx = document.getElementById('audioRadarChart').getContext('2d');
+      const audioRadarChart = new Chart(radarCtx, {
+        type: 'radar',
+        data: {
+          labels: ['RMS Energy', 'Spectral Centroid', 'Spectral Bandwidth', 'Zero Crossing', 'Harmonic Ratio', 'Percussive Ratio'],
+          datasets: [{
+            label: 'Average Values',
+            data: chartData.audio_features,
+            backgroundColor: 'rgba(153, 102, 255, 0.2)',
+            borderColor: 'rgba(153, 102, 255, 1)',
+            pointBackgroundColor: 'rgba(153, 102, 255, 1)',
+            pointBorderColor: '#fff',
+            pointHoverBackgroundColor: '#fff',
+            pointHoverBorderColor: 'rgba(153, 102, 255, 1)',
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            r: {
+              angleLines: {
+                color: gridColor
+              },
+              grid: {
+                color: gridColor
+              },
+              pointLabels: {
+                color: textColor
+              },
+              ticks: {
+                color: textColor,
+                backdropColor: 'transparent'
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              labels: {
+                color: textColor
+              }
+            }
+          }
+        }
+      });
+
+      // Duration by Region Bar Chart
+      const durationRegionCtx = document.getElementById('durationRegionChart').getContext('2d');
+      const durationRegionChart = new Chart(durationRegionCtx, {
+        type: 'bar',
+        data: {
+          labels: chartData.duration_region.labels,
+          datasets: [{
+            label: 'Hours',
+            data: chartData.duration_region.data,
+            backgroundColor: 'rgba(147, 51, 234, 0.7)',
+            borderColor: 'rgba(147, 51, 234, 1)',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: {
+              beginAtZero: true,
+              grid: {
+                color: gridColor
+              },
+              ticks: {
+                color: textColor,
+                callback: function(value) {
+                  return value + ' hrs';
                 }
               }
             },
-            grid: {
-              color: gridColor
-            },
-            ticks: {
-              color: textColor
-            }
-          },
-          y: {
-            min: 50,
-            max: 90,
-            grid: {
-              color: gridColor
-            },
-            ticks: {
-              color: textColor,
-              callback: function(value) {
-                return value + ' dB';
-              }
-            }
-          }
-        },
-        plugins: {
-          legend: {
-            labels: {
-              color: textColor
-            }
-          },
-          tooltip: {
-            callbacks: {
-              label: function(context) {
-                return context.dataset.label + ': ' + context.parsed.y + ' dB';
-              }
-            }
-          }
-        },
-        interaction: {
-          intersect: false,
-          mode: 'index'
-        }
-      }
-    });
-
-    // Improved Play/Pause functionality
-    let isPlaying = true;
-    let updateInterval;
-
-    // Play button
-    document.getElementById('liveChartPlay').addEventListener('click', function() {
-      if (!isPlaying) {
-        isPlaying = true;
-        this.classList.add('bg-blue-600');
-        document.getElementById('liveChartPause').classList.remove('bg-gray-600');
-        document.getElementById('liveChartPause').classList.add('bg-gray-600');
-      }
-    });
-
-    // Pause button
-    document.getElementById('liveChartPause').addEventListener('click', function() {
-      if (isPlaying) {
-        isPlaying = false;
-        this.classList.add('bg-gray-600');
-        document.getElementById('liveChartPlay').classList.remove('bg-blue-600');
-        document.getElementById('liveChartPlay').classList.add('bg-blue-500');
-      }
-    });
-
-    // Reset button
-    document.getElementById('liveChartReset').addEventListener('click', function() {
-      liveLineChart.data.datasets[0].data = [];
-      liveLineChart.update();
-    });
-
-    // Initial state
-    document.getElementById('liveChartPlay').classList.add('bg-blue-600');
-
-    // Duration by Region Bar Chart
-    const durationRegionCtx = document.getElementById('durationRegionChart').getContext('2d');
-    const durationRegionChart = new Chart(durationRegionCtx, {
-      type: 'bar',
-      data: {
-        labels: {{ duration_region_labels|safe }},
-        datasets: [{
-          label: 'Hours',
-          data: {{ duration_region_hours|safe }},
-          backgroundColor: 'rgba(147, 51, 234, 0.7)',
-          borderColor: 'rgba(147, 51, 234, 1)',
-          borderWidth: 1
-        }]
-      },
-      options: {
-        responsive: true,
-        scales: {
-          y: {
-            beginAtZero: true,
-            grid: {
-              color: gridColor
-            },
-            ticks: {
-              color: textColor,
-              callback: function(value) {
-                return value + ' hrs';
+            x: {
+              grid: {
+                color: gridColor
+              },
+              ticks: {
+                color: textColor
               }
             }
           },
-          x: {
-            grid: {
-              color: gridColor
+          plugins: {
+            legend: {
+              labels: {
+                color: textColor
+              }
             },
-            ticks: {
-              color: textColor
-            }
-          }
-        },
-        plugins: {
-          legend: {
-            labels: {
-              color: textColor
-            }
-          },
-          tooltip: {
-            callbacks: {
-              label: function(context) {
-                return context.dataset.label + ': ' + context.parsed.y + ' hours';
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  return context.dataset.label + ': ' + context.parsed.y + ' hours';
+                }
               }
             }
           }
         }
-      }
-    });
+      });
 
-    // Duration Distribution Pie Chart
-    const durationPieCtx = document.getElementById('durationPieChart').getContext('2d');
-    const durationPieChart = new Chart(durationPieCtx, {
-      type: 'pie',
-      data: {
-        labels: {{ duration_region_labels|safe }},
-        datasets: [{
-          data: {{ duration_region_hours|safe }},
-          backgroundColor: [
-            'rgba(147, 51, 234, 0.7)',
-            'rgba(59, 130, 246, 0.7)',
-            'rgba(16, 185, 129, 0.7)',
-            'rgba(245, 158, 11, 0.7)',
-            'rgba(239, 68, 68, 0.7)',
-            'rgba(168, 85, 247, 0.7)'
-          ],
-          borderColor: [
-            'rgba(147, 51, 234, 1)',
-            'rgba(59, 130, 246, 1)',
-            'rgba(16, 185, 129, 1)',
-            'rgba(245, 158, 11, 1)',
-            'rgba(239, 68, 68, 1)',
-            'rgba(168, 85, 247, 1)'
-          ],
-          borderWidth: 1
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          legend: {
-            position: 'right',
-            labels: {
-              color: textColor
-            }
-          },
-          tooltip: {
-            callbacks: {
-              label: function(context) {
-                const label = context.label || '';
-                const value = context.raw || 0;
-                const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                const percentage = Math.round((value / total) * 100);
-                return `${label}: ${value} hrs (${percentage}%)`;
+      // Duration Distribution Pie Chart
+      const durationPieCtx = document.getElementById('durationPieChart').getContext('2d');
+      const durationPieChart = new Chart(durationPieCtx, {
+        type: 'pie',
+        data: {
+          labels: chartData.duration_region.labels,
+          datasets: [{
+            data: chartData.duration_region.data,
+            backgroundColor: [
+              'rgba(147, 51, 234, 0.7)',
+              'rgba(59, 130, 246, 0.7)',
+              'rgba(16, 185, 129, 0.7)',
+              'rgba(245, 158, 11, 0.7)',
+              'rgba(239, 68, 68, 0.7)',
+              'rgba(168, 85, 247, 0.7)'
+            ],
+            borderColor: [
+              'rgba(147, 51, 234, 1)',
+              'rgba(59, 130, 246, 1)',
+              'rgba(16, 185, 129, 1)',
+              'rgba(245, 158, 11, 1)',
+              'rgba(239, 68, 68, 1)',
+              'rgba(168, 85, 247, 1)'
+            ],
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: {
+                color: textColor
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const label = context.label || '';
+                  const value = context.raw || 0;
+                  const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                  const percentage = Math.round((value / total) * 100);
+                  return `${label}: ${value} hrs (${percentage}%)`;
+                }
               }
             }
           }
         }
+      });
+
+      // Live Line Chart
+      const liveCtx = document.getElementById('liveLineChart').getContext('2d');
+      const initialData = [];
+      const now = Date.now();
+      for (let i = 4; i >= 0; i--) {
+        initialData.push({
+          x: now - (i * 60000), // 1 minute intervals
+          y: Math.floor(Math.random() * 20) + 60 // Random dB between 60-80
+        });
       }
-    });
+
+      const liveLineChart = new Chart(liveCtx, {
+        type: 'line',
+        data: {
+          datasets: [{
+            label: 'Decibel Level',
+            data: initialData,
+            backgroundColor: 'rgba(255, 99, 132, 0.5)',
+            borderColor: 'rgba(255, 99, 132, 1)',
+            borderWidth: 2,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            fill: false,
+            tension: 0.1
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: {
+              type: 'realtime',
+              realtime: {
+                duration: 300000, // 5 minutes window
+                refresh: 1000, // update every second
+                delay: 4000,
+                onRefresh: chart => {
+                  if (isPlaying) {
+                    chart.data.datasets.forEach(dataset => {
+                      dataset.data.push({
+                        x: Date.now(),
+                        y: Math.floor(Math.random() * 25) + 55 // Random dB between 55-80
+                      });
+                    });
+                  }
+                }
+              },
+              grid: {
+                color: gridColor
+              },
+              ticks: {
+                color: textColor
+              }
+            },
+            y: {
+              min: 50,
+              max: 90,
+              grid: {
+                color: gridColor
+              },
+              ticks: {
+                color: textColor,
+                callback: function(value) {
+                  return value + ' dB';
+                }
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              labels: {
+                color: textColor
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  return context.dataset.label + ': ' + context.parsed.y + ' dB';
+                }
+              }
+            }
+          },
+          interaction: {
+            intersect: false,
+            mode: 'index'
+          }
+        }
+      });
+
+      // Live chart controls
+      let isPlaying = true;
+      document.getElementById('liveChartPlay').addEventListener('click', function() {
+        if (!isPlaying) {
+          isPlaying = true;
+          this.classList.add('bg-blue-600');
+          document.getElementById('liveChartPause').classList.remove('bg-gray-600');
+          document.getElementById('liveChartPause').classList.add('bg-gray-600');
+        }
+      });
+
+      document.getElementById('liveChartPause').addEventListener('click', function() {
+        if (isPlaying) {
+          isPlaying = false;
+          this.classList.add('bg-gray-600');
+          document.getElementById('liveChartPlay').classList.remove('bg-blue-600');
+          document.getElementById('liveChartPlay').classList.add('bg-blue-500');
+        }
+      });
+
+      document.getElementById('liveChartReset').addEventListener('click', function() {
+        liveLineChart.data.datasets[0].data = [];
+        liveLineChart.update();
+      });
+
+      document.getElementById('liveChartPlay').classList.add('bg-blue-600');
+    }
+
+    // Main function to load and initialize the dashboard
+    async function initDashboard() {
+      // Show loading skeleton
+      document.getElementById('loadingSkeleton').classList.remove('hidden');
+      document.getElementById('dashboardContent').classList.add('hidden');
+      
+      // Fetch data from API
+      const data = await fetchDashboardData();
+      
+      if (data) {
+        // Hide loading skeleton and show content
+        document.getElementById('loadingSkeleton').classList.add('hidden');
+        document.getElementById('dashboardContent').classList.remove('hidden');
+        
+        // Update the UI with the fetched data
+        updateDashboard(data);
+      }
+    }
+
+    // Initialize the dashboard when the page loads
+    document.addEventListener('DOMContentLoaded', initDashboard);
   </script>
 {% endblock %}

@@ -26,6 +26,9 @@ from .utils import generate_dataset_name, generate_noise_id
 import glob
 from django.conf import settings
 from plotly.utils import PlotlyJSONEncoder
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
 
 logger = logging.getLogger(__name__)
 
@@ -42,138 +45,167 @@ class RenamedFile:
         return getattr(self.file, attr)
 
 
+
+
 @login_required
 def view_dashboard(request):
-    # Basic stats
-    total_recordings = NoiseDataset.objects.count()
-    user_recordings = (
-        NoiseDataset.objects.filter(collector=request.user).count()
-        if request.user.is_authenticated
-        else 0
-    )
-    categories_count = Category.objects.count()
-    regions_count = Region.objects.count()
-    classes_count = Class.objects.count()
-    sub_classes_count = SubClass.objects.count()
+    return render(request, "data/dashboard.html",)
 
-    # Calculate total duration in hours
-    total_duration_seconds = (
-        AudioFeature.objects.aggregate(total_duration=Sum("duration"))["total_duration"]
-        or 0
-    )
-    total_duration_hours = round(total_duration_seconds / 3600, 2)
 
-    # Duration by class in hours
-    duration_by_class = (
-        AudioFeature.objects.select_related("noise_dataset__class_name")
-        .values("noise_dataset__class_name__name")
-        .annotate(total_duration=Sum("duration"))
-        .order_by("-total_duration")
-    )
-    class_hours = [
-        {
-            "label": item.get("noise_dataset__class_name__name") or "Unknown",
-            "hours": round((item.get("total_duration") or 0) / 3600, 2),
-        }
-        for item in duration_by_class
-    ]
+class DashboardView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        try:
+            # Basic stats
+            total_recordings = NoiseDataset.objects.count()
+            user_recordings = (
+                NoiseDataset.objects.filter(collector=request.user).count()
+                if request.user.is_authenticated
+                else 0
+            )
+            categories_count = Category.objects.count()
+            regions_count = Region.objects.count()
+            classes_count = Class.objects.count()
+            sub_classes_count = SubClass.objects.count()
 
-    # Data for category pie chart
-    category_data = (
-        NoiseDataset.objects.values("category__name")
-        .annotate(count=Count("id"))
-        .order_by("-count")
-    )
-    category_labels = [item["category__name"] for item in category_data]
-    category_counts = [item["count"] for item in category_data]
+            # Calculate total duration in hours
+            total_duration_seconds = (
+                AudioFeature.objects.aggregate(total_duration=Sum("duration"))["total_duration"]
+                or 0
+            )
+            total_duration_hours = round(total_duration_seconds / 3600, 2)
 
-    # Data for region bar chart
-    region_data = (
-        NoiseDataset.objects.values("region__name")
-        .annotate(count=Count("id"))
-        .order_by("-count")
-    )
-    region_labels = [item["region__name"] for item in region_data]
-    region_counts = [item["count"] for item in region_data]
+            # Duration by class in hours
+            duration_by_class = (
+                AudioFeature.objects.select_related("noise_dataset__class_name")
+                .values("noise_dataset__class_name__name")
+                .annotate(total_duration=Sum("duration"))
+                .order_by("-total_duration")
+            )
+            class_hours = [
+                {
+                    "label": item.get("noise_dataset__class_name__name") or "Unknown",
+                    "hours": round((item.get("total_duration") or 0) / 3600, 2),
+                }
+                for item in duration_by_class
+            ]
 
-    # Data for duration by region chart
-    duration_by_region = (
-        AudioFeature.objects.select_related("noise_dataset__region")
-        .values("noise_dataset__region__name")
-        .annotate(total_duration=Sum("duration"))
-        .order_by("-total_duration")
-    )
-    duration_region_labels = [
-        item.get("noise_dataset__region__name") or "Unknown"
-        for item in duration_by_region
-    ]
-    duration_region_hours = [
-        round(item["total_duration"] / 3600, 2) if item["total_duration"] else 0
-        for item in duration_by_region
-    ]
+            # Data for category pie chart
+            category_data = (
+                NoiseDataset.objects.values("category__name")
+                .annotate(count=Count("id"))
+                .order_by("-count")
+            )
+            category_labels = [item["category__name"] for item in category_data]
+            category_counts = [item["count"] for item in category_data]
 
-    # Data for time line chart (last 12 months)
-    time_labels = []
-    time_counts = []
-    now = timezone.now()
-    for i in range(11, -1, -1):
-        month = now - timedelta(days=30 * i)
-        time_labels.append(month.strftime("%b %Y"))
-        start_date = month.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        if month.month == 12:
-            end_date = month.replace(year=month.year + 1, month=1, day=1)
-        else:
-            end_date = month.replace(month=month.month + 1, day=1)
-        count = NoiseDataset.objects.filter(
-            recording_date__gte=start_date, recording_date__lt=end_date
-        ).count()
-        time_counts.append(count)
+            # Data for region bar chart
+            region_data = (
+                NoiseDataset.objects.values("region__name")
+                .annotate(count=Count("id"))
+                .order_by("-count")
+            )
+            region_labels = [item["region__name"] for item in region_data]
+            region_counts = [item["count"] for item in region_data]
 
-    # Data for audio features radar chart (averages)
-    audio_features = AudioFeature.objects.aggregate(
-        avg_rms=Avg("rms_energy"),
-        avg_centroid=Avg("spectral_centroid"),
-        avg_bandwidth=Avg("spectral_bandwidth"),
-        avg_zcr=Avg("zero_crossing_rate"),
-        avg_harmonic=Avg("harmonic_ratio"),
-        avg_percussive=Avg("percussive_ratio"),
-    )
-    audio_features_data = [
-        audio_features["avg_rms"] or 0,
-        audio_features["avg_centroid"] or 0,
-        audio_features["avg_bandwidth"] or 0,
-        audio_features["avg_zcr"] or 0,
-        audio_features["avg_harmonic"] or 0,
-        audio_features["avg_percussive"] or 0,
-    ]
+            # Data for duration by region chart
+            duration_by_region = (
+                AudioFeature.objects.select_related("noise_dataset__region")
+                .values("noise_dataset__region__name")
+                .annotate(total_duration=Sum("duration"))
+                .order_by("-total_duration")
+            )
+            duration_region_labels = [
+                item.get("noise_dataset__region__name") or "Unknown"
+                for item in duration_by_region
+            ]
+            duration_region_hours = [
+                round(item["total_duration"] / 3600, 2) if item["total_duration"] else 0
+                for item in duration_by_region
+            ]
 
-    context = {
-        "total_recordings": total_recordings,
-        "user_recordings": user_recordings,
-        "categories_count": categories_count,
-        "classes_count": classes_count,
-        "sub_classes_count": sub_classes_count,
-        "regions_count": regions_count,
-        "total_duration_hours": total_duration_hours,
-        # class hours cards
-        "class_hours": class_hours,
-        "category_labels": json.dumps(category_labels),
-        "category_data": json.dumps(category_counts),
-        "region_labels": json.dumps(region_labels),
-        "region_data": json.dumps(region_counts),
-        "duration_region_labels": json.dumps(duration_region_labels),
-        "duration_region_hours": json.dumps(duration_region_hours),
-        "time_labels": json.dumps(time_labels),
-        "time_data": json.dumps(time_counts),
-        "audio_features_data": json.dumps(audio_features_data),
-    }
+            # Data for time line chart (last 12 months)
+            time_labels = []
+            time_counts = []
+            now = timezone.now()
+            for i in range(11, -1, -1):
+                month = now - timedelta(days=30 * i)
+                time_labels.append(month.strftime("%b %Y"))
+                start_date = month.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                if month.month == 12:
+                    end_date = month.replace(year=month.year + 1, month=1, day=1)
+                else:
+                    end_date = month.replace(month=month.month + 1, day=1)
+                count = NoiseDataset.objects.filter(
+                    recording_date__gte=start_date, recording_date__lt=end_date
+                ).count()
+                time_counts.append(count)
 
-    return render(request, "data/dashboard.html", context)
+            # Data for audio features radar chart (averages)
+            audio_features = AudioFeature.objects.aggregate(
+                avg_rms=Avg("rms_energy"),
+                avg_centroid=Avg("spectral_centroid"),
+                avg_bandwidth=Avg("spectral_bandwidth"),
+                avg_zcr=Avg("zero_crossing_rate"),
+                avg_harmonic=Avg("harmonic_ratio"),
+                avg_percussive=Avg("percussive_ratio"),
+            )
+            audio_features_data = [
+                audio_features["avg_rms"] or 0,
+                audio_features["avg_centroid"] or 0,
+                audio_features["avg_bandwidth"] or 0,
+                audio_features["avg_zcr"] or 0,
+                audio_features["avg_harmonic"] or 0,
+                audio_features["avg_percussive"] or 0,
+            ]
+
+            response_data = {
+                "basic_stats": {
+                    "total_recordings": total_recordings,
+                    "user_recordings": user_recordings,
+                    "categories_count": categories_count,
+                    "classes_count": classes_count,
+                    "sub_classes_count": sub_classes_count,
+                    "regions_count": regions_count,
+                    "total_duration_hours": total_duration_hours,
+                },
+                "class_hours": class_hours,
+                "charts": {
+                    "category": {
+                        "labels": category_labels,
+                        "data": category_counts,
+                    },
+                    "region": {
+                        "labels": region_labels,
+                        "data": region_counts,
+                    },
+                    "duration_region": {
+                        "labels": duration_region_labels,
+                        "data": duration_region_hours,
+                    },
+                    "time_series": {
+                        "labels": time_labels,
+                        "data": time_counts,
+                    },
+                    "audio_features": audio_features_data,
+                }
+            }
+            
+            return Response(response_data)
+            
+        except Exception as e:
+            return Response(
+                {"error": "Failed to fetch dashboard data", "detail": str(e)}, 
+                status=500
+            )
+
 
 
 class NoiseDatasetDeleteView(LoginRequiredMixin, DeleteView):
     model = NoiseDataset
     success_url = reverse_lazy("data:datasetlist")
+    
 
     def delete(self, request, *args, **kwargs):
         response = super().delete(request, *args, **kwargs)
@@ -192,7 +224,7 @@ def view_datasetlist(request):
     return render(request, "data/datasetlist.html", context)
 
 
-class NoiseDatasetListView(ListView):
+class NoiseDatasetListView(ListView,LoginRequiredMixin):
     model = NoiseDataset
     template_name = "data/datasetlist.html"
     context_object_name = "datasets"

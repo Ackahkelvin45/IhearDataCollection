@@ -22,81 +22,81 @@
         <div class="p-4">
           <h6 class="mb-4 font-semibold text-lg">Query Parameters</h6>
 
-
           <!-- Group 1: Dataset Info -->
           <div class="flex flex-wrap -mx-2">
+            <!-- Data Type -->
             <div class="w-full sm:w-1/2 lg:w-1/4 px-2 mb-4">
-              <label class="block mb-1 text-sm font-medium text-slate-600">Dataset Type</label>
-              <select name="dataset_type" type="text" placeholder="Enter value"
-                class="focus:shadow-primary-outline text-sm block w-full rounded-lg border border-gray-300 px-3 py-2">
-                <option>Select Dataset</option>
-                {% for dataset in datasets %}
-                <option>{{dataset.name}}</option>
-                {%endfor%}
-                </select>
+              <label  class="block mb-1 text-sm font-medium text-slate-600">Data Type</label>
+              <select id="datatype" class="select2-dropdown" multiple>
+                <option value="">Select Data Type</option>
+                {% for datatype in datatypes %}
+                  <option value="{{ datatype.id }}">{{ datatype.name }}</option>
+                {% endfor %}
+              </select>
             </div>
 
-         <!-- Category -->
-<!-- Category -->
-<div class="w-full sm:w-1/2 lg:w-1/4 px-2 mb-4">
-  <label class="block mb-1 text-sm font-medium text-slate-600">Category</label>
-  <select id="category" class="focus:shadow-primary-outline text-sm block w-full rounded-lg border border-gray-300 px-3 py-2">
-    <option value="">Select Category</option>
-    {% for category in categories %}
-      <option value="{{ category.id }}">{{ category.name }}</option>
-    {% endfor %}
-  </select>
-</div>
+            <!-- Category -->
+            <div class="w-full sm:w-1/2 lg:w-1/4 px-2 mb-4">
+              <label class="block mb-1 text-sm font-medium text-slate-600">Category</label>
+              <select id="category" class="select2-dropdown" multiple disabled>
+                <option value="">Select Category</option>
+                {% for category in categories %}
+                  <option value="{{ category.id }}">{{ category.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
 
-<!-- Class -->
-<div class="w-full sm:w-1/2 lg:w-1/4 px-2 mb-4">
-  <label class="block mb-1 text-sm font-medium text-slate-600">Class</label>
-  <select id="class" disabled class="focus:shadow-primary-outline text-sm block w-full rounded-lg border border-gray-300 px-3 py-2">
-    <option value="">Select Class</option>
-  </select>
-</div>
+            <!-- Class -->
+            <div class="w-full sm:w-1/2 lg:w-1/4 px-2 mb-4">
+              <label class="block mb-1 text-sm font-medium text-slate-600">Class</label>
+              <select id="class" class="select2-dropdown" multiple disabled>
+                <option value="">Select Class</option>
+              </select>
+            </div>
 
-<!-- Sub Class -->
-<div class="w-full sm:w-1/2 lg:w-1/4 px-2 mb-4">
-  <label class="block mb-1 text-sm font-medium text-slate-600">Sub Class</label>
-  <select id="subclass" disabled class="focus:shadow-primary-outline text-sm block w-full rounded-lg border border-gray-300 px-3 py-2">
-    <option value="">Select Subclass</option>
-  </select>
-</div></div>
-
-
+            <!-- Sub Class -->
+            <div class="w-full sm:w-1/2 lg:w-1/4 px-2 mb-4">
+              <label class="block mb-1 text-sm font-medium text-slate-600">Sub Class</label>
+              <select id="subclass" class="select2-dropdown" multiple disabled>
+                <option value="">Select Subclass</option>
+              </select>
+            </div>
+          </div>
 
           <!-- Separator -->
-          <hr class="my-4  border-primary bg-primary">
+          <hr class="my-4 border-primary bg-primary">
 
           <!-- Group 2: Location Info -->
           <div class="flex flex-wrap -mx-2">
-          <!-- Region -->
-<!-- Region -->
-<div class="w-full sm:w-1/2 lg:w-1/4 px-2 mb-4">
-  <label class="block mb-1 text-sm font-medium text-slate-600">Region</label>
-  <select id="region" class="focus:shadow-primary-outline text-sm block w-full rounded-lg border border-gray-300 px-3 py-2">
-    <option value="">Select Region</option>
-    {% for region in regions %}
-      <option value="{{ region.id }}">{{ region.name }}</option>
-    {% endfor %}
-  </select>
-</div>
+            <!-- Region -->
+            <div class="w-full sm:w-1/2 lg:w-1/4 px-2 mb-4">
+              <label class="block mb-1 text-sm font-medium text-slate-600">Region</label>
+              <select id="region" class="select2-dropdown" multiple>
+                <option value="">Select Region</option>
+                {% for region in regions %}
+                  <option value="{{ region.id }}">{{ region.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
 
-<!-- Community -->
-<div class="w-full sm:w-1/2 lg:w-1/4 px-2 mb-4">
-  <label class="block mb-1 text-sm font-medium text-slate-600">Community</label>
-  <select id="community" disabled class="focus:shadow-primary-outline text-sm block w-full rounded-lg border border-gray-300 px-3 py-2">
-    <option value="">Select Community</option>
-  </select>
-</div>
-
-
+            <!-- Community -->
+            <div class="w-full sm:w-1/2 lg:w-1/4 px-2 mb-4">
+              <label class="block mb-1 text-sm font-medium text-slate-600">Community</label>
+              <select id="community" class="select2-dropdown" multiple disabled>
+                <option value="">Select Community</option>
+              </select>
+            </div>
 
             <div class="w-full sm:w-1/2 lg:w-1/4 px-2 mb-4">
               <label class="block mb-1 text-sm font-medium text-slate-600">Time Of Day</label>
-              <input type="text" placeholder="Enter value"
+              <select id="timeofday" class="select2-dropdown" multiple type="text" placeholder="Enter value"
                 class="focus:shadow-primary-outline text-sm block w-full rounded-lg border border-gray-300 px-3 py-2">
+ <option value="">Select time of day</option>
+                {% for time in timeofday %}
+                  <option value="{{ time.id }}">{{ time.name }}</option>
+                {% endfor %}
+
+                </select> 
             </div>
           </div>
 
@@ -107,7 +107,7 @@
           <div class="flex flex-wrap -mx-2">
             <div class="w-full sm:w-1/2 lg:w-1/4 px-2 mb-4">
               <label class="block mb-1 text-sm font-medium text-slate-600">Recording Date Range</label>
-              <input type="text" placeholder="Enter value"
+              <input type="text" id="dateRange" placeholder="Select date range"
                 class="focus:shadow-primary-outline text-sm block w-full rounded-lg border border-gray-300 px-3 py-2">
             </div>
 
@@ -119,14 +119,23 @@
 
             <div class="w-full sm:w-1/2 lg:w-1/4 px-2 mb-4">
               <label class="block mb-1 text-sm font-medium text-slate-600">Microphone Type</label>
-              <select type="text" placeholder="Enter value"
-                class="focus:shadow-primary-outline text-sm block w-full rounded-lg border border-gray-300 px-3 py-2">
+              <select id="microphone" class="select2-dropdown" multiple>
+                <option value="">Select microphone type</option>
+                {% for microphone in microphones %}
+                  <option value="{{ microphone.id }}">{{ microphone.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
 
- <option value="">Select microphone type</option>
-    {% for microphone in microphones %}
-      <option value="{{ microphone.id }}">{{ microphone.name }}</option>
-    {% endfor %}
-                </select>
+            <div class="w-full px-2 mb-4">
+            <form id="searchForm" method="post">
+  {% csrf_token %}
+  <!-- all your filter fields -->
+  <button type="button" id="searchBtn"
+    class="bg-primary text-white font-bold py-2 px-4 rounded-lg text-sm w-full mt-6">
+    Search
+  </button>
+</form>
             </div>
           </div>
 
@@ -134,248 +143,377 @@
       </div>
     </div>
   </div>
-
 </div>
 
-  <div class="flex flex-wrap -mx-3">
-    <!-- card1 -->
-    <div class="w-full px-6 py-6 mx-auto">
-      <!-- table 1 -->
-      <div class="flex flex-wrap -mx-3">
-        <div class="flex-none w-full max-w-full px-3">
-          <div class="relative flex flex-col min-w-0 mb-6 break-words bg-white border-0 border-transparent border-solid shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+<!-- Results Table -->
+<div class="flex flex-wrap -mx-3 mt-6">
+  <div class="w-full px-6 py-6 mx-auto">
+    <div class="w-full max-w-full">
+      <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl
+                  dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+        
+        <div class="p-4">
+          <h6 class="mb-4 font-semibold text-lg">Search Results</h6>
+          <div id="stats" class="mb-4 text-base text-gray-700">
+  <span class="">Total Duration: <span id="totalDuration" class="font-bold">0</span> sec</span> |
+  <span>Average Duration: <span  class="font-bold" id="avgDuration">0</span class="font-bold"> sec</span>
+</div>
 
+          <!-- Table -->
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left text-gray-500">
+              <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                <tr>
+                  <th scope="col" class="px-6 py-3">ID</th>
+                  <th scope="col" class="px-6 py-3" style="word-break: keep-all;">Data Type</th>
+                  <th scope="col" class="px-6 py-3">Category</th>
+                  <th scope="col" class="px-6 py-3">Class</th>
+                  <th scope="col" class="px-6 py-3">Sub Class</th>
+                  <th scope="col" class="px-6 py-3">Region</th>
+                  <th scope="col" class="px-6 py-3">Community</th>
+                  <th scope="col" class="px-6 py-3">Recording Date</th>
+                  <th scope="col" class="px-6 py-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="resultsTableBody">
+                <!-- Initial state -->
+                <tr class="bg-white border-b">
+                  <td colspan="9" class="px-6 py-4 text-center text-gray-500" id="initialMessage">
+                    Use the search filters above to find data
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
-            <div class="p-6 pb-0 mb-0 border-b-0 border-b-solid rounded-t-2xl border-b-transparent">
-              <div class="flex justify-between items-center">
-
-
-                <div>
-                <h6 class="dark:text-white text-xl"> Dataset table</h6>
-
-                  <div class="flex items-center mt-4 space-x-2 gap-2 ">
-            <button class="inline-block px-6 py-3 mr-2 font-bold text-center text-primary uppercase align-middle transition-all bg-transparent border border-primary rounded-lg cursor-pointer leading-normal text-xs ease-in tracking-tight-rem shadow-xs bg-150 bg-x-25 hover:-translate-y-px active:opacity-85 hover:shadow-md">
-  <i class="ni ni-single-copy-04 mr-2"></i> Export to PDF
-</button>
-
-<button class="inline-block px-6 py-3 mr-3 font-bold text-center text-primary uppercase align-middle transition-all bg-transparent border border-primary rounded-lg cursor-pointer leading-normal text-xs ease-in tracking-tight-rem shadow-xs bg-150 bg-x-25 hover:-translate-y-px active:opacity-85 hover:shadow-md">
-  <i class="ni ni-collection mr-2"></i> Export to Excel
-</button>
-
-              </div>
-                </div>
-                <div class="text-sm text-gray-500 dark:text-gray-400">
-                  Total: {{ paginator.count }} datasets
-                </div>
-              </div>
-            </div>
-
-
-            <div class="flex-auto px-0 pt-0 pb-2">
-              <div class="p-0 overflow-x-auto">
-                <table class="items-center w-full mb-0 align-top border-collapse dark:border-white/40 text-slate-500">
-                  <thead class="align-bottom">
-                    <tr>
-                      <th class="px-6 py-3 font-bold text-left uppercase align-middle bg-transparent border-b border-collapse shadow-none dark:border-white/40 dark:text-white text-xs border-b-solid tracking-none whitespace-nowrap text-slate-700 opacity-70">Noise ID</th>
-                      <th class="px-6 py-3 font-bold text-center uppercase align-middle bg-transparent border-b border-collapse shadow-none dark:border-white/40 dark:text-white text-xs border-b-solid tracking-none whitespace-nowrap text-slate-700 opacity-70">Category</th>
-                      <th class="px-6 py-3 font-bold text-center uppercase align-middle bg-transparent border-b border-collapse shadow-none dark:border-white/40 dark:text-white text-xs border-b-solid tracking-none whitespace-nowrap text-slate-700 opacity-70">Class</th>
-                      <th class="px-6 py-3 font-bold text-center uppercase align-middle bg-transparent border-b border-collapse shadow-none dark:border-white/40 dark:text-white text-xs border-b-solid tracking-none whitespace-nowrap text-slate-700 opacity-70">Sub Class</th>
-                      <th class="px-6 py-3 font-bold text-center uppercase align-middle bg-transparent border-b border-collapse shadow-none dark:border-white/40 dark:text-white text-xs border-b-solid tracking-none whitespace-nowrap text-slate-700 opacity-70">Recording Date</th>
-                      <th class="px-6 py-3 font-bold text-center uppercase align-middle bg-transparent border-b border-collapse shadow-none dark:border-white/40 dark:text-white text-xs border-b-solid tracking-none whitespace-nowrap text-slate-700 opacity-70">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for dataset in datasets %}
-                    <tr>
-                      <td class="p-2 align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
-                        <div class="flex px-2 py-1">
-                          <div class="flex flex-col justify-center">
-                            <h6 class="mb-0 text-sm leading-normal dark:text-white">{{ dataset.noise_id }}</h6>
-                          </div>
-                        </div>
-                      </td>
-
-                      <td class="p-2 text-sm leading-normal text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
-                        <span class="bg-gradient-to-tl from-emerald-500 to-teal-400 px-2.5 text-xs rounded-1.8 py-1.4 inline-block whitespace-nowrap text-center align-baseline font-bold uppercase leading-none text-white">
-                          {{ dataset.category }}
-                        </span>
-                      </td>
-                      <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
-                        <span class="text-sm font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">{{ dataset.class_name }}</span>
-                      </td>
-                      <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
-                        <span class="text-sm font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">{{ dataset.subclass }}</span>
-                      </td>
-                      <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
-                        <span class="text-sm font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">
-                          {{ dataset.recording_date|date:"d M Y, h:i A" }}
-                        </span>
-                      </td>
-                      <td class="p-2 align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
-                        <div class="flex flex-row items-center justify-center gap-4">
-                          <a href="{% url 'data:noise_dataset_detail' dataset.id %}" class="text-sm mr-2 font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">View</a>
-                          <a  href="{% url 'data:noise_dataset_edit' dataset.id %}" class="text-sm text-cyan-500 mr-2 font-semibold leading-tight dark:text-white dark:opacity-80">Edit</a>
-                          <button onclick="confirmDelete('{% url 'data:noise_dataset_delete' dataset.id %}', '{{ dataset.noise_id }}')"
-                                  class="text-sm text-red-600 font-semibold leading-tight dark:text-white dark:opacity-80 hover:text-red-800">
-                            Delete
-                          </button>
-                          {% csrf_token %}
-                        </div>
-                      </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                      <td colspan="7" class="p-4 text-center text-gray-500">
-                        No datasets found.
-                      </td>
-                    </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-
-              </div>
-
-              <!-- Modern Pagination -->
-              {% if is_paginated %}
-              <div class="pagination-container  mx-2 mt-2">
-                {% if page_obj.has_previous %}
-                  <a href="?page=1{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}"
-                     class="pagination-btn">
-                    <i class="fas fa-angle-double-left"></i>
+          <!-- Pagination -->
+          <div class="flex items-center justify-between mt-4">
+            <span class="text-sm text-gray-700">
+              Showing <span class="font-medium">0</span> to <span class="font-medium">0</span> 
+              of <span class="font-medium">0</span> results
+            </span>
+            <nav aria-label="Pagination">
+              <ul class="inline-flex -space-x-px">
+                <li>
+                  <a href="#" class="px-3 py-2 ml-0 leading-tight text-gray-500 bg-white border border-gray-300 rounded-l-lg hover:bg-gray-100 hover:text-gray-700">
+                    Previous
                   </a>
-                  <a href="?page={{ page_obj.previous_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}"
-                     class="pagination-btn">
-                    <i class="fas fa-angle-left"></i>
+                </li>
+                <li>
+                  <a href="#" class="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700">1</a>
+                </li>
+                <li>
+                  <a href="#" class="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 rounded-r-lg hover:bg-gray-100 hover:text-gray-700">
+                    Next
                   </a>
-                {% else %}
-                  <span class="pagination-btn disabled">
-                    <i class="fas fa-angle-double-left"></i>
-                  </span>
-                  <span class="pagination-btn disabled">
-                    <i class="fas fa-angle-left"></i>
-                  </span>
-                {% endif %}
-
-                {% for num in page_obj.paginator.page_range %}
-                  {% if num == page_obj.number %}
-                    <span class="pagination-btn active">{{ num }}</span>
-                  {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-                    <a href="?page={{ num }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}"
-                       class="pagination-btn">{{ num }}</a>
-                  {% elif num == 1 or num == page_obj.paginator.num_pages %}
-                    <a href="?page={{ num }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}"
-                       class="pagination-btn">{{ num }}</a>
-                  {% elif num == 2 and page_obj.number > 5 %}
-                    <span class="pagination-dots">...</span>
-                  {% elif num == page_obj.paginator.num_pages|add:'-1' and page_obj.number < page_obj.paginator.num_pages|add:'-4' %}
-                    <span class="pagination-dots">...</span>
-                  {% endif %}
-                {% endfor %}
-
-                {% if page_obj.has_next %}
-                  <a href="?page={{ page_obj.next_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}"
-                     class="pagination-btn">
-                    <i class="fas fa-angle-right"></i>
-                  </a>
-                  <a href="?page={{ page_obj.paginator.num_pages }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}"
-                     class="pagination-btn">
-                    <i class="fas fa-angle-double-right"></i>
-                  </a>
-                {% else %}
-                  <span class="pagination-btn disabled">
-                    <i class="fas fa-angle-right"></i>
-                  </span>
-                  <span class="pagination-btn disabled">
-                    <i class="fas fa-angle-double-right"></i>
-                  </span>
-                {% endif %}
-
-                <div class="page-info">
-                  Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
-                </div>
-              </div>
-              {% endif %}
-
-            </div>
+                </li>
+              </ul>
+            </nav>
           </div>
         </div>
       </div>
     </div>
   </div>
+</div>
 
+<!-- Skeleton Loading Template (Hidden by default) -->
+<template id="skeletonTemplate">
+  <tr class="bg-white border-b dark:bg-slate-850 dark:border-white/40">
+    <td class="p-2 align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+      <div class="animate-pulse flex items-center">
+        <div class="h-4 bg-gray-300 rounded w-3/4"></div>
+      </div>
+    </td>
+    <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+      <div class="animate-pulse flex justify-center">
+        <div class="h-6 bg-gray-300 rounded w-1/2"></div>
+      </div>
+    </td>
+    <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+      <div class="animate-pulse flex justify-center">
+        <div class="h-4 bg-gray-300 rounded w-2/3"></div>
+      </div>
+    </td>
+    <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+      <div class="animate-pulse flex justify-center">
+        <div class="h-4 bg-gray-300 rounded w-1/2"></div>
+      </div>
+    </td>
+    <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+      <div class="animate-pulse flex justify-center">
+        <div class="h-4 bg-gray-300 rounded w-3/4"></div>
+      </div>
+    </td>
+    <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+      <div class="animate-pulse flex justify-center">
+        <div class="h-4 bg-gray-300 rounded w-2/3"></div>
+      </div>
+    </td>
+    <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+      <div class="animate-pulse flex justify-center">
+        <div class="h-4 bg-gray-300 rounded w-1/2"></div>
+      </div>
+    </td>
+    <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+      <div class="animate-pulse flex justify-center">
+        <div class="h-4 bg-gray-300 rounded w-3/4"></div>
+      </div>
+    </td>
+    <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+      <div class="animate-pulse flex justify-center space-x-2">
+        <div class="h-6 bg-gray-300 rounded w-12"></div>
+        <div class="h-6 bg-gray-300 rounded w-12"></div>
+      </div>
+    </td>
+  </tr>
+</template>
 
+<!-- Include CSS for Flatpickr and Select2 -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet" />
 
+<!-- Custom CSS to match existing styles -->
+<style>
+.select2-container {
+  width: 100% !important;
+}
 
+.select2-container--default .select2-selection--multiple {
+  border: 1px solid #d1d5db !important;
+  border-radius: 0.5rem !important;
+  font-size: 0.875rem !important;
+  padding: 0.375rem 0.75rem !important;
+  min-height: 2.5rem !important;
+  background-color: white !important;
+}
 
-  <script>
-document.addEventListener("DOMContentLoaded", function() {
-  let categorySelect = document.getElementById("category");
-  let classSelect = document.getElementById("class");
-  let subclassSelect = document.getElementById("subclass");
-  let regionSelect = document.getElementById("region");
-  let communitySelect = document.getElementById("community");
+.select2-container--default .select2-selection--multiple:focus-within {
+  box-shadow: 0 0 0 1px #005450 !important;
+  border-color: #005450 !important;
+}
 
-  // When Category changes → fetch Classes
-  categorySelect.addEventListener("change", function() {
-    let categoryId = this.value;
-    classSelect.innerHTML = "<option value=''>Select Class</option>";
-    subclassSelect.innerHTML = "<option value=''>Select Subclass</option>";
-    subclassSelect.disabled = true;
+.select2-container--default .select2-selection--multiple .select2-selection__choice {
+  background-color: #005450 !important;
+  border: 1px solid #005450 !important;
+  color: white !important;
+  border-radius: 0.25rem !important;
+  font-size: 0.75rem !important;
+}
 
-    if (categoryId) {
-      fetch(`/reports/dependent-dropdown/?category_id=${categoryId}`)
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+  color: white !important;
+}
+
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+  background-color: transparent !important;
+  color: #fbbf24 !important;
+}
+
+.select2-dropdown {
+  border: 1px solid #d1d5db !important;
+  border-radius: 0.5rem !important;
+  font-size: 0.875rem !important;
+}
+
+.select2-container--default.select2-container--disabled .select2-selection--multiple {
+  background-color: #f3f4f6 !important;
+  cursor: not-allowed !important;
+}
+
+.flatpickr-input {
+  background-color: white !important;
+}
+
+.flatpickr-calendar {
+  border-radius: 0.5rem !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Skeleton animation */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: .5;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+</style>
+
+<!-- Include JavaScript libraries -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  flatpickr("#dateRange", { mode: "range", dateFormat: "Y-m-d" });
+  $(".select2-dropdown").select2({ allowClear: true, width: "100%" });
+
+  let currentPage = 1;
+  let isLoading = false;
+
+  function showSkeleton(rows = 5) {
+    const tbody = document.getElementById("resultsTableBody");
+    const skeletonTemplate = document.getElementById("skeletonTemplate");
+    
+    // Clear existing content
+    tbody.innerHTML = '';
+    
+    // Add skeleton rows
+    for (let i = 0; i < rows; i++) {
+      const clone = skeletonTemplate.content.cloneNode(true);
+      tbody.appendChild(clone);
+    }
+    
+    isLoading = true;
+  }
+
+  function hideSkeleton() {
+    isLoading = false;
+  }
+
+  function performSearch(page = 1) {
+    // Show loading skeleton
+    showSkeleton(5);
+    
+    const searchParams = {
+      datatypes: $("#datatype").val() || [],
+      categories: $("#category").val() || [],
+      classes: $("#class").val() || [],
+      subclasses: $("#subclass").val() || [],
+      regions: $("#region").val() || [],
+      communities: $("#community").val() || [],
+      microphones: $("#microphone").val() || [],
+      dateRange: $("#dateRange").val(),
+      timeOfDay: $("#timeofday").val() || [],
+      recordingDevice: document.querySelectorAll('[placeholder="Enter value"]')[1].value
+    };
+
+    fetch(`/reports/report-writer/?page=${page}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
+      },
+      body: JSON.stringify(searchParams)
+    })
       .then(res => res.json())
       .then(data => {
-        data.forEach(item => {
-          classSelect.innerHTML += `<option value="${item.id}">${item.name}</option>`;
-        });
-        classSelect.disabled = false;
+        hideSkeleton();
+        updateResultsTable(data.results.results);
+        updatePagination(data, page);
+        updateStats(data.results);
+      })
+      .catch(err => {
+        console.error("Search error:", err);
+        hideSkeleton();
+        // Show error message
+        document.getElementById("resultsTableBody").innerHTML = `
+          <tr class="bg-white border-b">
+            <td colspan="9" class="px-6 py-4 text-center text-red-500">
+              Error loading data. Please try again.
+            </td>
+          </tr>
+        `;
       });
+  }
+
+  function updateStats(results) {
+    document.getElementById("totalDuration").textContent = results.total_duration || 0;
+    document.getElementById("avgDuration").textContent = results.average_duration || 0;
+  }
+
+  function updateResultsTable(results) {
+    const tbody = document.getElementById("resultsTableBody");
+    if (results && results.length > 0) {
+      tbody.innerHTML = results.map(item => `
+        <tr class="bg-white border-b dark:bg-slate-850 dark:border-white/40 hover:bg-gray-50 dark:hover:bg-slate-800">
+          <td class="p-2 align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+            <div class="flex px-2 py-1">
+              <div class="flex flex-col justify-center">
+                <h6 class="mb-0 text-sm leading-normal dark:text-white">${item.noise_id || item.id}</h6>
+              </div>
+            </div>
+          </td>
+          <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+            <span class="text-sm font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">${item.dataset_type?.name || '-'}</span>
+          </td>
+          <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+            <span class="bg-gradient-to-tl from-emerald-500 to-teal-400 px-2.5 text-xs rounded-1.8 py-1.4 inline-block whitespace-nowrap text-center align-baseline font-bold uppercase leading-none text-white">${item.category?.name || '-'}</span>
+          </td>
+          <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+            <span class="text-sm font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">${item.class_name?.name || '-'}</span>
+          </td>
+          <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+            <span class="text-sm font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">${item.subclass?.name || '-'}</span>
+          </td>
+          <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+            <span class="text-sm font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">${item.region?.name || '-'}</span>
+          </td>
+          <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+            <span class="text-sm font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">${item.community?.name || '-'}</span>
+          </td>
+          <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+            <span class="text-sm font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">
+              ${item.recording_date ? new Date(item.recording_date).toLocaleString() : '-'}
+            </span>
+          </td>
+          <td class="p-2 align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+            <div class="flex flex-row items-center justify-center gap-4">
+              <a href="/dataset/detail/${item.id}/" class="text-sm mr-2 font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">View</a>
+            </div>
+          </td>
+        </tr>
+      `).join('');
     } else {
-      classSelect.disabled = true;
+      tbody.innerHTML = `
+        <tr class="bg-white border-b">
+          <td colspan="9" class="px-6 py-4 text-center text-gray-500">
+            No results found
+          </td>
+        </tr>
+      `;
     }
-  });
+  }
 
-  // When Class changes → fetch SubClasses
-  classSelect.addEventListener("change", function() {
-    let classId = this.value;
-    subclassSelect.innerHTML = "<option value=''>Select Subclass</option>";
+  function updatePagination(data, page) {
+    const total = data.count;
+    const pageSize = data.results.results.length;
+    const start = total > 0 ? (page - 1) * pageSize + 1 : 0;
+    const end = Math.min(start + pageSize - 1, total);
 
-    if (classId) {
-      fetch(`/reports/dependent-dropdown/?class_id=${classId}`)
-      .then(res => res.json())
-      .then(data => {
-        data.forEach(item => {
-          subclassSelect.innerHTML += `<option value="${item.id}">${item.name}</option>`;
-        });
-        subclassSelect.disabled = false;
+    document.querySelector(".text-sm.text-gray-700").innerHTML = `
+      Showing <span class="font-medium">${start}</span> to 
+      <span class="font-medium">${end}</span> of 
+      <span class="font-medium">${total}</span> results
+    `;
+
+    const pagination = document.querySelector("ul.inline-flex");
+    pagination.innerHTML = `
+      <li><a href="#" class="px-3 py-2 ${page===1?'text-gray-300 pointer-events-none':'text-gray-500'} border border-gray-300 rounded-l-lg">Previous</a></li>
+      <li><a href="#" class="px-3 py-2 bg-gray-200 border border-gray-300">${page}</a></li>
+      <li><a href="#" class="px-3 py-2 ${!data.next?'text-gray-300 pointer-events-none':'text-gray-500'} border border-gray-300 rounded-r-lg">Next</a></li>
+    `;
+
+    pagination.querySelectorAll("a").forEach((btn, idx) => {
+      btn.addEventListener("click", e => {
+        e.preventDefault();
+        if (idx === 0 && page > 1) performSearch(page - 1);
+        if (idx === 2 && data.next) performSearch(page + 1);
       });
-    } else {
-      subclassSelect.disabled = true;
-    }
-  });
+    });
+  }
 
-  // When Region changes → fetch Communities
-  regionSelect.addEventListener("change", function() {
-    let regionId = this.value;
-    communitySelect.innerHTML = "<option value=''>Select Community</option>";
-
-    if (regionId) {
-      fetch(`/reports/dependent-dropdown/?region_id=${regionId}`)
-      .then(res => res.json())
-      .then(data => {
-        data.forEach(item => {
-          communitySelect.innerHTML += `<option value="${item.id}">${item.name}</option>`;
-        });
-        communitySelect.disabled = false;
-      });
-    } else {
-      communitySelect.disabled = true;
-    }
+  document.getElementById("searchBtn").addEventListener("click", () => {
+    currentPage = 1;
+    performSearch(currentPage);
   });
 });
 </script>
 
-
-  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 {% endblock %}
