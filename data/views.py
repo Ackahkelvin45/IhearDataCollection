@@ -46,11 +46,13 @@ class RenamedFile:
         return getattr(self.file, attr)
 
 
-
-
 @login_required
 def view_dashboard(request):
-    return render(request, "data/dashboard.html",)
+    return render(
+        request,
+        "data/dashboard.html",
+    )
+
 
 def clean_json(obj):
     """
@@ -69,7 +71,7 @@ def clean_json(obj):
 
 class DashboardView(APIView):
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request):
         try:
             # Basic stats
@@ -86,7 +88,9 @@ class DashboardView(APIView):
 
             # Calculate total duration in hours
             total_duration_seconds = (
-                AudioFeature.objects.aggregate(total_duration=Sum("duration"))["total_duration"]
+                AudioFeature.objects.aggregate(total_duration=Sum("duration"))[
+                    "total_duration"
+                ]
                 or 0
             )
             total_duration_hours = round(total_duration_seconds / 3600, 2)
@@ -112,7 +116,9 @@ class DashboardView(APIView):
                 .annotate(count=Count("id"))
                 .order_by("-count")
             )
-            category_labels = [item["category__name"] or "Unknown" for item in category_data]
+            category_labels = [
+                item["category__name"] or "Unknown" for item in category_data
+            ]
             category_counts = [item["count"] for item in category_data]
 
             # Data for region bar chart
@@ -147,7 +153,9 @@ class DashboardView(APIView):
             for i in range(11, -1, -1):
                 month = now - timedelta(days=30 * i)
                 time_labels.append(month.strftime("%b %Y"))
-                start_date = month.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                start_date = month.replace(
+                    day=1, hour=0, minute=0, second=0, microsecond=0
+                )
                 if month.month == 12:
                     end_date = month.replace(year=month.year + 1, month=1, day=1)
                 else:
@@ -204,22 +212,22 @@ class DashboardView(APIView):
                         "data": time_counts,
                     },
                     "audio_features": audio_features_data,
-                }
+                },
             }
-            
+
             # Clean NaN / Infinity before sending response
             return Response(clean_json(response_data))
-            
+
         except Exception as e:
             return Response(
-                {"error": "Failed to fetch dashboard data", "detail": str(e)}, 
-                status=500
+                {"error": "Failed to fetch dashboard data", "detail": str(e)},
+                status=500,
             )
+
 
 class NoiseDatasetDeleteView(LoginRequiredMixin, DeleteView):
     model = NoiseDataset
     success_url = reverse_lazy("data:datasetlist")
-    
 
     def delete(self, request, *args, **kwargs):
         response = super().delete(request, *args, **kwargs)
@@ -238,7 +246,7 @@ def view_datasetlist(request):
     return render(request, "data/datasetlist.html", context)
 
 
-class NoiseDatasetListView(ListView,LoginRequiredMixin):
+class NoiseDatasetListView(ListView, LoginRequiredMixin):
     model = NoiseDataset
     template_name = "data/datasetlist.html"
     context_object_name = "datasets"

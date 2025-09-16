@@ -377,6 +377,97 @@ document.addEventListener("DOMContentLoaded", function () {
     isLoading = false;
   }
 
+
+
+  function populateDropdown(url, params, targetSelectId) {
+  const targetSelect = $(`#${targetSelectId}`);
+  targetSelect.prop("disabled", true); // disable while loading
+  targetSelect.empty().append(new Option(`Loading...`, ""));
+
+  $.ajax({
+    url: url,
+    method: "GET",
+    data: params,
+    success: function (data) {
+      targetSelect.empty(); // clear previous
+      if (data.length > 0) {
+        targetSelect.append(new Option("Select option", ""));
+        data.forEach(item => {
+          targetSelect.append(new Option(item.name, item.id));
+        });
+        targetSelect.prop("disabled", false); // enable
+      } else {
+        targetSelect.append(new Option("No results found", ""));
+      }
+    },
+    error: function () {
+      targetSelect.empty().append(new Option("Error loading data", ""));
+    }
+  });
+}
+
+$(document).ready(function () {
+  // When DataType changes -> load Categories
+  $("#datatype").on("change", function () {
+    let ids = $(this).val(); // array of selected IDs
+    if (ids && ids.length > 0) {
+      populateDropdown(
+        "/reports/dependent-dropdown/",
+        { datatype_ids: ids.join(",") },
+        "category"
+      );
+    } else {
+      $("#category").prop("disabled", true).empty().append(new Option("Select Category", ""));
+      $("#class").prop("disabled", true).empty().append(new Option("Select Class", ""));
+      $("#subclass").prop("disabled", true).empty().append(new Option("Select Subclass", ""));
+    }
+  });
+
+  // When Category changes -> load Classes
+  $("#category").on("change", function () {
+    let ids = $(this).val();
+    if (ids && ids.length > 0) {
+      populateDropdown(
+        "/reports/dependent-dropdown/",
+        { category_ids: ids.join(",") },
+        "class"
+      );
+    } else {
+      $("#class").prop("disabled", true).empty().append(new Option("Select Class", ""));
+      $("#subclass").prop("disabled", true).empty().append(new Option("Select Subclass", ""));
+    }
+  });
+
+  // When Class changes -> load Subclasses
+  $("#class").on("change", function () {
+    let ids = $(this).val();
+    if (ids && ids.length > 0) {
+      populateDropdown(
+        "/reports/dependent-dropdown/",
+        { class_ids: ids.join(",") },
+        "subclass"
+      );
+    } else {
+      $("#subclass").prop("disabled", true).empty().append(new Option("Select Subclass", ""));
+    }
+  });
+
+  // When Region changes -> load Communities
+  $("#region").on("change", function () {
+    let ids = $(this).val();
+    if (ids && ids.length > 0) {
+      populateDropdown(
+        "/reports/dependent-dropdown/",
+        { region_ids: ids.join(",") },
+        "community"
+      );
+    } else {
+      $("#community").prop("disabled", true).empty().append(new Option("Select Community", ""));
+    }
+  });
+});
+
+
   function performSearch(page = 1) {
     // Show loading skeleton
     showSkeleton(5);

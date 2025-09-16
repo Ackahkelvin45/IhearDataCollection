@@ -369,7 +369,7 @@
     // Function to update the UI with the fetched data
     function updateDashboard(data) {
       if (!data) return;
-      
+
       // Update basic stats
       document.getElementById('totalRecordings').textContent = data.basic_stats.total_recordings;
       document.getElementById('userRecordings').textContent = data.basic_stats.user_recordings;
@@ -382,7 +382,7 @@
       // Update class hours cards
       const classHoursContainer = document.getElementById('classHoursContainer');
       classHoursContainer.innerHTML = '';
-      
+
       if (data.class_hours && data.class_hours.length > 0) {
         data.class_hours.forEach(item => {
           const cardHtml = `
@@ -840,15 +840,15 @@
       // Show loading skeleton
       document.getElementById('loadingSkeleton').classList.remove('hidden');
       document.getElementById('dashboardContent').classList.add('hidden');
-      
+
       // Fetch data from API
       const data = await fetchDashboardData();
-      
+
       if (data) {
         // Hide loading skeleton and show content
         document.getElementById('loadingSkeleton').classList.add('hidden');
         document.getElementById('dashboardContent').classList.remove('hidden');
-        
+
         // Update the UI with the fetched data
         updateDashboard(data);
       }
