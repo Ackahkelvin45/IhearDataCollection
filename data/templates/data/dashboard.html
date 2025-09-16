@@ -260,16 +260,16 @@
           <div class="flex-none w-full max-w-full px-3">
             <div class="relative flex flex-col min-w-0 mb-6 break-words bg-white border-0 border-transparent border-solid shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
               <div class="p-6 pb-0 mb-0 border-b-0 border-b-solid rounded-t-2xl border-b-transparent">
-                <h6 class="dark:text-white">Average parameters</h6>
+                <h6 class="dark:text-white">parameters</h6>
               </div>
 
               <div class="p-6 pb-0 mb-0 border-b-0 border-b-solid rounded-t-2xl border-b-transparent">
                 <div class="flex flex-wrap gap-2 mb-4">
-                  <button id="filter-category" class="filter-btn active inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-white align-middle transition-all ease-in bg-blue-500 border border-blue-500 border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-600 hover:border-blue-600 tracking-tight-rem" data-filter="category" onclick="handleFilterClick('category')">Categories</button>
-                  <button id="filter-class" class="filter-btn inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-primary align-middle transition-all ease-in bg-transparent border border-primary border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-50 hover:border-blue-600 tracking-tight-rem" data-filter="class" onclick="handleFilterClick('class')">Classes</button>
-                  <button id="filter-subclass" class="filter-btn inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-primary align-middle transition-all ease-in bg-transparent border border-primary border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-50 hover:border-blue-600 tracking-tight-rem" data-filter="subclass" onclick="handleFilterClick('subclass')">Sub Classes</button>
-                  <button id="filter-region" class="filter-btn inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-primary align-middle transition-all ease-in bg-transparent border border-primary border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-50 hover:border-blue-600 tracking-tight-rem" data-filter="region" onclick="handleFilterClick('region')">Regions</button>
-                  <button id="filter-community" class="filter-btn inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-primary align-middle transition-all ease-in bg-transparent border border-primary border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-50 hover:border-blue-600 tracking-tight-rem" data-filter="community" onclick="handleFilterClick('community')">Communities</button>
+                  <button id="filter-category" class="filter-btn mr-2  active inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-white align-middle transition-all ease-in bg-blue-500 border border-blue-500 border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-600 hover:border-blue-600 tracking-tight-rem" data-filter="category" onclick="handleFilterClick('category')">Categories</button>
+                  <button id="filter-class" class="filter-btn  mr-2  inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-primary align-middle transition-all ease-in bg-transparent border border-primary border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-50 hover:border-blue-600 tracking-tight-rem" data-filter="class" onclick="handleFilterClick('class')">Classes</button>
+                  <button id="filter-subclass" class="filter-btn  mr-2  inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-primary align-middle transition-all ease-in bg-transparent border border-primary border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-50 hover:border-blue-600 tracking-tight-rem" data-filter="subclass" onclick="handleFilterClick('subclass')">Sub Classes</button>
+                  <button id="filter-region" class="filter-btn  mr-2  inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-primary align-middle transition-all ease-in bg-transparent border border-primary border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-50 hover:border-blue-600 tracking-tight-rem" data-filter="region" onclick="handleFilterClick('region')">Regions</button>
+                  <button id="filter-community" class="filter-btn  mr-2  inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-primary align-middle transition-all ease-in bg-transparent border border-primary border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-50 hover:border-blue-600 tracking-tight-rem" data-filter="community" onclick="handleFilterClick('community')">Communities</button>
               </div>
               </div>
               <!-- Loading skeleton for table -->
@@ -297,7 +297,7 @@
                     <thead class="align-bottom">
                       <tr>
                         <th class="px-6 py-3 font-bold text-left uppercase align-middle bg-transparent border-b border-collapse shadow-none dark:border-white/40 dark:text-white text-xxs border-b-solid tracking-none whitespace-nowrap text-slate-400 opacity-70">Name</th>
-                        <th class="px-6 py-3 pl-2 font-bold text-left uppercase align-middle bg-transparent border-b border-collapse shadow-none dark:border-white/40 dark:text-white text-xxs border-b-solid tracking-none whitespace-nowrap text-slate-400 opacity-70">Average Count</th>
+                        <th class="px-6 py-3 pl-2 font-bold text-left uppercase align-middle bg-transparent border-b border-collapse shadow-none dark:border-white/40 dark:text-white text-xxs border-b-solid tracking-none whitespace-nowrap text-slate-400 opacity-70">Total Count</th>
                         <th class="px-6 py-3 pl-2 font-bold text-left uppercase align-middle bg-transparent border-b border-collapse shadow-none dark:border-white/40 dark:text-white text-xxs border-b-solid tracking-none whitespace-nowrap text-slate-400 opacity-70">Average Duration (s)</th>
                       </tr>
                     </thead>
