@@ -1,6 +1,49 @@
 {% extends 'datacollection/layout.html'%}
 
 {% block content %}
+<style>
+  /* Skeleton cell style */
+.skeleton-cell {
+  height: 20px;              /* adjust height to match your table row text */
+  border-radius: 0.375rem;   /* rounded corners */
+  background-color: #e5e7eb; /* Tailwind gray-300 */
+  width: 100%;               /* full width of cell */
+}
+
+/* Variant widths for variety */
+.skeleton-cell.short { width: 40%; }
+.skeleton-cell.medium { width: 60%; }
+.skeleton-cell.long { width: 80%; }
+/* Custom pulse shimmer */
+@keyframes pulse-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0
+  }
+}
+
+.skeleton-cell {
+  height: 20px;              
+  border-radius: 0.375rem;   /* rounded-md */
+  width: 100%;
+  background: linear-gradient(
+    90deg,
+    #e5e7eb 25%,
+    #f3f4f6 50%,
+    #e5e7eb 75%
+  ); /* Tailwind gray-300 / gray-100 shimmer */
+  background-size: 200% 100%;
+  animation: pulse-shimmer 1.5s ease-in-out infinite;
+}
+
+/* Variants for text-like widths */
+.skeleton-cell.short { width: 40%; }
+.skeleton-cell.medium { width: 60%; }
+.skeleton-cell.long { width: 80%; }
+
+  </style>
   <nav>
     <!-- breadcrumb -->
     <ol style="margin-bottom: 30px;" class="flex flex-wrap pt-1 mr-12 bg-transparent rounded-lg sm:mr-16">
@@ -155,8 +198,8 @@
         <div class="p-4">
           <h6 class="mb-4 font-semibold text-lg">Search Results</h6>
           <div id="stats" class="mb-4 text-base text-gray-700">
-  <span class="">Total Duration: <span id="totalDuration" class="font-bold">0</span> sec</span> |
-  <span>Average Duration: <span  class="font-bold" id="avgDuration">0</span class="font-bold"> sec</span>
+  <span class="">Total Duration: <span id="totalDuration" class="font-bold">0</span> hrs</span> |
+  <span>Average Duration: <span  class="font-bold" id="avgDuration">0</span class="font-bold"> secs</span>
 </div>
 
           <!-- Table -->
@@ -165,13 +208,13 @@
               <thead class="text-xs text-gray-700 uppercase bg-gray-50">
                 <tr>
                   <th scope="col" class="px-6 py-3">ID</th>
-                  <th scope="col" class="px-6 py-3" style="word-break: keep-all;">Data Type</th>
+                  <th scope="col" class="px-6 py-3" style="word-break:keep-all;white-space: nowrap;">Data Type</th>
                   <th scope="col" class="px-6 py-3">Category</th>
                   <th scope="col" class="px-6 py-3">Class</th>
-                  <th scope="col" class="px-6 py-3">Sub Class</th>
+                  <th scope="col" class="px-6 py-3" style="word-break:keep-all;white-space: nowrap;">Sub Class</th>
                   <th scope="col" class="px-6 py-3">Region</th>
                   <th scope="col" class="px-6 py-3">Community</th>
-                  <th scope="col" class="px-6 py-3">Recording Date</th>
+                  <th scope="col" class="px-6 py-3" style="word-break:keep-all;white-space: nowrap;">Recording Date</th>
                   <th scope="col" class="px-6 py-3">Actions</th>
                 </tr>
               </thead>
@@ -219,54 +262,55 @@
 <!-- Skeleton Loading Template (Hidden by default) -->
 <template id="skeletonTemplate">
   <tr class="bg-white border-b dark:bg-slate-850 dark:border-white/40">
-    <td class="p-2 align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
-      <div class="animate-pulse flex items-center">
-        <div class="h-4 bg-gray-300 rounded w-3/4"></div>
+    <td class="p-2">
+      <div class="animate-pulse">
+        <div class="skeleton-cell medium"></div>
       </div>
     </td>
-    <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
-      <div class="animate-pulse flex justify-center">
-        <div class="h-6 bg-gray-300 rounded w-1/2"></div>
+    <td class="p-2 text-center">
+      <div class="animate-pulse">
+        <div class="skeleton-cell short"></div>
       </div>
     </td>
-    <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
-      <div class="animate-pulse flex justify-center">
-        <div class="h-4 bg-gray-300 rounded w-2/3"></div>
+    <td class="p-2 text-center">
+      <div class="animate-pulse">
+        <div class="skeleton-cell long"></div>
       </div>
     </td>
-    <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
-      <div class="animate-pulse flex justify-center">
-        <div class="h-4 bg-gray-300 rounded w-1/2"></div>
+    <td class="p-2 text-center">
+      <div class="animate-pulse">
+        <div class="skeleton-cell medium"></div>
       </div>
     </td>
-    <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
-      <div class="animate-pulse flex justify-center">
-        <div class="h-4 bg-gray-300 rounded w-3/4"></div>
+    <td class="p-2 text-center">
+      <div class="animate-pulse">
+        <div class="skeleton-cell short"></div>
       </div>
     </td>
-    <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
-      <div class="animate-pulse flex justify-center">
-        <div class="h-4 bg-gray-300 rounded w-2/3"></div>
+    <td class="p-2 text-center">
+      <div class="animate-pulse">
+        <div class="skeleton-cell medium"></div>
       </div>
     </td>
-    <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
-      <div class="animate-pulse flex justify-center">
-        <div class="h-4 bg-gray-300 rounded w-1/2"></div>
+    <td class="p-2 text-center">
+      <div class="animate-pulse">
+        <div class="skeleton-cell long"></div>
       </div>
     </td>
-    <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
-      <div class="animate-pulse flex justify-center">
-        <div class="h-4 bg-gray-300 rounded w-3/4"></div>
+    <td class="p-2 text-center">
+      <div class="animate-pulse">
+        <div class="skeleton-cell medium"></div>
       </div>
     </td>
-    <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
-      <div class="animate-pulse flex justify-center space-x-2">
-        <div class="h-6 bg-gray-300 rounded w-12"></div>
-        <div class="h-6 bg-gray-300 rounded w-12"></div>
+    <td class="p-2 text-center">
+      <div class="animate-pulse flex gap-2 justify-center">
+        <div class="skeleton-cell short"></div>
+        <div class="skeleton-cell short"></div>
       </div>
     </td>
   </tr>
 </template>
+
 
 <!-- Include CSS for Flatpickr and Select2 -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
@@ -495,6 +539,7 @@ $(document).ready(function () {
     })
       .then(res => res.json())
       .then(data => {
+        console.log(data)
         hideSkeleton();
         updateResultsTable(data.results.results);
         updatePagination(data, page);

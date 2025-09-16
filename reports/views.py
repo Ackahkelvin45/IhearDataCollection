@@ -18,6 +18,8 @@ from rest_framework.views import APIView
 from data.models import NoiseDataset,AudioFeature
 from django.db.models import Avg, Sum, F, FloatField, ExpressionWrapper
 from  rest_framework.pagination import PageNumberPagination
+from django.db.models.functions import Round
+
 # Create your views here.
 
 
@@ -131,9 +133,13 @@ class ReporFilterView(APIView):
             except Exception:
                 pass
         durations = AudioFeature.objects.filter(noise_dataset__in=queryset).aggregate(
-            avg_duration=ExpressionWrapper(Avg("duration") / 3600.0, output_field=FloatField()),
-            total_duration=ExpressionWrapper(Sum("duration") / 3600.0, output_field=FloatField()),
+        avg_duration=Round(Avg("duration"), 2),  
+        total_duration=Round(
+        ExpressionWrapper(Sum("duration") / 3600.0, output_field=FloatField()), 2
+        ),  
         )
+
+        
 
         paginator=PageNumberPagination()
         page = paginator.paginate_queryset(queryset, request)
@@ -144,6 +150,7 @@ class ReporFilterView(APIView):
             "total_count": queryset.count(),
             "average_duration": durations["avg_duration"] or 0,
             "total_duration": durations["total_duration"] or 0,
+            "total_pages":  paginator.page.paginator.num_pages,
         }
         return paginator.get_paginated_response(response_data)
 

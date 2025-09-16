@@ -74,6 +74,9 @@ class DashboardView(APIView):
 
     def get(self, request):
         try:
+            # Get filter type from request
+            filter_type = request.GET.get("filter_type", "category")
+            
             # Basic stats
             total_recordings = NoiseDataset.objects.count()
             user_recordings = (
@@ -94,6 +97,15 @@ class DashboardView(APIView):
                 or 0
             )
             total_duration_hours = round(total_duration_seconds / 3600, 2)
+
+            # Calculate average duration per recording
+            avg_duration_seconds = (
+                AudioFeature.objects.aggregate(avg_duration=Avg("duration"))[
+                    "avg_duration"
+                ]
+                or 0
+            )
+            avg_duration_seconds = round(avg_duration_seconds, 2)
 
             # Duration by class in hours
             duration_by_class = (
@@ -183,6 +195,51 @@ class DashboardView(APIView):
                 audio_features["avg_percussive"],
             ]
 
+            # Average parameters data for different filters
+            def get_average_parameters(filter_type):
+                if filter_type == "category":
+                    queryset = NoiseDataset.objects.values("category__name").annotate(
+                        avg_count=Count("id"),
+                        avg_duration=Avg("audio_features__duration")
+                    ).order_by("-avg_count")
+                elif filter_type == "class":
+                    queryset = NoiseDataset.objects.values("class_name__name").annotate(
+                        avg_count=Count("id"),
+                        avg_duration=Avg("audio_features__duration")
+                    ).order_by("-avg_count")
+                elif filter_type == "subclass":
+                    queryset = NoiseDataset.objects.values("subclass__name").annotate(
+                        avg_count=Count("id"),
+                        avg_duration=Avg("audio_features__duration")
+                    ).order_by("-avg_count")
+                elif filter_type == "region":
+                    queryset = NoiseDataset.objects.values("region__name").annotate(
+                        avg_count=Count("id"),
+                        avg_duration=Avg("audio_features__duration")
+                    ).order_by("-avg_count")
+                elif filter_type == "community":
+                    queryset = NoiseDataset.objects.values("community__name").annotate(
+                        avg_count=Count("id"),
+                        avg_duration=Avg("audio_features__duration")
+                    ).order_by("-avg_count")
+                else:
+                    queryset = NoiseDataset.objects.values("category__name").annotate(
+                        avg_count=Count("id"),
+                        avg_duration=Avg("audio_features__duration")
+                    ).order_by("-avg_count")
+                
+                return [
+                    {
+                        "name": item.get(list(item.keys())[0]) or "Unknown",
+                        "avg_count": item["avg_count"],
+                        "avg_duration": round(item["avg_duration"] or 0, 2)
+                    }
+                    for item in queryset
+                ]
+
+            # Get average parameters data for different filters
+            average_parameters = get_average_parameters(filter_type)
+
             response_data = {
                 "basic_stats": {
                     "total_recordings": total_recordings,
@@ -192,8 +249,11 @@ class DashboardView(APIView):
                     "sub_classes_count": sub_classes_count,
                     "regions_count": regions_count,
                     "total_duration_hours": total_duration_hours,
+                    "avg_duration_seconds": avg_duration_seconds,
                 },
                 "class_hours": class_hours,
+                "average_parameters": average_parameters,
+                "current_filter": filter_type,
                 "charts": {
                     "category": {
                         "labels": category_labels,

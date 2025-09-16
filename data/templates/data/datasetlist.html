@@ -160,7 +160,7 @@
     <form method="GET" class="space-y-4">
       <div class="flex flex-wrap items-center gap-4">
         <!-- Search Input -->
-        <div  style="min-width: 90px;" class="flex-1 min-w-64">
+        <div  style="min-width: 150px;" class="flex-1 min-w-64">
           <div class="relative flex flex-wrap items-stretch w-full transition-all rounded-lg ease">
            <span class="text-sm ease leading-5.6 absolute z-50 -ml-px flex h-full items-center whitespace-nowrap rounded-lg rounded-tr-none rounded-br-none border border-r-0 border-transparent bg-transparent py-2 px-2.5 text-center font-normal text-slate-500 transition-all">
       <i class="fas fa-search" aria-hidden="true"></i>
@@ -176,7 +176,7 @@
         </div>
 
         <!-- Category Filter -->
-        <div class="min-w-40">
+        <div class="min-w-40  mr-2">
           <select name="category" class="focus:shadow-primary-outline text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
             <option value="">All Categories</option>
             {% for category in categories %}
@@ -188,7 +188,7 @@
         </div>
 
         <!-- Class Filter -->
-        <div>
+        <div class="mr-2">
           <select name="class" class="focus:shadow-primary-outline text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
             <option value="">All Classes</option>
             {% for class_name in classes %}
@@ -200,7 +200,7 @@
         </div>
 
         <!-- Subclass Filter -->
-        <div>
+        <div class="mr-2">
           <select name="subclass" class="focus:shadow-primary-outline text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
             <option value="">All Subclasses</option>
             {% for subclass in subclasses %}
@@ -212,7 +212,7 @@
         </div>
 
         <!-- Region Filter -->
-        <div>
+        <div class="mr-2">
           <select name="region" class="focus:shadow-primary-outline text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
             <option value="">All Regions</option>
             {% for region in regions %}
@@ -224,7 +224,7 @@
         </div>
 
         <!-- Community Filter -->
-        <div>
+        <div class="mr-2">
           <select name="community" class="focus:shadow-primary-outline text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
             <option value="">All Communities</option>
             {% for community in communities %}
@@ -236,7 +236,7 @@
         </div>
 
         <!-- Date Range Filter -->
-        <div>
+        <div class="mr-2">
           <select name="date_range" class="focus:shadow-primary-outline text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
             <option value="">All Time</option>
             <option value="today" {% if current_filters.date_range == 'today' %}selected{% endif %}>Today</option>
@@ -248,10 +248,10 @@
 
         <!-- Filter Buttons -->
         <div class="flex gap-2">
-          <button type="submit" class="filter-btn px-6 py-2.5  rounded-lg text-primary font-medium">
+          <button type="submit" class="filter-btn px-6 py-2.5 mr-2 border border-primary  rounded-lg text-primary font-medium">
             <i class="fas fa-filter mr-2"></i>Filter
           </button>
-          <a href="{% url 'data:datasetlist' %}" class="clear-btn px-6 py-2.5 rounded-lg text-red-600 font-medium inline-flex items-center">
+          <a href="{% url 'data:datasetlist' %}" class="clear-btn px-6 py-2.5  border border-red-600 rounded-lg text-red-600 font-medium inline-flex items-center">
             <i class="fas fa-times mr-2"></i>Clear
           </a>
         </div>
