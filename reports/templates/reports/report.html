@@ -25,7 +25,7 @@
 }
 
 .skeleton-cell {
-  height: 20px;              
+  height: 20px;
   border-radius: 0.375rem;   /* rounded-md */
   width: 100%;
   background: linear-gradient(
@@ -139,7 +139,7 @@
                   <option value="{{ time.id }}">{{ time.name }}</option>
                 {% endfor %}
 
-                </select> 
+                </select>
             </div>
           </div>
 
@@ -194,7 +194,7 @@
     <div class="w-full max-w-full">
       <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl
                   dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
-        
+
         <div class="p-4">
           <h6 class="mb-4 font-semibold text-lg">Search Results</h6>
           <div id="stats" class="mb-4 text-base text-gray-700">
@@ -232,7 +232,7 @@
           <!-- Pagination -->
           <div class="flex items-center justify-between mt-4">
             <span class="text-sm text-gray-700">
-              Showing <span class="font-medium">0</span> to <span class="font-medium">0</span> 
+              Showing <span class="font-medium">0</span> to <span class="font-medium">0</span>
               of <span class="font-medium">0</span> results
             </span>
             <nav aria-label="Pagination">
@@ -404,16 +404,16 @@ document.addEventListener("DOMContentLoaded", function () {
   function showSkeleton(rows = 5) {
     const tbody = document.getElementById("resultsTableBody");
     const skeletonTemplate = document.getElementById("skeletonTemplate");
-    
+
     // Clear existing content
     tbody.innerHTML = '';
-    
+
     // Add skeleton rows
     for (let i = 0; i < rows; i++) {
       const clone = skeletonTemplate.content.cloneNode(true);
       tbody.appendChild(clone);
     }
-    
+
     isLoading = true;
   }
 
@@ -515,7 +515,7 @@ $(document).ready(function () {
   function performSearch(page = 1) {
     // Show loading skeleton
     showSkeleton(5);
-    
+
     const searchParams = {
       datatypes: $("#datatype").val() || [],
       categories: $("#category").val() || [],
@@ -624,8 +624,8 @@ $(document).ready(function () {
     const end = Math.min(start + pageSize - 1, total);
 
     document.querySelector(".text-sm.text-gray-700").innerHTML = `
-      Showing <span class="font-medium">${start}</span> to 
-      <span class="font-medium">${end}</span> of 
+      Showing <span class="font-medium">${start}</span> to
+      <span class="font-medium">${end}</span> of
       <span class="font-medium">${total}</span> results
     `;
 

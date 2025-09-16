@@ -309,7 +309,7 @@
               </div>
             </div>
           </div>
-       
+
 
       <div class="w-full px-3 mb-6 lg:mb-0 lg:w-1/2 lg:flex-none">
         <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
@@ -325,7 +325,7 @@
         </div>
       </div>
 
-      
+
 
       <!-- Bar Chart: Recordings by Region -->
       <div class="w-full px-3 lg:w-1/2 lg:flex-none">
@@ -957,10 +957,10 @@
 
       data.forEach((item, index) => {
         const row = document.createElement('tr');
-        row.className = index === data.length - 1 
+        row.className = index === data.length - 1
           ? 'p-2 align-middle bg-transparent border-b-0 whitespace-nowrap shadow-transparent'
           : 'p-2 align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent';
-        
+
         row.innerHTML = `
           <td class="p-2 align-middle bg-transparent ${index === data.length - 1 ? 'border-b-0' : 'border-b dark:border-white/40'} whitespace-nowrap shadow-transparent">
             <div class="flex px-2 py-1">
@@ -1044,12 +1044,12 @@
       console.log('=== SETTING UP FILTER BUTTONS ===');
       const filterButtons = document.querySelectorAll('.filter-btn');
       console.log('Found buttons:', filterButtons.length);
-      
+
       if (filterButtons.length === 0) {
         console.error('No filter buttons found!');
         return;
       }
-      
+
       filterButtons.forEach((button, index) => {
         console.log(`Setting up button ${index}:`, button.id, button.getAttribute('data-filter'));
         button.addEventListener('click', function(e) {
@@ -1057,13 +1057,13 @@
           e.preventDefault();
           const filterType = this.getAttribute('data-filter');
           console.log('Filter type:', filterType);
-          
+
           // Add visual feedback
           this.style.transform = 'scale(0.95)';
           setTimeout(() => {
             this.style.transform = 'scale(1)';
           }, 150);
-          
+
           console.log('Calling fetchFilteredData...');
           fetchFilteredData(filterType);
         });
@@ -1081,13 +1081,13 @@
           e.preventDefault();
           const filterType = e.target.getAttribute('data-filter');
           console.log('Event delegation filter type:', filterType);
-          
+
           // Add visual feedback
           e.target.style.transform = 'scale(0.95)';
           setTimeout(() => {
             e.target.style.transform = 'scale(1)';
           }, 150);
-          
+
           fetchFilteredData(filterType);
         }
       });
@@ -1110,7 +1110,7 @@
 
         // Update the UI with the fetched data
         updateDashboard(data);
-        
+
         // Setup filter buttons after initial load
         console.log('=== INITIALIZING FILTER BUTTONS ===');
         // Add a small delay to ensure DOM is fully rendered
@@ -1118,7 +1118,7 @@
           console.log('Setting up filter buttons after delay...');
           setupFilterButtons();
         }, 100);
-        
+
         // Also set up event delegation as a fallback
         console.log('Setting up event delegation...');
         setupEventDelegation();
@@ -1130,7 +1130,7 @@
       console.log('=== DOM CONTENT LOADED ===');
       initDashboard();
     });
-    
+
     // Also try immediate setup as a test
     console.log('=== SCRIPT LOADED ===');
     setTimeout(() => {

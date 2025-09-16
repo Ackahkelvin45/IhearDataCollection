@@ -76,7 +76,7 @@ class DashboardView(APIView):
         try:
             # Get filter type from request
             filter_type = request.GET.get("filter_type", "category")
-            
+
             # Basic stats
             total_recordings = NoiseDataset.objects.count()
             user_recordings = (
@@ -198,41 +198,65 @@ class DashboardView(APIView):
             # Average parameters data for different filters
             def get_average_parameters(filter_type):
                 if filter_type == "category":
-                    queryset = NoiseDataset.objects.values("category__name").annotate(
-                        avg_count=Count("id"),
-                        avg_duration=Avg("audio_features__duration")
-                    ).order_by("-avg_count")
+                    queryset = (
+                        NoiseDataset.objects.values("category__name")
+                        .annotate(
+                            avg_count=Count("id"),
+                            avg_duration=Avg("audio_features__duration"),
+                        )
+                        .order_by("-avg_count")
+                    )
                 elif filter_type == "class":
-                    queryset = NoiseDataset.objects.values("class_name__name").annotate(
-                        avg_count=Count("id"),
-                        avg_duration=Avg("audio_features__duration")
-                    ).order_by("-avg_count")
+                    queryset = (
+                        NoiseDataset.objects.values("class_name__name")
+                        .annotate(
+                            avg_count=Count("id"),
+                            avg_duration=Avg("audio_features__duration"),
+                        )
+                        .order_by("-avg_count")
+                    )
                 elif filter_type == "subclass":
-                    queryset = NoiseDataset.objects.values("subclass__name").annotate(
-                        avg_count=Count("id"),
-                        avg_duration=Avg("audio_features__duration")
-                    ).order_by("-avg_count")
+                    queryset = (
+                        NoiseDataset.objects.values("subclass__name")
+                        .annotate(
+                            avg_count=Count("id"),
+                            avg_duration=Avg("audio_features__duration"),
+                        )
+                        .order_by("-avg_count")
+                    )
                 elif filter_type == "region":
-                    queryset = NoiseDataset.objects.values("region__name").annotate(
-                        avg_count=Count("id"),
-                        avg_duration=Avg("audio_features__duration")
-                    ).order_by("-avg_count")
+                    queryset = (
+                        NoiseDataset.objects.values("region__name")
+                        .annotate(
+                            avg_count=Count("id"),
+                            avg_duration=Avg("audio_features__duration"),
+                        )
+                        .order_by("-avg_count")
+                    )
                 elif filter_type == "community":
-                    queryset = NoiseDataset.objects.values("community__name").annotate(
-                        avg_count=Count("id"),
-                        avg_duration=Avg("audio_features__duration")
-                    ).order_by("-avg_count")
+                    queryset = (
+                        NoiseDataset.objects.values("community__name")
+                        .annotate(
+                            avg_count=Count("id"),
+                            avg_duration=Avg("audio_features__duration"),
+                        )
+                        .order_by("-avg_count")
+                    )
                 else:
-                    queryset = NoiseDataset.objects.values("category__name").annotate(
-                        avg_count=Count("id"),
-                        avg_duration=Avg("audio_features__duration")
-                    ).order_by("-avg_count")
-                
+                    queryset = (
+                        NoiseDataset.objects.values("category__name")
+                        .annotate(
+                            avg_count=Count("id"),
+                            avg_duration=Avg("audio_features__duration"),
+                        )
+                        .order_by("-avg_count")
+                    )
+
                 return [
                     {
                         "name": item.get(list(item.keys())[0]) or "Unknown",
                         "avg_count": item["avg_count"],
-                        "avg_duration": round(item["avg_duration"] or 0, 2)
+                        "avg_duration": round(item["avg_duration"] or 0, 2),
                     }
                     for item in queryset
                 ]
