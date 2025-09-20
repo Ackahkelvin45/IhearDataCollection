@@ -197,6 +197,17 @@ class UnifiedAudioDataChat {
         this.sessions = [];
         this.isLoading = false;
         
+        // Performance optimizations for streaming
+        this.scrollThrottle = null;
+        this.updateQueue = new Map();
+        this.isUpdating = false;
+        this._markdownCache = null;
+        this.streamingStats = {
+            messagesReceived: 0,
+            lastUpdate: Date.now(),
+            updateTimes: []
+        };
+        
         this.initializeEventListeners();
         this.loadSessions();
     }
@@ -473,9 +484,23 @@ class UnifiedAudioDataChat {
             assistant_response: '',
             created_at: new Date().toISOString(),
             status: 'processing',
-            visualizations: []
+            visualizations: [],
+            toolResponses: []
         };
         this.addMessageToUI(assistantMessage);
+        
+        // Ensure the message DOM is ready for streaming updates
+        setTimeout(() => {
+            const messageDiv = document.getElementById(`message-${assistantMessage.id}`);
+            if (messageDiv) {
+                const contentDiv = messageDiv.querySelector('.message-content');
+                if (contentDiv) {
+                    console.log(`✅ Assistant message ${assistantMessage.id} DOM ready for streaming`);
+                } else {
+                    console.warn(`⚠️ Content div not found for message ${assistantMessage.id}`);
+                }
+            }
+        }, 10);
         
         try {
             const response = await fetch(
@@ -510,6 +535,7 @@ class UnifiedAudioDataChat {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let messageCount = 0;
         
         try {
             while (true) {
@@ -521,54 +547,100 @@ class UnifiedAudioDataChat {
                 const lines = buffer.split('\n');
                 buffer = lines.pop();
                 
-                for (const line of lines) {
-                    if (line.trim()) {
-                        try {
-                            const message = JSON.parse(line);
-                            this.handleStreamMessage(message, assistantMessage);
-                        } catch (e) {
-                            console.warn('Failed to parse stream message:', line);
+                // Process lines in batches for better performance
+                const linesToProcess = lines.filter(line => line.trim());
+                
+                for (const line of linesToProcess) {
+                    try {
+                        const message = JSON.parse(line);
+                        messageCount++;
+                        
+                        // Handle message immediately for fast rendering
+                        this.handleStreamMessage(message, assistantMessage);
+                        
+                        // Yield control to browser every 10 messages for responsiveness
+                        if (messageCount % 10 === 0) {
+                            await new Promise(resolve => setTimeout(resolve, 0));
                         }
+                        
+                    } catch (e) {
+                        console.warn('Failed to parse stream message:', line, e);
                     }
                 }
             }
         } catch (error) {
             console.error('Streaming error:', error);
+            this.updateMessageStatus(assistantMessage.id, 'failed');
         }
     }
     
     handleStreamMessage(message, assistantMessage) {
         const { action, data } = message;
         
+        // Skip null/undefined data
+        if (data === null || data === undefined) {
+            return;
+        }
+        
         switch (action) {
             case 'tool_response':
                 // Store tool responses for chart data extraction
                 assistantMessage.toolResponses = assistantMessage.toolResponses || [];
                 assistantMessage.toolResponses.push(data);
+                
+                // Show a subtle indicator that tools are working
+                this.showToolActivity(assistantMessage.id);
                 break;
                 
             case 'llm':
+                // Performance tracking
+                const startTime = performance.now();
+                this.streamingStats.messagesReceived++;
+                
+                // Accumulate the response
+                if (!assistantMessage.assistant_response) {
+                    assistantMessage.assistant_response = '';
+                }
                 assistantMessage.assistant_response += data;
-                // Immediately update the UI with each piece of streaming data
+                
+                // Update UI immediately for fast rendering
                 this.updateMessageContent(assistantMessage.id, assistantMessage.assistant_response);
+                
+                // Track performance
+                const updateTime = performance.now() - startTime;
+                this.streamingStats.updateTimes.push(updateTime);
+                this.streamingStats.lastUpdate = Date.now();
+                
+                // Log performance if updates are slow
+                if (updateTime > 50) {
+                    console.warn(`Slow streaming update: ${updateTime.toFixed(2)}ms for message ${assistantMessage.id}`);
+                }
                 break;
                 
             case 'visualization':
                 assistantMessage.visualizations = assistantMessage.visualizations || [];
                 assistantMessage.visualizations.push(data);
-                // Pass tool responses to extract actual data
+                
+                // Add visualization immediately
                 this.addVisualizationToMessage(assistantMessage.id, data, assistantMessage.toolResponses);
                 break;
                 
             case 'completed':
                 this.updateMessageStatus(assistantMessage.id, 'completed');
-                this.loadSessions(); // Refresh sessions list
+                this.hideToolActivity(assistantMessage.id);
+                
+                // Refresh sessions list asynchronously to avoid blocking
+                setTimeout(() => this.loadSessions(), 100);
                 break;
                 
             case 'error':
                 console.error('Stream error:', data);
                 this.updateMessageStatus(assistantMessage.id, 'failed');
+                this.hideToolActivity(assistantMessage.id);
                 break;
+                
+            default:
+                console.debug('Unknown stream action:', action, data);
         }
     }
     
@@ -655,25 +727,56 @@ class UnifiedAudioDataChat {
 
     updateMessageContent(messageId, content) {
         const messageDiv = document.getElementById(`message-${messageId}`);
-        if (messageDiv) {
-            // Find the message-content div in the new structure
-            const contentDiv = messageDiv.querySelector('.message-content');
-            if (contentDiv) {
-                // Immediately display the content as it streams in
-                contentDiv.innerHTML = this.formatMarkdown(content);
-                
-                // Ensure the message container maintains its styling
-                const messageContainer = contentDiv.closest('div[style*="background-color:#ffffff"]');
-                if (messageContainer) {
-                    // Maintain consistent styling during streaming
-                    messageContainer.style.wordWrap = 'break-word';
-                    messageContainer.style.overflowWrap = 'break-word';
-                    messageContainer.style.maxWidth = '100%';
-                }
-                
-                // Auto-scroll to show new content
-                this.scrollToBottom();
+        if (!messageDiv) {
+            console.warn(`Message div not found: message-${messageId}`);
+            return;
+        }
+
+        // Try multiple selectors to find the content div
+        let contentDiv = messageDiv.querySelector('.message-content');
+        
+        if (!contentDiv) {
+            // Fallback: look for any div that might contain the content
+            contentDiv = messageDiv.querySelector('div > div > div > div');
+        }
+        
+        if (!contentDiv) {
+            // Last resort: create the content structure if it doesn't exist
+            const messageContainer = messageDiv.querySelector('div > div > div');
+            if (messageContainer) {
+                contentDiv = document.createElement('div');
+                contentDiv.className = 'message-content';
+                messageContainer.innerHTML = '';
+                messageContainer.appendChild(contentDiv);
             }
+        }
+
+        if (contentDiv) {
+            // Use requestAnimationFrame for smooth updates
+            requestAnimationFrame(() => {
+                try {
+                    // Immediately display the content as it streams in
+                    contentDiv.innerHTML = this.formatMarkdown(content);
+                    
+                    // Ensure the message container maintains its styling
+                    const messageContainer = contentDiv.closest('div[style*="background-color:#ffffff"]');
+                    if (messageContainer) {
+                        // Maintain consistent styling during streaming
+                        messageContainer.style.wordWrap = 'break-word';
+                        messageContainer.style.overflowWrap = 'break-word';
+                        messageContainer.style.maxWidth = '100%';
+                    }
+                    
+                    // Auto-scroll to show new content (throttled)
+                    this.throttledScrollToBottom();
+                } catch (error) {
+                    console.error('Error updating message content:', error);
+                    // Fallback: just set text content
+                    contentDiv.textContent = content;
+                }
+            });
+        } else {
+            console.error(`Could not find content div for message ${messageId}`);
         }
     }
     
@@ -1030,11 +1133,49 @@ class UnifiedAudioDataChat {
     
     scrollToBottom() {
         const container = document.getElementById('chatContainer');
-        // Use smooth scrolling for better UX during streaming
-        container.scrollTo({
-            top: container.scrollHeight,
-            behavior: 'smooth'
-        });
+        if (container) {
+            container.scrollTop = container.scrollHeight;
+        }
+    }
+    
+    throttledScrollToBottom() {
+        // Throttle scrolling for better performance during rapid streaming
+        if (this.scrollThrottle) {
+            clearTimeout(this.scrollThrottle);
+        }
+        
+        this.scrollThrottle = setTimeout(() => {
+            this.scrollToBottom();
+        }, 16); // ~60fps
+    }
+    
+    showToolActivity(messageId) {
+        // Show a subtle indicator that AI tools are working
+        const messageDiv = document.getElementById(`message-${messageId}`);
+        if (messageDiv) {
+            let indicator = messageDiv.querySelector('.tool-activity-indicator');
+            if (!indicator) {
+                indicator = document.createElement('div');
+                indicator.className = 'tool-activity-indicator';
+                indicator.innerHTML = '<div style="font-size:0.75rem; color:#6b7280; margin-top:0.25rem;"><span>🔧</span> Analyzing data...</div>';
+                
+                const contentContainer = messageDiv.querySelector('.message-content');
+                if (contentContainer && contentContainer.parentNode) {
+                    contentContainer.parentNode.appendChild(indicator);
+                }
+            }
+        }
+    }
+    
+    hideToolActivity(messageId) {
+        // Hide the tool activity indicator
+        const messageDiv = document.getElementById(`message-${messageId}`);
+        if (messageDiv) {
+            const indicator = messageDiv.querySelector('.tool-activity-indicator');
+            if (indicator) {
+                indicator.remove();
+            }
+        }
     }
     
     setSendButtonLoading(loading) {
@@ -1107,50 +1248,88 @@ class UnifiedAudioDataChat {
     }
     
     formatMarkdown(text) {
-        // Enhanced markdown formatting for better display
+        // Fast markdown formatting optimized for streaming
+        if (!text || typeof text !== 'string') {
+            return '';
+        }
+        
+        // Cache for performance during streaming
+        if (this._markdownCache && this._markdownCache.input === text) {
+            return this._markdownCache.output;
+        }
+        
         let formattedText = text;
         
-        // Remove chart configuration JSON blocks (they're handled by visualizations)
-        formattedText = formattedText.replace(/```json\s*\{\s*"recommended_chart"[\s\S]*?```/g, '');
-        formattedText = formattedText.replace(/```json\s*\{\s*"type":\s*"pie"[\s\S]*?```/g, '');
-        formattedText = formattedText.replace(/```json\s*\{\s*"type":\s*"bar"[\s\S]*?```/g, '');
-        formattedText = formattedText.replace(/```json\s*\{\s*"type":\s*"line"[\s\S]*?```/g, '');
+        try {
+            // Remove chart configuration JSON blocks (they're handled by visualizations)
+            formattedText = formattedText.replace(/```json\s*\{\s*"recommended_chart"[\s\S]*?```/g, '');
+            formattedText = formattedText.replace(/```json\s*\{\s*"type":\s*"(pie|bar|line)"[\s\S]*?```/g, '');
+            
+            // Remove chart reasoning sections
+            formattedText = formattedText.replace(/### Recommended Visualization:[\s\S]*?(?=###|$)/g, '');
+            formattedText = formattedText.replace(/#### [^:]*Chart Configuration:[\s\S]*?(?=###|####|$)/g, '');
+            
+            // Fast replacements for common markdown patterns
+            const replacements = [
+                // Code blocks
+                [/```(\w+)?\n([\s\S]*?)```/g, '<pre class="bg-gray-100 p-4 rounded-lg overflow-x-auto"><code class="language-$1">$2</code></pre>'],
+                // Inline code
+                [/`([^`]+)`/g, '<code class="bg-gray-100 px-2 py-1 rounded text-sm font-mono">$1</code>'],
+                // Headers (most common first)
+                [/^###\s+(.+)$/gm, '<h3 class="text-xl font-semibold mt-6 mb-3 text-gray-800">$1</h3>'],
+                [/^##\s+(.+)$/gm, '<h2 class="text-2xl font-bold mt-8 mb-4 text-gray-800">$1</h2>'],
+                [/^####\s+(.+)$/gm, '<h4 class="text-lg font-semibold mt-4 mb-2 text-gray-800">$1</h4>'],
+                // Bold/italic
+                [/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>'],
+                [/\*(.*?)\*/g, '<em class="italic text-gray-700">$1</em>'],
+                // Lists
+                [/^-\s+(.+)$/gm, '<li class="ml-4 mb-1">• $1</li>'],
+                // Line breaks
+                [/\n\n/g, '</p><p class="mb-4">'],
+                [/\n/g, '<br>']
+            ];
+            
+            // Apply replacements efficiently
+            for (const [pattern, replacement] of replacements) {
+                formattedText = formattedText.replace(pattern, replacement);
+            }
+            
+            // Wrap in paragraphs and cleanup
+            if (!formattedText.includes('<h') && !formattedText.includes('<pre')) {
+                formattedText = `<p class="mb-4">${formattedText}</p>`;
+            }
+            
+            // Clean up empty tags
+            formattedText = formattedText.replace(/<p class="mb-4"><\/p>/g, '');
+            
+        } catch (error) {
+            console.warn('Markdown formatting error:', error);
+            // Fallback: just escape HTML and preserve line breaks
+            formattedText = text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+        }
         
-        // Remove chart reasoning sections
-        formattedText = formattedText.replace(/### Recommended Visualization:[\s\S]*?(?=###|$)/g, '');
-        formattedText = formattedText.replace(/#### [^:]*Chart Configuration:[\s\S]*?(?=###|####|$)/g, '');
-        formattedText = formattedText.replace(/Here's the template for creating[\s\S]*?```/g, '');
+        // Cache the result for repeated calls during streaming
+        this._markdownCache = { input: text, output: formattedText };
         
-        return formattedText
-            // Code blocks
-            .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre class="bg-gray-100 p-4 rounded-lg overflow-x-auto"><code class="language-$1">$2</code></pre>')
-            // Inline code
-            .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-2 py-1 rounded text-sm font-mono">$1</code>')
-            // Headers
-            .replace(/^####\s+(.+)$/gm, '<h4 class="text-lg font-semibold mt-4 mb-2 text-gray-800">$1</h4>')
-            .replace(/^###\s+(.+)$/gm, '<h3 class="text-xl font-semibold mt-6 mb-3 text-gray-800">$1</h3>')
-            .replace(/^##\s+(.+)$/gm, '<h2 class="text-2xl font-bold mt-8 mb-4 text-gray-800">$1</h2>')
-            .replace(/^#\s+(.+)$/gm, '<h1 class="text-3xl font-bold mt-8 mb-4 text-gray-800">$1</h1>')
-            // Bold text
-            .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>')
-            // Italic text
-            .replace(/\*(.*?)\*/g, '<em class="italic text-gray-700">$1</em>')
-            // Lists
-            .replace(/^-\s+(.+)$/gm, '<li class="ml-4 mb-1">• $1</li>')
-            // Line breaks
-            .replace(/\n\n/g, '</p><p class="mb-4">')
-            .replace(/\n/g, '<br>')
-            // Wrap in paragraphs
-            .replace(/^(?!<[^>]+>)(.+)$/gm, '<p class="mb-4">$1</p>')
-            // Clean up empty paragraphs
-            .replace(/<p class="mb-4"><\/p>/g, '')
-            // Clean up nested paragraphs
-            .replace(/<p class="mb-4">(<h[1-6][^>]*>.*?<\/h[1-6]>)<\/p>/g, '$1')
-            .replace(/<p class="mb-4">(<pre[^>]*>.*?<\/pre>)<\/p>/g, '$1')
-            .replace(/<p class="mb-4">(<li[^>]*>.*?<\/li>)<\/p>/g, '$1')
-            // Clean up extra whitespace
-            .replace(/\s*<br>\s*<br>\s*/g, '<br>')
-            .replace(/<p class="mb-4">\s*<\/p>/g, '');
+        return formattedText;
+    }
+    
+    getStreamingStats() {
+        const stats = this.streamingStats;
+        const avgUpdateTime = stats.updateTimes.length > 0 
+            ? stats.updateTimes.reduce((a, b) => a + b, 0) / stats.updateTimes.length 
+            : 0;
+        
+        return {
+            messagesReceived: stats.messagesReceived,
+            averageUpdateTime: avgUpdateTime.toFixed(2) + 'ms',
+            lastUpdate: new Date(stats.lastUpdate).toLocaleTimeString(),
+            totalUpdates: stats.updateTimes.length
+        };
+    }
+    
+    debugStreamingPerformance() {
+        console.log('🚀 Streaming Performance Stats:', this.getStreamingStats());
     }
 }
 
@@ -1159,9 +1338,47 @@ function startChatWithSuggestion(suggestion) {
     window.unifiedChat.createSessionAndSendMessage(suggestion);
 }
 
+// Debug function for streaming issues
+function debugStreamingDOM() {
+    const chat = window.unifiedChat;
+    if (chat) {
+        console.log('🔍 Streaming Debug Info:');
+        console.log('Current session:', chat.currentSession);
+        console.log('Is loading:', chat.isLoading);
+        console.log('Performance stats:', chat.getStreamingStats());
+        
+        // Check DOM structure
+        const messagesContainer = document.getElementById('messagesContainer');
+        console.log('Messages container:', messagesContainer);
+        console.log('Message count in DOM:', messagesContainer?.children.length || 0);
+        
+        // Check for message divs
+        const messageDivs = document.querySelectorAll('[id^="message-"]');
+        console.log('Message divs found:', messageDivs.length);
+        
+        messageDivs.forEach((div, index) => {
+            const contentDiv = div.querySelector('.message-content');
+            console.log(`Message ${index + 1}:`, {
+                id: div.id,
+                hasContentDiv: !!contentDiv,
+                contentLength: contentDiv?.textContent?.length || 0
+            });
+        });
+    }
+}
+
+// Add to global scope for debugging
+window.debugStreamingDOM = debugStreamingDOM;
+
 // Initialize the unified chat when the page loads
 document.addEventListener('DOMContentLoaded', () => {
     window.unifiedChat = new UnifiedAudioDataChat();
+    
+    // Add global debugging
+    window.debugStreaming = () => window.unifiedChat.debugStreamingPerformance();
+    
+    console.log('🎵 Unified Audio Data Chat initialized');
+    console.log('💡 Debug commands available: debugStreamingDOM(), debugStreaming()');
 });
 </script>
 
@@ -1236,13 +1453,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 }
 
-/* Message content styling for streaming */
+/* Message content styling for streaming - optimized for performance */
 .message-content {
     word-wrap: break-word;
     overflow-wrap: break-word;
     max-width: 100%;
     white-space: pre-wrap;
     line-height: 1.6;
+    /* GPU acceleration for smoother updates */
+    transform: translateZ(0);
+    will-change: contents;
+    /* Optimize text rendering */
+    text-rendering: optimizeSpeed;
 }
 
 /* Ensure messages don't break layout during streaming */
