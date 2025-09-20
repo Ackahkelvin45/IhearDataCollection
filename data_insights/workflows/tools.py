@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from django.db.models import Q
 import uuid
 import logging
+import os
 from langchain_core.tools import BaseTool
 from django.utils import timezone
 from datetime import timedelta
@@ -53,7 +54,8 @@ class NoiseDatasetSearchInput(BaseModel):
                 "class_name",
                 "microphone_type",
                 "subclass",
-            ]
+            ],
+            Any,
         ]
     ] = Field(default_factory=dict, description="Filter criteria for noise dataset")
 
@@ -168,27 +170,22 @@ class NoiseDatasetSearchTool(BaseTool):
                 queryset = queryset.filter(name__icontains=filter_criteria["name"])
 
             if "location" in filter_criteria:
+                # Search in region and community names
                 queryset = queryset.filter(
-                    location__icontains=filter_criteria["location"]
+                    models.Q(region__name__icontains=filter_criteria["location"]) |
+                    models.Q(community__name__icontains=filter_criteria["location"])
                 )
 
-            if "noise_level_min" in filter_criteria:
-                queryset = queryset.filter(
-                    noise_level__gte=filter_criteria["noise_level_min"]
-                )
-
-            if "noise_level_max" in filter_criteria:
-                queryset = queryset.filter(
-                    noise_level__lte=filter_criteria["noise_level_max"]
-                )
+        # Note: noise_level filtering would need to be done through NoiseAnalysis model
+        # For now, we'll skip this filtering until we implement proper joins
 
             if "date_from" in filter_criteria:
                 queryset = queryset.filter(
-                    recorded_at__gte=filter_criteria["date_from"]
+                    recording_date__gte=filter_criteria["date_from"]
                 )
 
             if "date_to" in filter_criteria:
-                queryset = queryset.filter(recorded_at__lte=filter_criteria["date_to"])
+                queryset = queryset.filter(recording_date__lte=filter_criteria["date_to"])
 
             # Get total count
             total_count = queryset.count()
@@ -236,10 +233,23 @@ class NoiseDatasetSearchTool(BaseTool):
                     dataset_data = {
                         "id": dataset.id,
                         "name": dataset.name,
-                        "location": dataset.location,
-                        "noise_level": dataset.noise_level,
-                        "recorded_at": dataset.recorded_at,
+                        "region": dataset.region.name if dataset.region else None,
+                        "community": dataset.community.name if dataset.community else None,
+                        "category": dataset.category.name if dataset.category else None,
+                        "recording_date": dataset.recording_date,
+                        "recording_device": dataset.recording_device,
                     }
+                    
+                    # Add noise analysis data if available
+                    if hasattr(dataset, 'noise_analysis') and dataset.noise_analysis:
+                        analysis = dataset.noise_analysis
+                        dataset_data.update({
+                            "mean_db": analysis.mean_db,
+                            "max_db": analysis.max_db,
+                            "min_db": analysis.min_db,
+                            "dominant_frequency": analysis.dominant_frequency,
+                            "event_count": analysis.event_count,
+                        })
 
                     if include_features and hasattr(dataset, "features"):
                         features = dataset.features
@@ -375,10 +385,11 @@ class NoiseDetailTool(BaseTool):
             dataset_data = {
                 "id": dataset.id,
                 "name": dataset.name,
-                "location": getattr(dataset, "location", None),
-                "noise_level": getattr(dataset, "noise_level", None),
-                "recorded_at": getattr(dataset, "recorded_at", None),
-                "duration": getattr(dataset, "duration", None),
+                "region": dataset.region.name if dataset.region else None,
+                "community": dataset.community.name if dataset.community else None,
+                "mean_db": getattr(dataset.noise_analysis, "mean_db", None) if hasattr(dataset, 'noise_analysis') and dataset.noise_analysis else None,
+                "recording_date": dataset.recording_date,
+                "recording_device": dataset.recording_device,
             }
 
             # Include metadata
@@ -441,7 +452,10 @@ class NoiseDetailTool(BaseTool):
             return {"error": f"Failed to get noise dataset details: {str(e)}"}
 
 
-llm = ChatOpenAI(model=AGENT_CONFIG.get("MODEL", "gpt-4"))
+llm = ChatOpenAI(
+    model=AGENT_CONFIG.get("MODEL", "gpt-4"),
+    api_key=os.getenv("OPENAI_API_KEY")
+)
 
 allowed_tables = SECURITY_CONFIG.get("DEFAULT_ALLOWED_TABLES", [])
 
@@ -476,15 +490,486 @@ class DataAnalysisTool(BaseTool):
     def _run(self, query: str, **kwargs) -> Dict[str, Any]:
         try:
             response = self.agent.invoke({"messages": [HumanMessage(content=query)]})
-            msg = response["messages"][-1].content
+            
+            # Safely extract message content
+            if response and "messages" in response and response["messages"]:
+                last_message = response["messages"][-1]
+                # Handle different message types safely
+                if hasattr(last_message, 'content'):
+                    msg = str(last_message.content) if last_message.content else ""
+                else:
+                    msg = str(last_message) if last_message else ""
+            else:
+                msg = "No response received"
 
-            if "no results found" in str(msg).lower():
+            if "no results found" in msg.lower():
                 return {"message": "No results found"}
-            if "error" in str(msg).lower():
+            if "error" in msg.lower():
                 return {"message": "Error in data analysis tool"}
 
             return {"message": msg}
 
         except Exception as e:
-            logger.error(f"Error in data analysis tool: {e}")
+            # Ensure error message is JSON serializable
+            try:
+                error_str = str(e) if e else "Unknown error occurred"
+            except Exception:
+                error_str = "Error occurred but could not be converted to string"
+            logger.error(f"Error in data analysis tool: {error_str}")
             return {"message": "Error in data analysis tool"}
+
+
+class VisualizationAnalysisInput(BaseModel):
+    """Input for visualization analysis"""
+    query: str = Field(description="The user's query about data visualization")
+    data_summary: Optional[str] = Field(default=None, description="Summary of the data to be visualized")
+
+
+class VisualizationAnalysisTool(BaseTool):
+    """Tool for analyzing data and recommending the best visualization type"""
+    
+    name: str = "visualization_analysis"
+    description: str = """
+    Analyzes audio data and recommends the best visualization type for the given audio data and query.
+    Supports: pie chart, bar chart, line chart, heatmap, scatter plot, box plot, area chart.
+    Specializes in audio-specific visualizations like frequency analysis, decibel trends, and spectral characteristics.
+    Returns both the recommended chart type and a template for creating the visualization.
+    """
+    args_schema: Optional[type[BaseModel]] = VisualizationAnalysisInput
+
+    def _run(self, query: str, data_summary: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+        try:
+            # Analyze the query and data to determine the best visualization
+            analysis_prompt = f"""
+            Analyze the following audio data query and data to recommend the best visualization type:
+            
+            Query: {query}
+            Data Summary: {data_summary or "No data summary provided"}
+            
+            Available chart types for audio data:
+            - pie_chart: Best for showing proportions/percentages of audio categories, regions, or device types
+            - bar_chart: Best for comparing audio metrics across categories (decibel levels, frequency ranges, etc.)
+            - line_chart: Best for showing audio trends over time, frequency response curves, or decibel trends
+            - heatmap: Best for showing frequency correlations, spectral patterns, or geographic audio patterns
+            - scatter_plot: Best for showing relationships between audio variables (frequency vs amplitude, etc.)
+            - box_plot: Best for showing distribution of audio metrics (decibel levels, frequency ranges, etc.)
+            - area_chart: Best for showing cumulative audio energy or frequency spectrum analysis
+            
+            Audio-specific considerations:
+            - Frequency analysis often benefits from line charts or area charts
+            - Decibel level comparisons work well with bar charts or box plots
+            - Geographic audio data distribution works well with pie charts or heatmaps
+            - Spectral characteristics are best shown with line charts or heatmaps
+            - Audio feature correlations work well with scatter plots
+            
+            Return a JSON response with:
+            1. recommended_chart: The best chart type for this audio data
+            2. reasoning: Why this chart type is best for the audio data and analysis
+            3. chart_template: A template object for creating the visualization
+            4. data_requirements: What audio data fields are needed for this visualization
+            """
+            
+            # Use a simple LLM call to analyze and recommend
+            llm = ChatOpenAI(
+                model=AGENT_CONFIG.get("MODEL", "gpt-4o-mini"),
+                api_key=os.getenv("OPENAI_API_KEY")
+            )
+            response = llm.invoke([HumanMessage(content=analysis_prompt)])
+            
+            # Parse the response and create chart template
+            recommendation = self._parse_visualization_recommendation(response.content, query)
+            
+            chart_type = recommendation["recommended_chart"]
+            chart_template = self._generate_chart_template(chart_type)
+            
+            return {
+                "visualization_type": chart_type,
+                "visualization_name": self._get_visualization_name(chart_type),
+                "chart_template": chart_template,
+                "recommendation": recommendation,
+                "frontend_data": {
+                    "type": chart_type,
+                    "name": self._get_visualization_name(chart_type),
+                    "config": chart_template["config"],
+                    "data_structure": self._get_data_structure(chart_type),
+                    "description": recommendation.get("reasoning", "Audio data visualization")
+                },
+                "message": f"Recommended {self._get_visualization_name(chart_type)} for this data analysis"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in visualization analysis: {e}")
+            chart_type = "bar_chart"
+            chart_template = self._generate_chart_template(chart_type)
+            
+            return {
+                "visualization_type": chart_type,
+                "visualization_name": self._get_visualization_name(chart_type),
+                "chart_template": chart_template,
+                "recommendation": {
+                    "recommended_chart": chart_type,
+                    "reasoning": "Default recommendation due to analysis error",
+                    "data_requirements": ["category", "value"]
+                },
+                "frontend_data": {
+                    "type": chart_type,
+                    "name": self._get_visualization_name(chart_type),
+                    "config": chart_template["config"],
+                    "data_structure": self._get_data_structure(chart_type),
+                    "description": "Default bar chart for audio data visualization"
+                },
+                "message": "Error in visualization analysis, using default bar chart"
+            }
+    
+    def _parse_visualization_recommendation(self, llm_response: str, query: str) -> Dict[str, Any]:
+        """Parse LLM response and extract visualization recommendation"""
+        try:
+            # Audio-specific keyword-based analysis if JSON parsing fails
+            query_lower = query.lower()
+            
+            # Audio-specific keywords for pie charts
+            if any(word in query_lower for word in ["proportion", "percentage", "share", "part of", "distribution by", "breakdown by", "region", "category", "device type"]):
+                return {
+                    "recommended_chart": "pie_chart",
+                    "reasoning": "Query asks for proportions or distribution of audio categories/regions",
+                    "data_requirements": ["audio_category", "count_or_percentage"]
+                }
+            # Audio-specific keywords for line charts
+            elif any(word in query_lower for word in ["trend", "over time", "time series", "change over", "frequency response", "spectrum", "decibel trend", "audio level"]):
+                return {
+                    "recommended_chart": "line_chart",
+                    "reasoning": "Query asks for audio trends over time or frequency analysis",
+                    "data_requirements": ["time_or_frequency", "audio_value"]
+                }
+            # Audio-specific keywords for heatmaps
+            elif any(word in query_lower for word in ["correlation", "relationship", "pattern", "heat", "spectral", "frequency correlation", "geographic pattern"]):
+                return {
+                    "recommended_chart": "heatmap",
+                    "reasoning": "Query asks for audio correlations, spectral patterns, or geographic audio patterns",
+                    "data_requirements": ["x_axis", "y_axis", "audio_intensity"]
+                }
+            # Audio-specific keywords for box plots
+            elif any(word in query_lower for word in ["distribution", "outliers", "quartile", "median", "decibel level", "frequency range", "audio statistics"]):
+                return {
+                    "recommended_chart": "box_plot",
+                    "reasoning": "Query asks for distribution analysis of audio metrics",
+                    "data_requirements": ["audio_category", "numerical_audio_values"]
+                }
+            # Audio-specific keywords for scatter plots
+            elif any(word in query_lower for word in ["scatter", "relationship between", "correlation between", "frequency vs", "amplitude vs", "audio feature"]):
+                return {
+                    "recommended_chart": "scatter_plot",
+                    "reasoning": "Query asks for relationship between audio variables",
+                    "data_requirements": ["audio_variable_x", "audio_variable_y"]
+                }
+            # Audio-specific keywords for area charts
+            elif any(word in query_lower for word in ["cumulative", "total over", "area under", "energy", "spectrum analysis", "frequency spectrum"]):
+                return {
+                    "recommended_chart": "area_chart",
+                    "reasoning": "Query asks for cumulative audio energy or spectrum analysis",
+                    "data_requirements": ["frequency_or_time", "cumulative_audio_value"]
+                }
+            # Audio-specific keywords for bar charts
+            elif any(word in query_lower for word in ["compare", "comparison", "decibel", "audio level", "frequency", "acoustic", "noise level"]):
+                return {
+                    "recommended_chart": "bar_chart",
+                    "reasoning": "Query asks for comparison of audio metrics across categories",
+                    "data_requirements": ["audio_category", "audio_metric_value"]
+                }
+            else:
+                return {
+                    "recommended_chart": "bar_chart",
+                    "reasoning": "Default choice for general audio data comparisons",
+                    "data_requirements": ["audio_category", "audio_value"]
+                }
+        except Exception as e:
+            logger.error(f"Error parsing visualization recommendation: {e}")
+            return {
+                "recommended_chart": "bar_chart",
+                "reasoning": "Default recommendation due to parsing error",
+                "data_requirements": ["category", "value"]
+            }
+    
+    def _generate_chart_template(self, chart_type: str) -> Dict[str, Any]:
+        """Generate chart template based on chart type"""
+        templates = {
+            "pie_chart": {
+                "type": "pie",
+                "config": {
+                    "data": {
+                        "labels": [],
+                        "datasets": [{
+                            "data": [],
+                            "backgroundColor": [
+                                "#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0",
+                                "#9966FF", "#FF9F40", "#FF6384", "#C9CBCF"
+                            ]
+                        }]
+                    },
+                    "options": {
+                        "responsive": True,
+                        "plugins": {
+                            "legend": {"position": "bottom"},
+                            "title": {"display": True, "text": "Data Distribution"}
+                        }
+                    }
+                }
+            },
+            "bar_chart": {
+                "type": "bar",
+                "config": {
+                    "data": {
+                        "labels": [],
+                        "datasets": [{
+                            "label": "Values",
+                            "data": [],
+                            "backgroundColor": "#36A2EB",
+                            "borderColor": "#36A2EB",
+                            "borderWidth": 1
+                        }]
+                    },
+                    "options": {
+                        "responsive": True,
+                        "scales": {
+                            "y": {"beginAtZero": True}
+                        },
+                        "plugins": {
+                            "title": {"display": True, "text": "Data Comparison"}
+                        }
+                    }
+                }
+            },
+            "line_chart": {
+                "type": "line",
+                "config": {
+                    "data": {
+                        "labels": [],
+                        "datasets": [{
+                            "label": "Trend",
+                            "data": [],
+                            "borderColor": "#36A2EB",
+                            "backgroundColor": "rgba(54, 162, 235, 0.1)",
+                            "tension": 0.1
+                        }]
+                    },
+                    "options": {
+                        "responsive": True,
+                        "scales": {
+                            "y": {"beginAtZero": True}
+                        },
+                        "plugins": {
+                            "title": {"display": True, "text": "Trend Analysis"}
+                        }
+                    }
+                }
+            },
+            "heatmap": {
+                "type": "heatmap",
+                "config": {
+                    "data": {
+                        "datasets": [{
+                            "label": "Heatmap",
+                            "data": [],
+                            "backgroundColor": "rgba(54, 162, 235, 0.8)"
+                        }]
+                    },
+                    "options": {
+                        "responsive": True,
+                        "plugins": {
+                            "title": {"display": True, "text": "Data Patterns"}
+                        },
+                        "scales": {
+                            "x": {"type": "category"},
+                            "y": {"type": "category"}
+                        }
+                    }
+                }
+            },
+            "scatter_plot": {
+                "type": "scatter",
+                "config": {
+                    "data": {
+                        "datasets": [{
+                            "label": "Data Points",
+                            "data": [],
+                            "backgroundColor": "#36A2EB",
+                            "borderColor": "#36A2EB"
+                        }]
+                    },
+                    "options": {
+                        "responsive": True,
+                        "scales": {
+                            "x": {"type": "linear", "position": "bottom"},
+                            "y": {"type": "linear"}
+                        },
+                        "plugins": {
+                            "title": {"display": True, "text": "Relationship Analysis"}
+                        }
+                    }
+                }
+            },
+            "box_plot": {
+                "type": "boxplot",
+                "config": {
+                    "data": {
+                        "labels": [],
+                        "datasets": [{
+                            "label": "Distribution",
+                            "data": [],
+                            "backgroundColor": "rgba(54, 162, 235, 0.5)",
+                            "borderColor": "#36A2EB"
+                        }]
+                    },
+                    "options": {
+                        "responsive": True,
+                        "plugins": {
+                            "title": {"display": True, "text": "Data Distribution"}
+                        }
+                    }
+                }
+            },
+            "area_chart": {
+                "type": "line",
+                "config": {
+                    "data": {
+                        "labels": [],
+                        "datasets": [{
+                            "label": "Cumulative",
+                            "data": [],
+                            "borderColor": "#36A2EB",
+                            "backgroundColor": "rgba(54, 162, 235, 0.3)",
+                            "fill": True,
+                            "tension": 0.1
+                        }]
+                    },
+                    "options": {
+                        "responsive": True,
+                        "scales": {
+                            "y": {"beginAtZero": True}
+                        },
+                        "plugins": {
+                            "title": {"display": True, "text": "Cumulative Analysis"}
+                        }
+                    }
+                }
+            }
+        }
+        
+        return templates.get(chart_type, templates["bar_chart"])
+    
+    def _get_visualization_name(self, chart_type: str) -> str:
+        """Get human-readable name for chart type"""
+        names = {
+            "pie_chart": "Pie Chart",
+            "bar_chart": "Bar Chart", 
+            "line_chart": "Line Chart",
+            "heatmap": "Heatmap",
+            "scatter_plot": "Scatter Plot",
+            "box_plot": "Box Plot",
+            "area_chart": "Area Chart"
+        }
+        return names.get(chart_type, "Bar Chart")
+    
+    def _get_data_structure(self, chart_type: str) -> Dict[str, Any]:
+        """Get expected data structure for each chart type"""
+        structures = {
+            "pie_chart": {
+                "labels": "Array of category names",
+                "data": "Array of values corresponding to labels",
+                "description": "For showing proportions/percentages of audio categories"
+            },
+            "bar_chart": {
+                "labels": "Array of category names",
+                "data": "Array of values for each category",
+                "description": "For comparing audio metrics across categories"
+            },
+            "line_chart": {
+                "labels": "Array of time points or frequency values",
+                "data": "Array of values over time/frequency",
+                "description": "For showing audio trends over time or frequency analysis"
+            },
+            "heatmap": {
+                "x_labels": "Array of x-axis categories",
+                "y_labels": "Array of y-axis categories", 
+                "data": "2D array of intensity values",
+                "description": "For showing audio correlations and patterns"
+            },
+            "scatter_plot": {
+                "x_data": "Array of x-axis values",
+                "y_data": "Array of y-axis values",
+                "description": "For showing relationships between audio variables"
+            },
+            "box_plot": {
+                "labels": "Array of category names",
+                "data": "Array of arrays containing numerical values for each category",
+                "description": "For showing distribution of audio metrics"
+            },
+            "area_chart": {
+                "labels": "Array of time points or frequency values",
+                "data": "Array of cumulative values",
+                "description": "For showing cumulative audio energy or spectrum analysis"
+            }
+        }
+        return structures.get(chart_type, structures["bar_chart"])
+
+
+# Lazy initialization to avoid database connection at import time
+_agent_tools = None
+
+def get_agent_tools():
+    """Get agent tools with lazy initialization"""
+    global _agent_tools
+    if _agent_tools is None:
+        try:
+            _agent_tools = [
+    NoiseDatasetSearchTool(),
+    DataAnalysisTool(),
+                VisualizationAnalysisTool(),
+                AudioFeatureSearchTool(),
+                NoiseDetailTool(),
+            ]
+        except Exception as e:
+            logger.warning(f"Failed to initialize some tools: {e}")
+            # Fallback to tools that don't require database connection
+            _agent_tools = [
+                NoiseDatasetSearchTool(),
+                VisualizationAnalysisTool(),
+    AudioFeatureSearchTool(),
+    NoiseDetailTool(),
+]
+    return _agent_tools
+
+# For backward compatibility - use property to make it truly lazy
+class LazyAgentTools:
+    def __getitem__(self, index):
+        return get_agent_tools()[index]
+    
+    def __iter__(self):
+        return iter(get_agent_tools())
+    
+    def __len__(self):
+        return len(get_agent_tools())
+
+AGENT_TOOLS = LazyAgentTools()
+
+
+def get_tool_by_name(tool_name: str) -> Optional[BaseTool]:
+    """Get a tool by its name"""
+    for tool in get_agent_tools():
+        if tool.name == tool_name:
+            return tool
+    return None
+
+
+def get_all_tool_schemas() -> List[Dict[str, Any]]:
+    """Get all tool schemas for LLM binding"""
+    schemas = []
+    for tool in get_agent_tools():
+        schemas.append(
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.args_schema.schema() if tool.args_schema else {},
+            }
+        )
+    return schemas

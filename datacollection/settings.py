@@ -80,6 +80,8 @@ INSTALLED_APPS = [
     "django_celery_results",
     "reports",
     "rest_framework",
+    'drf_spectacular',
+    'django_filters',
 ]
 TAILWIND_APP_NAME = "theme"
 
@@ -182,10 +184,17 @@ USE_TZ = True
 
 
 REST_FRAMEWORK = {
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 100,  # default page size
 }
 
+
+SPECTACTULAR_SETTINGS={
+    'TITLE': 'Data Collection API',
+    'DESCRIPTION': 'API for Data Collection',
+    'VERSION': '1.0.0', 
+}
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
@@ -403,35 +412,77 @@ SHARED_UPLOADS_DIR = os.getenv("SHARED_UPLOADS_DIR", "/shared_uploads")
 
 # open ai
 
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", default="o3")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", default="gpt-4o-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+if USE_SQLITE:
 
-AI_INSIGHT = {
-    "DATABASE": {
-        "USER": os.getenv("POSTGRES_USER", "admin"),
-        "PASSWORD": os.getenv("POSTGRES_PASSWORD", "localhost"),
-        "HOST": os.getenv("POSTGRES_HOST", "db"),
-        "PORT": int(os.getenv("POSTGRES_PORT", 5432)),
-        "NAME": os.getenv("POSTGRES_DB", "brainbox-crm"),
-        "MAX_CONNECTIONS": int(os.getenv("AI_INSIGHT_DB_MAX_CONNECTIONS", 20)),
-        "CONNECTION_TIMEOUT": int(os.getenv("AI_INSIGHT_DB_CONNECTION_TIMEOUT", 30)),
-    },
-    "AGENT": {
-        "MODEL": OPENAI_MODEL,
-        "MAX_RETRIES": int(os.getenv("AI_INSIGHT_MAX_RETRIES", 3)),
-        "TIMEOUT_SECONDS": int(os.getenv("AI_INSIGHT_TIMEOUT_SECONDS", 120)),
-        "DEFAULT_TOP_K": int(os.getenv("AI_INSIGHT_DEFAULT_TOP_K", 100)),
-        "MAX_TOP_K": int(os.getenv("AI_INSIGHT_MAX_TOP_K", 1000)),
-        "ENABLE_CACHING": as_bool(os.getenv("AI_INSIGHT_ENABLE_CACHING", "True")),
-    },
-    "SECURITY": {
-        "DEFAULT_ALLOWED_TABLES": [],
-        "MAX_SESSIONS_PER_USER": int(os.getenv("AI_INSIGHT_MAX_SESSIONS_PER_USER", 10)),
-        "SESSION_INACTIVITY_HOURS": int(
-            os.getenv("AI_INSIGHT_SESSION_INACTIVITY_HOURS", 24)
-        ),
-        "RATE_LIMIT_PER_MINUTE": int(os.getenv("AI_INSIGHT_RATE_LIMIT_PER_MINUTE", 30)),
-        "MAX_MESSAGE_LENGTH": int(os.getenv("AI_INSIGHT_MAX_MESSAGE_LENGTH", 10000)),
-    },
-}
+    AI_INSIGHT = {
+        "DATABASE": {
+
+
+            "USER": os.getenv("LOCAL_POSTGRES_USER", "postgres"),
+            "PASSWORD": os.getenv("LOCAL_POSTGRES_PASSWORD", "localhost"),
+            "HOST": os.getenv("LOCAL_POSTGRES_HOST", "db"),
+            "PORT": int(os.getenv("LOCAL_POSTGRES_PORT", 5432)),
+            "NAME": os.getenv("LOCAL_POSTGRES_DB", "iheardatadb"),
+            "MAX_CONNECTIONS": int(os.getenv("AI_INSIGHT_DB_MAX_CONNECTIONS", 20)),
+            "CONNECTION_TIMEOUT": int(os.getenv("AI_INSIGHT_DB_CONNECTION_TIMEOUT", 30)),
+
+            
+        },
+        "AGENT": {
+            "MODEL": OPENAI_MODEL,
+            "MAX_RETRIES": int(os.getenv("AI_INSIGHT_MAX_RETRIES", 3)),
+            "TIMEOUT_SECONDS": int(os.getenv("AI_INSIGHT_TIMEOUT_SECONDS", 120)),
+            "DEFAULT_TOP_K": int(os.getenv("AI_INSIGHT_DEFAULT_TOP_K", 100)),
+            "MAX_TOP_K": int(os.getenv("AI_INSIGHT_MAX_TOP_K", 1000)),
+            "ENABLE_CACHING": as_bool(os.getenv("AI_INSIGHT_ENABLE_CACHING", "True")),
+        },
+        "SECURITY": {
+            "DEFAULT_ALLOWED_TABLES": [],
+            "MAX_SESSIONS_PER_USER": int(os.getenv("AI_INSIGHT_MAX_SESSIONS_PER_USER", 10)),
+            "SESSION_INACTIVITY_HOURS": int(
+                os.getenv("AI_INSIGHT_SESSION_INACTIVITY_HOURS", 24)
+            ),
+            "RATE_LIMIT_PER_MINUTE": int(os.getenv("AI_INSIGHT_RATE_LIMIT_PER_MINUTE", 30)),
+            "MAX_MESSAGE_LENGTH": int(os.getenv("AI_INSIGHT_MAX_MESSAGE_LENGTH", 10000)),
+        },
+    }
+
+
+else:
+
+        AI_INSIGHT = {
+        "DATABASE": {
+
+
+            "USER": os.getenv("POSTGRES_USER", "postgres"),
+            "PASSWORD": os.getenv("POSTGRES_PASSWORD", "localhost"),
+            "HOST": os.getenv("POSTGRES_HOST", "db"),
+            "PORT": int(os.getenv("POSTGRES_PORT", 5432)),
+            "NAME": os.getenv("POSTGRES_DB", "iheardatadb"),
+            "MAX_CONNECTIONS": int(os.getenv("AI_INSIGHT_DB_MAX_CONNECTIONS", 20)),
+            "CONNECTION_TIMEOUT": int(os.getenv("AI_INSIGHT_DB_CONNECTION_TIMEOUT", 30)),
+
+            
+        },
+        "AGENT": {
+            "MODEL": OPENAI_MODEL,
+            "MAX_RETRIES": int(os.getenv("AI_INSIGHT_MAX_RETRIES", 3)),
+            "TIMEOUT_SECONDS": int(os.getenv("AI_INSIGHT_TIMEOUT_SECONDS", 120)),
+            "DEFAULT_TOP_K": int(os.getenv("AI_INSIGHT_DEFAULT_TOP_K", 100)),
+            "MAX_TOP_K": int(os.getenv("AI_INSIGHT_MAX_TOP_K", 1000)),
+            "ENABLE_CACHING": as_bool(os.getenv("AI_INSIGHT_ENABLE_CACHING", "True")),
+        },
+        "SECURITY": {
+            "DEFAULT_ALLOWED_TABLES": [],
+            "MAX_SESSIONS_PER_USER": int(os.getenv("AI_INSIGHT_MAX_SESSIONS_PER_USER", 10)),
+            "SESSION_INACTIVITY_HOURS": int(
+                os.getenv("AI_INSIGHT_SESSION_INACTIVITY_HOURS", 24)
+            ),
+            "RATE_LIMIT_PER_MINUTE": int(os.getenv("AI_INSIGHT_RATE_LIMIT_PER_MINUTE", 30)),
+            "MAX_MESSAGE_LENGTH": int(os.getenv("AI_INSIGHT_MAX_MESSAGE_LENGTH", 10000)),
+        },
+    }
+

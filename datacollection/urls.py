@@ -19,6 +19,8 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from rest_framework.routers import DefaultRouter
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 
 urlpatterns = [
@@ -29,6 +31,8 @@ urlpatterns = [
     path("reports/", include("reports.urls")),
     path("approval/", include("approval.urls")),
     path("__reload__/", include("django_browser_reload.urls")),
+    path ("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path ("api/docs/", SpectacularSwaggerView.as_view(url_name="schema")),
 ]
 
 

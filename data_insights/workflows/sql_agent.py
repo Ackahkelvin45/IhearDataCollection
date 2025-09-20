@@ -52,12 +52,21 @@ from .schema import PostgresSQLInput
 
 from . import UNSAFE_KEYWORDS
 
+USE_LOCAL=os.getenv("USE_SQLITE")
 
-DB_USER = os.getenv("POSTGRES_USER", "admin")
-DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "localhost")
-DB_HOST = os.getenv("POSTGRES_HOST", "db")
-DB_PORT = int(os.getenv("POSTGRES_PORT", 5432))
-DB_NAME = os.getenv("POSTGRES_DB", "brainbox-crm")
+if USE_LOCAL:
+    DB_USER = os.getenv("LOCAL_POSTGRES_USER", "admin")
+    DB_PASSWORD = os.getenv("LOCAL_POSTGRES_PASSWORD", "")
+    DB_HOST = os.getenv("LOCAL_POSTGRES_HOST", "localhost")
+    DB_PORT = int(os.getenv("LOCAL_POSTGRES_PORT", 5432))
+    DB_NAME = os.getenv("LOCAL_POSTGRES_DB", "=iheardatadb")
+
+else:
+    DB_USER = os.getenv("POSTGRES_USER", "admin")
+    DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
+    DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
+    DB_PORT = int(os.getenv("POSTGRES_PORT", 5432))
+    DB_NAME = os.getenv("POSTGRES_DB", "=iheardatadb")
 
 
 class AgentState(TypedDict):

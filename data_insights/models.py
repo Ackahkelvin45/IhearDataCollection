@@ -14,7 +14,7 @@ class ChatSession(models.Model):
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     session_id = models.UUIDField(unique=True, default=uuid.uuid4, editable=False)
-    title = models.CharField(max_length=255)
+    title = models.CharField(max_length=255, blank=True, null=True)
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.ACTIVE
     )
@@ -32,8 +32,26 @@ class ChatSession(models.Model):
         self.total_messages += 1
         self.save()
 
+    def generate_title_from_message(self, user_input: str) -> str:
+        """Generate a title from the first user message"""
+        # Clean and truncate the message to create a title
+        title = user_input.strip()
+        
+        # Remove extra whitespace
+        title = ' '.join(title.split())
+        
+        # Truncate to reasonable length (50 characters)
+        if len(title) > 50:
+            title = title[:47] + "..."
+        
+        # If title is too short, add a prefix
+        if len(title) < 3:
+            title = "New Chat Session"
+        
+        return title
+
     def __str__(self):
-        return self.title
+        return self.title or "Untitled Session"
 
 
 class ChatMessage(models.Model):
@@ -60,6 +78,21 @@ class ChatMessage(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+    def mark_processing(self):
+        """Mark the message as processing"""
+        self.status = self.MessageStatus.PROCESSING
+        self.save()
+
+    def mark_completed(self):
+        """Mark the message as completed"""
+        self.status = self.MessageStatus.COMPLETED
+        self.save()
+
+    def mark_failed(self):
+        """Mark the message as failed"""
+        self.status = self.MessageStatus.FAILED
+        self.save()
 
     def __str__(self):
         return self.user_input
@@ -96,3 +129,6 @@ class QueryCacheModel(models.Model):
     @property
     def is_expired(self):
         return timezone.now() > self.expires_at
+
+
+

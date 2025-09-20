@@ -1,51 +1,388 @@
 {% extends 'datacollection/layout.html' %}
+{% load static %}
 
 {% block content %}
+<!-- CSRF Token -->
+<input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+
 <nav>
   <!-- breadcrumb -->
   <ol style="margin-bottom: 30px;" class="flex flex-wrap pt-1 mr-12 bg-transparent rounded-lg sm:mr-16">
     <li class="text-sm leading-normal">
       <a class="text-white opacity-50" href="javascript:;">home</a>
     </li>
-    <li class="text-sm pl-2 capitalize leading-normal text-white before:float-left before:pr-2 before:text-white before:content-['/']" aria-current="page">Data Collection</li>
+    <li class="text-sm pl-2 capitalize leading-normal text-white before:float-left before:pr-2 before:text-white before:content-['/']" aria-current="page">Data Insights</li>
   </ol>
 </nav>
 
-  <div class="flex flex-wrap -mx-3">
-    <!-- card1 -->
-    <div class="w-full px-6 py-6 mx-auto">
-      <div class="relative flex flex-col min-w-0 mb-6 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border p-6 md:p-10">
-
-<div class="w-full">
-  <div class="flex items-center justify-between mb-4 md:mb-6">
-    <h2 class="text-2xl font-semibold text-primary">Welcome to Data Insights!</h2>
-    <button href="{% url 'insights:session' %}" class="inline-flex items-center px-4 py-2 rounded-lg text-white bg-primary hover:opacity-90 shadow-sm">
-      <i class="fa-regular fa-message mr-2"></i>
-      new chat
-    </button>
-  </div>
-
-  <p class="text-slate-600 mb-6 md:mb-8">Ask me anything about your data or try one of the suggestions below.</p>
-
-   <div class="flex flex-wrap items-start gap-3 md:gap-4 mb-6">
-    {% for s in suggestions %}
-     <a href="{% url 'insights:session' %}?q={{ s|urlencode }}" style="margin-right: 10px; margin-bottom: 10px;" class="px-4 py-2  rounded-full bg-primary-light text-primary hover:bg-primary-hover border border-primary/10 shadow-sm transition">{{ s }}</a>
-    {% endfor %}
-  </div>
-
-   <div class="max-w-5xl mt-6 md:mt-8">
-    <form action="{% url 'insights:session' %}" method="get" class="w-full">
-       <div class="relative" style="position: relative;">
-         <input name="q" type="text" class="w-full bg-slate-50 border border-slate-200 rounded-full py-4 md:py-5 pl-4 pr-16 outline-none text-slate-700 focus:ring-2 focus:ring-secondary/30 focus:border-secondary" style="padding-right:56px;" placeholder="Type your question ..."/>
-         <button class="absolute right-2 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-secondary text-white flex items-center justify-center shadow hover:opacity-90" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);width:48px;height:48px;border-radius:9999px;background:var(--secondary-color);color:#fff;" aria-label="Send">
-          <i class="fa-solid fa-paper-plane"></i>
-        </button>
-      </div>
-    </form>
-  </div>
-</div>
-      </div>
+<div class="flex h-screen bg-gray-50" style="height: calc(100vh - 200px);">
+    <!-- Sidebar -->
+    <div class="w-80 bg-white border-r border-gray-200 flex flex-col rounded-l-2xl shadow-xl">
+        <!-- Header -->
+        <div class="p-4 border-b border-gray-200">
+            <div class="flex items-center justify-between mb-4">
+                <h5 class="text-xl font-semibold text-gray-800">Chat Sessions</h5>
+                <button id="newChatBtn" class="inline-flex items-center px-3 py-2 rounded-lg text-white bg-primary hover:opacity-90 shadow-sm text-sm">
+                    <i class="fa-regular fa-plus mr-2"></i>
+                    New Chat
+                </button>
+            </div>
+        </div>
+        
+        <!-- Sessions List -->
+        <div id="sessionsList" class="flex-1 overflow-y-auto p-4">
+            <div class="text-center text-gray-500 py-8">
+                <i class="fa-regular fa-message text-4xl mb-2"></i>
+                <p>Loading sessions...</p>
+            </div>
+        </div>
     </div>
 
+    <!-- Main Content Area -->
+    <div class="flex-1 flex flex-col bg-white rounded-r-2xl shadow-xl">
+        <!-- Header -->
+        <div class="bg-white border-b border-gray-200 p-6 rounded-tr-2xl">
+            <div class="text-center">
+                <h4 class="text-3xl font-bold text-gray-800 mb-2">Welcome to Data Insights!</h4>
+                <p class="text-gray-600">Ask me anything about your audio data or select a session from the left</p>
+            </div>
+        </div>
+
+        <!-- Welcome Content -->
+        <div class="flex-1 flex flex-col items-center justify-center p-8">
+            <div class="text-center max-w-2xl">
+                <div class="mb-8">
+                    <i class="fa-solid fa-chart-line text-6xl text-primary mb-4"></i>
+                    <h5 class="text-2xl font-semibold text-gray-800 mb-4">Get Started</h5>
+                    <p class="text-gray-600 mb-8 text-sm">Try one of these suggestions or ask your own question:</p>
+                </div>
+
+                <!-- Suggestions -->
+                <div class="flex flex-wrap justify-center gap-3 mb-8">
+                    {% for s in suggestions %}
+                    <button style="margin-bottom: 10px; margin-right: 5px;" onclick="startChatWithSuggestion('{{ s|escapejs }}')" class="px-4 py-2 rounded-full bg-primary-light text-primary hover:bg-primary-hover border border-primary/10 shadow-sm transition">
+                        {{ s }}
+                    </button>
+                    {% endfor %}
+                </div>
+
+                <!-- Input Form -->
+ <form id="homeForm" class="px-2" style="width: 100%; margin: 0 auto;">
+  <div style="position: relative; width: 100%;">
+    <input 
+      id="homeInput" 
+      type="text" 
+      placeholder="Type your question..."
+      style="
+        width: 100%;
+        background-color: #f8fafc; 
+        border: 1px solid #e2e8f0; 
+        border-radius: 9999px;
+        padding: 1rem 4rem 1rem 1rem;
+        outline: none;
+        color: #334155;
+        font-size: 1rem;
+      "
+    />
+    <button 
+      type="submit" 
+      aria-label="Send"
+      style="
+        position: absolute; 
+        right: 0.5rem; 
+        top: 50%; 
+        transform: translateY(-50%);
+        width: 3rem; 
+        height: 3rem; 
+        border-radius: 9999px; 
+        background-color: #22c55e; /* secondary */
+        color: #fff; 
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+        box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        cursor: pointer;
+      "
+    >
+      <i class="fa-solid fa-paper-plane"></i>
+    </button>
   </div>
+</form>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-lg p-6 flex items-center space-x-3">
+        <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+        <span class="text-gray-700">Loading...</span>
+    </div>
+</div>
+
+<!-- Error Toast -->
+<div id="errorToast" class="fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 hidden">
+    <div class="flex items-center space-x-2">
+        <i class="fa-solid fa-exclamation-triangle"></i>
+        <span id="errorMessage"></span>
+    </div>
+</div>
+
+<!-- Success Toast -->
+<div id="successToast" class="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 hidden">
+    <div class="flex items-center space-x-2">
+        <i class="fa-solid fa-check"></i>
+        <span id="successMessage"></span>
+    </div>
+</div>
+
+<script>
+// Home Page Session Management
+class HomePageManager {
+    constructor() {
+        this.apiBaseUrl = window.location.origin;
+        this.headers = {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': this.getCSRFToken()
+        };
+        this.sessions = [];
+        
+        this.initializeEventListeners();
+        this.loadSessions();
+    }
+    
+    getCSRFToken() {
+        return document.querySelector('[name=csrfmiddlewaretoken]')?.value || 
+               document.querySelector('meta[name="csrf-token"]')?.content || '';
+    }
+    
+    initializeEventListeners() {
+        // New chat button
+        document.getElementById('newChatBtn').addEventListener('click', () => {
+            this.createNewSession();
+        });
+        
+        // Form submission
+        document.getElementById('homeForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const input = document.getElementById('homeInput');
+            const message = input.value.trim();
+            
+            if (message) {
+                sessionStorage.setItem('initialMessage', message);
+                window.location.href = "{% url 'insights:chat' %}";
+            }
+        });
+    }
+    
+    async loadSessions() {
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/insights/sessions/`, {
+                headers: this.headers
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                this.sessions = data.results || data;
+                this.updateSessionsList();
+            } else if (response.status === 401) {
+                this.showErrorToast('Please log in to access chat sessions');
+                window.location.href = '/admin/login/';
+            } else if (response.status === 403) {
+                this.updateSessionsList(); // Show empty state
+            }
+        } catch (error) {
+            console.error('Error loading sessions:', error);
+            this.updateSessionsList(); // Show empty state
+        }
+    }
+    
+    updateSessionsList() {
+        const container = document.getElementById('sessionsList');
+        
+        if (!Array.isArray(this.sessions)) {
+            this.sessions = [];
+        }
+        
+        if (this.sessions.length === 0) {
+            container.innerHTML = `
+                <div class="text-center text-gray-500 py-8">
+                    <i class="fa-regular fa-message text-4xl mb-2"></i>
+                    <p>No sessions yet</p>
+                    <p class="text-sm">Create your first chat</p>
+                </div>
+            `;
+            return;
+        }
+
+        console.log(this.sessions);
+        
+        container.innerHTML = this.sessions.map(session => `
+            <div class="session-item p-3 rounded-lg cursor-pointer transition-colors mb-2 hover:bg-gray-50" 
+                 data-session-id="${session.id}" onclick="loadSession(${session.id})">
+                <div class="flex items-start justify-between">
+                    <div class="flex-1 min-w-0">
+                        <h6 class="font-medium text-gray-800 truncate">${session.title || 'Untitled Session'}</h6>
+                        <p class="text-xs text-gray-400">${this.formatDate(session.created_at)}</p>
+                    </div>
+                    <div class="flex items-center space-x-1 ml-2">
+                        <button class="session-delete-btn p-1 text-gray-400 hover:text-red-600" 
+                                onclick="event.stopPropagation(); deleteSession(${session.id})">
+
+
+                                <button type="button" style="background:none; border:none; cursor:pointer;">
+<svg xmlns="http://www.w3.org/2000/svg" 
+     viewBox="0 0 24 24" 
+     fill="currentColor" 
+     style="width:20px; height:20px; color:#dc2626; cursor:pointer;">
+  <path d="M9 3a1 1 0 0 0-1 1v1H4.5a.5.5 0 0 0 0 1h15a.5.5 0 0 0 0-1H16V4a1 1 0 0 0-1-1H9zM6 7h12l-.7 11.2a2 2 0 0 1-2 1.8H8.7a2 2 0 0 1-2-1.8L6 7z"/>
+</svg>
+
+
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    async createNewSession() {
+        try {
+            this.showLoading();
+            const response = await fetch(`${this.apiBaseUrl}/insights/sessions/`, {
+                method: 'POST',
+                headers: this.headers,
+                body: JSON.stringify({ title: null })
+            });
+            
+            if (response.ok) {
+                window.location.href = "{% url 'insights:chat' %}";
+            } else {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || 'Failed to create session');
+            }
+        } catch (error) {
+            console.error('Error creating session:', error);
+            this.showErrorToast('Failed to create new session');
+        } finally {
+            this.hideLoading();
+        }
+    }
+    
+    formatDate(dateString) {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffTime = Math.abs(now - date);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays === 1) return 'Today';
+        if (diffDays === 2) return 'Yesterday';
+        if (diffDays <= 7) return `${diffDays - 1} days ago`;
+        
+        return date.toLocaleDateString();
+    }
+    
+    showLoading() {
+        document.getElementById('loadingOverlay').classList.remove('hidden');
+    }
+    
+    hideLoading() {
+        document.getElementById('loadingOverlay').classList.add('hidden');
+    }
+    
+    showErrorToast(message) {
+        const toast = document.getElementById('errorToast');
+        const messageEl = document.getElementById('errorMessage');
+        messageEl.textContent = message;
+        toast.classList.remove('hidden');
+        
+        setTimeout(() => {
+            toast.classList.add('hidden');
+        }, 5000);
+    }
+    
+    showSuccessToast(message) {
+        const toast = document.getElementById('successToast');
+        const messageEl = document.getElementById('successMessage');
+        messageEl.textContent = message;
+        toast.classList.remove('hidden');
+        
+        setTimeout(() => {
+            toast.classList.add('hidden');
+        }, 3000);
+    }
+}
+
+// Global functions for session interaction
+function loadSession(sessionId) {
+    sessionStorage.setItem('loadSessionId', sessionId.toString());
+    window.location.href = "{% url 'insights:chat' %}";
+}
+
+async function deleteSession(sessionId) {
+    if (!confirm('Are you sure you want to delete this session?')) return;
+    
+    try {
+        const response = await fetch(`${window.location.origin}/insights/sessions/${sessionId}/archive/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
+            }
+        });
+        
+        if (response.ok) {
+            window.homePageManager.loadSessions(); // Reload sessions
+            window.homePageManager.showSuccessToast('Session deleted successfully');
+        } else {
+            throw new Error('Failed to delete session');
+        }
+    } catch (error) {
+        console.error('Error deleting session:', error);
+        window.homePageManager.showErrorToast('Failed to delete session');
+    }
+}
+
+function startChatWithSuggestion(suggestion) {
+    sessionStorage.setItem('initialMessage', suggestion);
+    window.location.href = "{% url 'insights:chat' %}";
+}
+
+// Initialize when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    window.homePageManager = new HomePageManager();
+});
+</script>
+
+<style>
+/* Custom styles for the home page */
+.session-item {
+    transition: all 0.2s ease;
+}
+
+.session-item:hover {
+    transform: translateX(2px);
+}
+
+/* Scrollbar styling */
+#sessionsList::-webkit-scrollbar {
+    width: 6px;
+}
+
+#sessionsList::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+#sessionsList::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+}
+
+#sessionsList::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+</style>
 {% endblock %}
