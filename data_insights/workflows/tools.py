@@ -150,7 +150,7 @@ class NoiseDatasetSearchTool(BaseTool):
     name: str = "search_noise_datasets"
     description: str = """Search for noise datasets based on criteria.
     Returns a query handle for large result sets.
-    Use this to find datasets by name, location, noise_level, date range, etc."""
+    Use this to find datasets by name, region, community, recording_date, category, etc."""
 
     def _run(
         self,
@@ -169,15 +169,20 @@ class NoiseDatasetSearchTool(BaseTool):
             if "name" in filter_criteria:
                 queryset = queryset.filter(name__icontains=filter_criteria["name"])
 
-            if "location" in filter_criteria:
-                # Search in region and community names
+            if "region" in filter_criteria:
+                # Search by region
                 queryset = queryset.filter(
-                    models.Q(region__name__icontains=filter_criteria["location"]) |
-                    models.Q(community__name__icontains=filter_criteria["location"])
+                    models.Q(region__name__icontains=filter_criteria["region"])
+                )
+            
+            if "community" in filter_criteria:
+                # Search by community
+                queryset = queryset.filter(
+                    models.Q(community__name__icontains=filter_criteria["community"])
                 )
 
-        # Note: noise_level filtering would need to be done through NoiseAnalysis model
-        # For now, we'll skip this filtering until we implement proper joins
+            # Note: noise_level filtering would need to be done through NoiseAnalysis model
+            # For now, we'll skip this filtering until we implement proper joins
 
             if "date_from" in filter_criteria:
                 queryset = queryset.filter(
@@ -211,9 +216,10 @@ class NoiseDatasetSearchTool(BaseTool):
                     queryset[:5].values(
                         "id",
                         "name",
-                        "location",
-                        "noise_level",
-                        "recorded_at",
+                        "region__name",
+                        "community__name", 
+                        "recording_date",
+                        "category__name",
                     )
                 )
 
