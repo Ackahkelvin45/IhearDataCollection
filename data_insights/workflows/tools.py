@@ -18,6 +18,30 @@ from .sql_agent import TextToSQLAgent
 
 logger = logging.getLogger(__name__)
 
+# Performance optimization settings
+QUERY_TIMEOUT = 30  # seconds
+MAX_RESULTS_LIMIT = 1000
+DEFAULT_RESULTS_LIMIT = 100
+
+def get_user_friendly_error(error_msg: str, context: str = "") -> str:
+    """Convert technical errors to user-friendly messages"""
+    error_lower = str(error_msg).lower()
+    
+    if "timeout" in error_lower:
+        return "The query is taking too long to process. Please try a more specific search or contact support."
+    elif "connection" in error_lower or "database" in error_lower:
+        return "Unable to connect to the audio database. Please check your connection and try again."
+    elif "permission" in error_lower or "access" in error_lower:
+        return "You don't have permission to access this audio data. Please contact your administrator."
+    elif "not found" in error_lower or "does not exist" in error_lower:
+        return f"The requested audio data was not found. Please check your search criteria."
+    elif "invalid" in error_lower or "malformed" in error_lower:
+        return "Invalid search parameters provided. Please check your input and try again."
+    elif "memory" in error_lower or "limit" in error_lower:
+        return "The request is too large to process. Please try filtering your search to fewer results."
+    else:
+        return f"An unexpected error occurred while processing your audio data request. {context}"
+
 AI_CONFIG = getattr(settings, "AI_INSIGHT", {})
 DB_CONFIG = AI_CONFIG.get("DATABASE", {})
 AGENT_CONFIG = AI_CONFIG.get("AGENT", {})
@@ -33,6 +57,8 @@ DB_URI = (
 from data.models import (
     NoiseDataset,
     AudioFeature,
+    NoiseAnalysis,
+    VisualizationPreset,
     BulkAudioUpload,
     BulkReprocessingTask,
 )
@@ -174,7 +200,7 @@ class NoiseDatasetSearchTool(BaseTool):
                 queryset = queryset.filter(
                     models.Q(region__name__icontains=filter_criteria["region"])
                 )
-            
+
             if "community" in filter_criteria:
                 # Search by community
                 queryset = queryset.filter(
@@ -299,12 +325,12 @@ class AudioFeatureSearchTool(BaseTool):
             # Build queryset
             queryset = AudioFeature.objects.all()
 
-            # Apply filters
-            if "rms" in filter_criteria:
-                queryset = queryset.filter(rms__gte=filter_criteria["rms"])
+            # Apply filters with correct field names
+            if "rms_energy" in filter_criteria:
+                queryset = queryset.filter(rms_energy__gte=filter_criteria["rms_energy"])
 
-            if "zcr" in filter_criteria:
-                queryset = queryset.filter(zcr__gte=filter_criteria["zcr"])
+            if "zero_crossing_rate" in filter_criteria:
+                queryset = queryset.filter(zero_crossing_rate__gte=filter_criteria["zero_crossing_rate"])
 
             if "spectral_centroid" in filter_criteria:
                 queryset = queryset.filter(
@@ -314,6 +340,20 @@ class AudioFeatureSearchTool(BaseTool):
             if "spectral_bandwidth" in filter_criteria:
                 queryset = queryset.filter(
                     spectral_bandwidth__gte=filter_criteria["spectral_bandwidth"]
+                )
+            
+            if "duration" in filter_criteria:
+                queryset = queryset.filter(duration__gte=filter_criteria["duration"])
+                
+            # Add filters for related dataset fields
+            if "region" in filter_criteria:
+                queryset = queryset.filter(
+                    noise_dataset__region__name__icontains=filter_criteria["region"]
+                )
+                
+            if "category" in filter_criteria:
+                queryset = queryset.filter(
+                    noise_dataset__category__name__icontains=filter_criteria["category"]
                 )
 
             # Count results
@@ -352,10 +392,13 @@ class AudioFeatureSearchTool(BaseTool):
                     result_data.append(
                         {
                             "id": feature.id,
-                            "rms": feature.rms,
-                            "zcr": feature.zcr,
+                            "rms_energy": feature.rms_energy,
+                            "zero_crossing_rate": feature.zero_crossing_rate,
                             "spectral_centroid": feature.spectral_centroid,
                             "spectral_bandwidth": feature.spectral_bandwidth,
+                            "duration": feature.duration,
+                            "dataset_name": feature.noise_dataset.name if feature.noise_dataset else None,
+                            "region": feature.noise_dataset.region.name if feature.noise_dataset and feature.noise_dataset.region else None,
                         }
                     )
 
@@ -368,6 +411,775 @@ class AudioFeatureSearchTool(BaseTool):
         except Exception as e:
             logger.error(f"Error in audio feature search: {str(e)}")
             return {"error": f"Audio feature search failed: {str(e)}"}
+
+
+class AudioAnalysisTool(BaseTool):
+    name: str = "analyze_audio_data"
+    description: str = """Comprehensive audio analysis tool for energy, spectral, frequency, and statistical analysis.
+    Use this for questions about:
+    - Energy levels: RMS energy, decibel analysis, cumulative energy
+    - Spectral features: centroid, bandwidth, rolloff, flatness trends
+    - Frequency analysis: dominant frequencies, zero crossing rates
+    - Statistical analysis: distributions, correlations, comparisons
+    - Grouped analysis: by region, category, microphone type, community
+    - Temporal analysis: trends over time, cumulative metrics"""
+
+    def _run(
+        self,
+        query: str,
+        analysis_type: Optional[str] = None,
+        group_by: Optional[str] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        try:
+            from django.db import models
+            from django.db.models import Avg, Max, Min, Count, StdDev, Sum
+            from django.db.models.functions import TruncMonth, TruncDate
+            
+            # Determine analysis type from query if not specified
+            query_lower = query.lower()
+            
+            if not analysis_type:
+                if any(word in query_lower for word in ['energy', 'rms', 'decibel', 'db', 'amplitude', 'cumulative']):
+                    analysis_type = 'energy'
+                elif any(word in query_lower for word in ['spectral', 'centroid', 'bandwidth', 'rolloff', 'flatness']):
+                    analysis_type = 'spectral'
+                elif any(word in query_lower for word in ['frequency', 'dominant', 'hz', 'crossing']):
+                    analysis_type = 'frequency'
+                elif any(word in query_lower for word in ['correlation', 'relationship', 'vs', 'against']):
+                    analysis_type = 'correlation'
+                elif any(word in query_lower for word in ['distribution', 'statistical', 'quartile', 'outlier']):
+                    analysis_type = 'statistical'
+                elif any(word in query_lower for word in ['trend', 'over time', 'month', 'date', 'timeline']):
+                    analysis_type = 'temporal'
+                else:
+                    analysis_type = 'overview'
+            
+            # Determine grouping from query
+            if not group_by:
+                if 'region' in query_lower:
+                    group_by = 'region'
+                elif 'category' in query_lower:
+                    group_by = 'category'
+                elif 'community' in query_lower:
+                    group_by = 'community'
+                elif 'microphone' in query_lower or 'device' in query_lower:
+                    group_by = 'microphone_type'
+                elif 'time' in query_lower and 'day' in query_lower:
+                    group_by = 'time_of_day'
+            
+            # Get base queryset with all related data
+            queryset = NoiseDataset.objects.select_related(
+                'audio_features', 'noise_analysis', 'region', 'category', 
+                'community', 'microphone_type', 'time_of_day'
+            ).filter(
+                audio_features__isnull=False,
+                noise_analysis__isnull=False
+            )
+            
+            # Perform analysis based on type
+            if analysis_type == 'energy':
+                return self._energy_analysis(queryset, group_by, query)
+            elif analysis_type == 'spectral':
+                return self._spectral_analysis(queryset, group_by, query)
+            elif analysis_type == 'frequency':
+                return self._frequency_analysis(queryset, group_by, query)
+            elif analysis_type == 'correlation':
+                return self._correlation_analysis(queryset, query)
+            elif analysis_type == 'statistical':
+                return self._statistical_analysis(queryset, group_by, query)
+            elif analysis_type == 'temporal':
+                return self._temporal_analysis(queryset, query)
+            else:
+                return self._overview_analysis(queryset, query)
+                
+        except Exception as e:
+            logger.error(f"Error in audio analysis: {e}")
+            return {"error": f"Audio analysis failed: {str(e)}"}
+    
+    def _energy_analysis(self, queryset, group_by, query):
+        """Analyze energy-related metrics"""
+        try:
+            if group_by == 'region':
+                results = list(queryset.values('region__name').annotate(
+                    dataset_count=Count('id'),
+                    avg_rms_energy=Avg('audio_features__rms_energy'),
+                    max_rms_energy=Max('audio_features__rms_energy'),
+                    min_rms_energy=Min('audio_features__rms_energy'),
+                    avg_decibel=Avg('noise_analysis__mean_db'),
+                    max_decibel=Max('noise_analysis__max_db'),
+                    min_decibel=Min('noise_analysis__min_db'),
+                    cumulative_energy=Sum('audio_features__rms_energy')
+                ).order_by('-avg_rms_energy'))
+                
+            elif group_by == 'category':
+                results = list(queryset.values('category__name').annotate(
+                    dataset_count=Count('id'),
+                    avg_rms_energy=Avg('audio_features__rms_energy'),
+                    max_rms_energy=Max('audio_features__rms_energy'),
+                    avg_decibel=Avg('noise_analysis__mean_db'),
+                    max_decibel=Max('noise_analysis__max_db'),
+                    cumulative_energy=Sum('audio_features__rms_energy')
+                ).order_by('-avg_decibel'))
+                
+            elif group_by == 'microphone_type':
+                results = list(queryset.values('microphone_type__name').annotate(
+                    dataset_count=Count('id'),
+                    avg_rms_energy=Avg('audio_features__rms_energy'),
+                    avg_decibel=Avg('noise_analysis__mean_db'),
+                    max_decibel=Max('noise_analysis__max_db')
+                ).order_by('-avg_decibel'))
+                
+            else:
+                # Overall energy statistics
+                stats = queryset.aggregate(
+                    total_datasets=Count('id'),
+                    avg_rms_energy=Avg('audio_features__rms_energy'),
+                    max_rms_energy=Max('audio_features__rms_energy'),
+                    min_rms_energy=Min('audio_features__rms_energy'),
+                    std_rms_energy=StdDev('audio_features__rms_energy'),
+                    avg_decibel=Avg('noise_analysis__mean_db'),
+                    max_decibel=Max('noise_analysis__max_db'),
+                    min_decibel=Min('noise_analysis__min_db'),
+                    cumulative_energy=Sum('audio_features__rms_energy'),
+                    total_duration=Sum('audio_features__duration')
+                )
+                results = [stats]
+            
+            return {
+                "analysis_type": "energy_analysis",
+                "grouped_by": group_by,
+                "results": results,
+                "query": query,
+                "summary": f"Energy analysis shows audio power levels and decibel measurements"
+            }
+            
+        except Exception as e:
+            return {"error": f"Energy analysis failed: {str(e)}"}
+    
+    def _spectral_analysis(self, queryset, group_by, query):
+        """Analyze spectral characteristics"""
+        try:
+            if group_by == 'region':
+                results = list(queryset.values('region__name').annotate(
+                    dataset_count=Count('id'),
+                    avg_spectral_centroid=Avg('audio_features__spectral_centroid'),
+                    avg_spectral_bandwidth=Avg('audio_features__spectral_bandwidth'),
+                    avg_spectral_rolloff=Avg('audio_features__spectral_rolloff'),
+                    avg_spectral_flatness=Avg('audio_features__spectral_flatness')
+                ).order_by('-avg_spectral_centroid'))
+                
+            elif group_by == 'category':
+                results = list(queryset.values('category__name').annotate(
+                    dataset_count=Count('id'),
+                    avg_spectral_centroid=Avg('audio_features__spectral_centroid'),
+                    avg_spectral_bandwidth=Avg('audio_features__spectral_bandwidth'),
+                    avg_spectral_rolloff=Avg('audio_features__spectral_rolloff')
+                ).order_by('-avg_spectral_centroid'))
+                
+            else:
+                stats = queryset.aggregate(
+                    total_datasets=Count('id'),
+                    avg_spectral_centroid=Avg('audio_features__spectral_centroid'),
+                    max_spectral_centroid=Max('audio_features__spectral_centroid'),
+                    min_spectral_centroid=Min('audio_features__spectral_centroid'),
+                    avg_spectral_bandwidth=Avg('audio_features__spectral_bandwidth'),
+                    avg_spectral_rolloff=Avg('audio_features__spectral_rolloff'),
+                    avg_spectral_flatness=Avg('audio_features__spectral_flatness')
+                )
+                results = [stats]
+            
+            return {
+                "analysis_type": "spectral_analysis",
+                "grouped_by": group_by,
+                "results": results,
+                "query": query,
+                "summary": f"Spectral analysis shows frequency distribution characteristics"
+            }
+            
+        except Exception as e:
+            return {"error": f"Spectral analysis failed: {str(e)}"}
+    
+    def _frequency_analysis(self, queryset, group_by, query):
+        """Analyze frequency characteristics"""
+        try:
+            if group_by == 'region':
+                results = list(queryset.values('region__name').annotate(
+                    dataset_count=Count('id'),
+                    avg_dominant_frequency=Avg('noise_analysis__dominant_frequency'),
+                    max_dominant_frequency=Max('noise_analysis__dominant_frequency'),
+                    avg_zero_crossing_rate=Avg('audio_features__zero_crossing_rate')
+                ).order_by('-avg_dominant_frequency'))
+                
+            elif group_by == 'category':
+                results = list(queryset.values('category__name').annotate(
+                    dataset_count=Count('id'),
+                    avg_dominant_frequency=Avg('noise_analysis__dominant_frequency'),
+                    avg_zero_crossing_rate=Avg('audio_features__zero_crossing_rate')
+                ).order_by('-avg_dominant_frequency'))
+                
+            else:
+                stats = queryset.aggregate(
+                    total_datasets=Count('id'),
+                    avg_dominant_frequency=Avg('noise_analysis__dominant_frequency'),
+                    max_dominant_frequency=Max('noise_analysis__dominant_frequency'),
+                    min_dominant_frequency=Min('noise_analysis__dominant_frequency'),
+                    avg_zero_crossing_rate=Avg('audio_features__zero_crossing_rate')
+                )
+                results = [stats]
+            
+            return {
+                "analysis_type": "frequency_analysis", 
+                "grouped_by": group_by,
+                "results": results,
+                "query": query,
+                "summary": f"Frequency analysis shows dominant frequencies and zero crossing rates"
+            }
+            
+        except Exception as e:
+            return {"error": f"Frequency analysis failed: {str(e)}"}
+    
+    def _correlation_analysis(self, queryset, query):
+        """Analyze correlations between different features"""
+        try:
+            # Get sample data for correlation
+            data = list(queryset.values(
+                'audio_features__rms_energy',
+                'audio_features__spectral_centroid', 
+                'audio_features__spectral_bandwidth',
+                'audio_features__zero_crossing_rate',
+                'noise_analysis__mean_db',
+                'noise_analysis__dominant_frequency',
+                'audio_features__duration'
+            )[:100])  # Limit for performance
+            
+            # Extract specific correlations based on query
+            correlations = {}
+            if 'rms' in query.lower() and 'spectral' in query.lower():
+                rms_data = [d['audio_features__rms_energy'] for d in data if d['audio_features__rms_energy'] is not None]
+                centroid_data = [d['audio_features__spectral_centroid'] for d in data if d['audio_features__spectral_centroid'] is not None]
+                
+                correlations['rms_vs_spectral_centroid'] = {
+                    'rms_energy_samples': rms_data[:20],
+                    'spectral_centroid_samples': centroid_data[:20],
+                    'sample_count': min(len(rms_data), len(centroid_data))
+                }
+            
+            if 'frequency' in query.lower() and 'amplitude' in query.lower():
+                freq_data = [d['noise_analysis__dominant_frequency'] for d in data if d['noise_analysis__dominant_frequency'] is not None]
+                db_data = [d['noise_analysis__mean_db'] for d in data if d['noise_analysis__mean_db'] is not None]
+                
+                correlations['frequency_vs_amplitude'] = {
+                    'frequency_samples': freq_data[:20],
+                    'decibel_samples': db_data[:20],
+                    'sample_count': min(len(freq_data), len(db_data))
+                }
+            
+            return {
+                "analysis_type": "correlation_analysis",
+                "correlations": correlations,
+                "total_samples": len(data),
+                "query": query,
+                "summary": f"Correlation analysis between audio features"
+            }
+            
+        except Exception as e:
+            return {"error": f"Correlation analysis failed: {str(e)}"}
+    
+    def _statistical_analysis(self, queryset, group_by, query):
+        """Statistical distribution analysis"""
+        try:
+            if group_by == 'category':
+                results = list(queryset.values('category__name').annotate(
+                    dataset_count=Count('id'),
+                    avg_decibel=Avg('noise_analysis__mean_db'),
+                    std_decibel=StdDev('noise_analysis__mean_db'),
+                    max_decibel=Max('noise_analysis__max_db'),
+                    min_decibel=Min('noise_analysis__min_db'),
+                    avg_rms=Avg('audio_features__rms_energy'),
+                    std_rms=StdDev('audio_features__rms_energy')
+                ).order_by('-avg_decibel'))
+                
+            elif group_by == 'region':
+                results = list(queryset.values('region__name').annotate(
+                    dataset_count=Count('id'),
+                    avg_decibel=Avg('noise_analysis__mean_db'),
+                    std_decibel=StdDev('noise_analysis__mean_db'),
+                    quartile_range=Max('noise_analysis__max_db') - Min('noise_analysis__min_db'),
+                    avg_rms=Avg('audio_features__rms_energy')
+                ).order_by('-avg_decibel'))
+                
+            else:
+                # Overall statistics
+                stats = queryset.aggregate(
+                    total_datasets=Count('id'),
+                    avg_decibel=Avg('noise_analysis__mean_db'),
+                    std_decibel=StdDev('noise_analysis__mean_db'),
+                    max_decibel=Max('noise_analysis__max_db'),
+                    min_decibel=Min('noise_analysis__min_db'),
+                    avg_rms=Avg('audio_features__rms_energy'),
+                    std_rms=StdDev('audio_features__rms_energy'),
+                    avg_spectral_centroid=Avg('audio_features__spectral_centroid'),
+                    std_spectral_centroid=StdDev('audio_features__spectral_centroid')
+                )
+                results = [stats]
+            
+            return {
+                "analysis_type": "statistical_analysis",
+                "grouped_by": group_by,
+                "results": results,
+                "query": query,
+                "summary": f"Statistical distribution analysis of audio features"
+            }
+            
+        except Exception as e:
+            return {"error": f"Statistical analysis failed: {str(e)}"}
+    
+    def _temporal_analysis(self, queryset, query):
+        """Analyze trends over time"""
+        try:
+            # Monthly trends
+            monthly_trends = list(queryset.annotate(
+                month=TruncMonth('recording_date')
+            ).values('month').annotate(
+                dataset_count=Count('id'),
+                avg_decibel=Avg('noise_analysis__mean_db'),
+                avg_energy=Avg('audio_features__rms_energy'),
+                cumulative_energy=Sum('audio_features__rms_energy')
+            ).order_by('month'))
+            
+            # Daily trends (last 30 days)
+            from datetime import datetime, timedelta
+            thirty_days_ago = timezone.now() - timedelta(days=30)
+            
+            daily_trends = list(queryset.filter(
+                recording_date__gte=thirty_days_ago
+            ).annotate(
+                date=TruncDate('recording_date')
+            ).values('date').annotate(
+                dataset_count=Count('id'),
+                avg_decibel=Avg('noise_analysis__mean_db'),
+                cumulative_energy=Sum('audio_features__rms_energy')
+            ).order_by('date'))
+            
+            return {
+                "analysis_type": "temporal_analysis",
+                "monthly_trends": monthly_trends,
+                "daily_trends": daily_trends,
+                "query": query,
+                "summary": f"Temporal analysis showing trends over time"
+            }
+            
+        except Exception as e:
+            return {"error": f"Temporal analysis failed: {str(e)}"}
+    
+    def _overview_analysis(self, queryset, query):
+        """General overview analysis"""
+        try:
+            # Overall statistics
+            overview = queryset.aggregate(
+                total_datasets=Count('id'),
+                avg_rms_energy=Avg('audio_features__rms_energy'),
+                avg_decibel=Avg('noise_analysis__mean_db'),
+                max_decibel=Max('noise_analysis__max_db'),
+                avg_duration=Avg('audio_features__duration'),
+                total_duration=Sum('audio_features__duration'),
+                avg_spectral_centroid=Avg('audio_features__spectral_centroid'),
+                avg_dominant_frequency=Avg('noise_analysis__dominant_frequency')
+            )
+            
+            # Regional breakdown
+            regional_stats = list(queryset.values('region__name').annotate(
+                count=Count('id'),
+                avg_decibel=Avg('noise_analysis__mean_db')
+            ).order_by('-count'))
+            
+            # Category breakdown
+            category_stats = list(queryset.values('category__name').annotate(
+                count=Count('id'),
+                avg_decibel=Avg('noise_analysis__mean_db')
+            ).order_by('-count'))
+            
+            return {
+                "analysis_type": "overview_analysis",
+                "overview_statistics": overview,
+                "regional_breakdown": regional_stats,
+                "category_breakdown": category_stats,
+                "query": query,
+                "summary": f"Comprehensive overview of audio data characteristics"
+            }
+            
+        except Exception as e:
+            return {"error": f"Overview analysis failed: {str(e)}"}
+
+
+class AudioDataAggregationTool(BaseTool):
+    name: str = "aggregate_audio_data"
+    description: str = """Advanced aggregation tool for complex audio data summaries and rollups.
+    Use this for questions about:
+    - Multi-dimensional aggregations (region + category + time)
+    - Percentile calculations and ranking
+    - Data quality assessments and completeness
+    - Advanced statistical summaries
+    - Performance comparisons and benchmarking"""
+
+    def _run(
+        self,
+        query: str,
+        aggregation_type: Optional[str] = None,
+        dimensions: Optional[List[str]] = None,
+        metrics: Optional[List[str]] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        try:
+            from django.db import models
+            from django.db.models import Avg, Max, Min, Count, StdDev, Sum, Q
+            from django.db.models import Case, When, IntegerField, FloatField
+            
+            # Determine aggregation type from query
+            query_lower = query.lower()
+            
+            if not aggregation_type:
+                if any(word in query_lower for word in ['quality', 'completeness', 'missing', 'coverage']):
+                    aggregation_type = 'data_quality'
+                elif any(word in query_lower for word in ['ranking', 'top', 'highest', 'lowest', 'best', 'worst']):
+                    aggregation_type = 'ranking'
+                elif any(word in query_lower for word in ['percentile', 'quartile', 'median', 'distribution']):
+                    aggregation_type = 'percentiles'
+                elif any(word in query_lower for word in ['benchmark', 'compare', 'performance', 'standard']):
+                    aggregation_type = 'benchmarking'
+                elif any(word in query_lower for word in ['multi', 'cross', 'breakdown', 'pivot']):
+                    aggregation_type = 'multi_dimensional'
+                else:
+                    aggregation_type = 'summary'
+            
+            # Get base queryset
+            queryset = NoiseDataset.objects.select_related(
+                'audio_features', 'noise_analysis', 'region', 'category', 
+                'community', 'microphone_type', 'time_of_day'
+            )
+            
+            # Perform aggregation based on type
+            if aggregation_type == 'data_quality':
+                return self._data_quality_analysis(queryset, query)
+            elif aggregation_type == 'ranking':
+                return self._ranking_analysis(queryset, query)
+            elif aggregation_type == 'percentiles':
+                return self._percentile_analysis(queryset, query)
+            elif aggregation_type == 'benchmarking':
+                return self._benchmarking_analysis(queryset, query)
+            elif aggregation_type == 'multi_dimensional':
+                return self._multi_dimensional_analysis(queryset, query)
+            else:
+                return self._summary_analysis(queryset, query)
+                
+        except Exception as e:
+            logger.error(f"Error in audio data aggregation: {e}")
+            return {"error": f"Audio data aggregation failed: {str(e)}"}
+    
+    def _data_quality_analysis(self, queryset, query):
+        """Analyze data quality and completeness"""
+        try:
+            total_datasets = queryset.count()
+            
+            # Check completeness of key fields
+            quality_metrics = {
+                "total_datasets": total_datasets,
+                "with_audio_features": queryset.filter(audio_features__isnull=False).count(),
+                "with_noise_analysis": queryset.filter(noise_analysis__isnull=False).count(),
+                "with_region": queryset.filter(region__isnull=False).count(),
+                "with_category": queryset.filter(category__isnull=False).count(),
+                "with_recording_date": queryset.filter(recording_date__isnull=False).count(),
+            }
+            
+            # Calculate completeness percentages
+            completeness = {}
+            for key, count in quality_metrics.items():
+                if key != "total_datasets" and total_datasets > 0:
+                    completeness[f"{key}_percentage"] = round((count / total_datasets) * 100, 2)
+            
+            # Identify datasets with missing critical data
+            incomplete_datasets = queryset.filter(
+                Q(audio_features__isnull=True) | 
+                Q(noise_analysis__isnull=True) |
+                Q(region__isnull=True) |
+                Q(category__isnull=True)
+            ).count()
+            
+            return {
+                "analysis_type": "data_quality",
+                "quality_metrics": quality_metrics,
+                "completeness_percentages": completeness,
+                "incomplete_datasets": incomplete_datasets,
+                "data_quality_score": round(((total_datasets - incomplete_datasets) / total_datasets) * 100, 2) if total_datasets > 0 else 0,
+                "query": query,
+                "summary": f"Data quality analysis shows {completeness.get('with_audio_features_percentage', 0)}% completeness for audio features"
+            }
+            
+        except Exception as e:
+            return {"error": f"Data quality analysis failed: {str(e)}"}
+    
+    def _ranking_analysis(self, queryset, query):
+        """Rank datasets by various metrics"""
+        try:
+            query_lower = query.lower()
+            
+            # Determine ranking criteria
+            if 'decibel' in query_lower or 'loudest' in query_lower:
+                ranking = list(queryset.filter(
+                    noise_analysis__isnull=False
+                ).select_related('region', 'category').order_by(
+                    '-noise_analysis__max_db'
+                )[:10].values(
+                    'name', 'region__name', 'category__name',
+                    'noise_analysis__max_db', 'noise_analysis__mean_db'
+                ))
+                metric = "decibel_levels"
+                
+            elif 'energy' in query_lower or 'rms' in query_lower:
+                ranking = list(queryset.filter(
+                    audio_features__isnull=False
+                ).select_related('region', 'category').order_by(
+                    '-audio_features__rms_energy'
+                )[:10].values(
+                    'name', 'region__name', 'category__name',
+                    'audio_features__rms_energy', 'audio_features__duration'
+                ))
+                metric = "rms_energy"
+                
+            elif 'frequency' in query_lower:
+                ranking = list(queryset.filter(
+                    noise_analysis__isnull=False
+                ).select_related('region', 'category').order_by(
+                    '-noise_analysis__dominant_frequency'
+                )[:10].values(
+                    'name', 'region__name', 'category__name',
+                    'noise_analysis__dominant_frequency'
+                ))
+                metric = "dominant_frequency"
+                
+            else:
+                # Default: rank by dataset completeness
+                ranking = list(queryset.annotate(
+                    completeness_score=Case(
+                        When(audio_features__isnull=False, then=1),
+                        default=0,
+                        output_field=IntegerField()
+                    ) + Case(
+                        When(noise_analysis__isnull=False, then=1),
+                        default=0,
+                        output_field=IntegerField()
+                    )
+                ).select_related('region', 'category').order_by(
+                    '-completeness_score'
+                )[:10].values(
+                    'name', 'region__name', 'category__name', 'completeness_score'
+                ))
+                metric = "completeness"
+            
+            return {
+                "analysis_type": "ranking",
+                "ranking_metric": metric,
+                "top_10_results": ranking,
+                "query": query,
+                "summary": f"Top 10 datasets ranked by {metric}"
+            }
+            
+        except Exception as e:
+            return {"error": f"Ranking analysis failed: {str(e)}"}
+    
+    def _percentile_analysis(self, queryset, query):
+        """Calculate percentiles and distribution statistics"""
+        try:
+            from django.db.models import Percentile
+            
+            # Get datasets with complete data
+            complete_datasets = queryset.filter(
+                audio_features__isnull=False,
+                noise_analysis__isnull=False
+            )
+            
+            # Calculate percentiles for key metrics
+            percentiles = {}
+            
+            # Decibel percentiles
+            db_percentiles = complete_datasets.aggregate(
+                db_p25=Percentile('noise_analysis__mean_db', 0.25),
+                db_p50=Percentile('noise_analysis__mean_db', 0.50),
+                db_p75=Percentile('noise_analysis__mean_db', 0.75),
+                db_p90=Percentile('noise_analysis__mean_db', 0.90),
+                db_p95=Percentile('noise_analysis__mean_db', 0.95)
+            )
+            percentiles['decibel_levels'] = db_percentiles
+            
+            # RMS Energy percentiles
+            energy_percentiles = complete_datasets.aggregate(
+                energy_p25=Percentile('audio_features__rms_energy', 0.25),
+                energy_p50=Percentile('audio_features__rms_energy', 0.50),
+                energy_p75=Percentile('audio_features__rms_energy', 0.75),
+                energy_p90=Percentile('audio_features__rms_energy', 0.90),
+                energy_p95=Percentile('audio_features__rms_energy', 0.95)
+            )
+            percentiles['rms_energy'] = energy_percentiles
+            
+            # Duration percentiles
+            duration_percentiles = complete_datasets.aggregate(
+                duration_p25=Percentile('audio_features__duration', 0.25),
+                duration_p50=Percentile('audio_features__duration', 0.50),
+                duration_p75=Percentile('audio_features__duration', 0.75),
+                duration_p90=Percentile('audio_features__duration', 0.90)
+            )
+            percentiles['duration'] = duration_percentiles
+            
+            return {
+                "analysis_type": "percentiles",
+                "percentile_distributions": percentiles,
+                "total_datasets_analyzed": complete_datasets.count(),
+                "query": query,
+                "summary": f"Percentile analysis across {complete_datasets.count()} complete datasets"
+            }
+            
+        except Exception as e:
+            # Fallback if Percentile is not available
+            return self._fallback_percentile_analysis(queryset, query, str(e))
+    
+    def _fallback_percentile_analysis(self, queryset, query, original_error):
+        """Fallback percentile analysis using basic statistics"""
+        try:
+            complete_datasets = queryset.filter(
+                audio_features__isnull=False,
+                noise_analysis__isnull=False
+            )
+            
+            # Basic statistical summary
+            stats = complete_datasets.aggregate(
+                db_avg=Avg('noise_analysis__mean_db'),
+                db_max=Max('noise_analysis__mean_db'),
+                db_min=Min('noise_analysis__mean_db'),
+                db_std=StdDev('noise_analysis__mean_db'),
+                energy_avg=Avg('audio_features__rms_energy'),
+                energy_max=Max('audio_features__rms_energy'),
+                energy_min=Min('audio_features__rms_energy'),
+                energy_std=StdDev('audio_features__rms_energy'),
+                duration_avg=Avg('audio_features__duration'),
+                duration_max=Max('audio_features__duration'),
+                duration_min=Min('audio_features__duration')
+            )
+            
+            return {
+                "analysis_type": "statistical_summary",
+                "statistics": stats,
+                "total_datasets": complete_datasets.count(),
+                "note": f"Advanced percentile calculation not available: {original_error}",
+                "query": query,
+                "summary": f"Statistical summary of {complete_datasets.count()} complete datasets"
+            }
+            
+        except Exception as e:
+            return {"error": f"Fallback percentile analysis failed: {str(e)}"}
+    
+    def _benchmarking_analysis(self, queryset, query):
+        """Compare performance against benchmarks"""
+        try:
+            # Calculate overall benchmarks
+            overall_stats = queryset.filter(
+                audio_features__isnull=False,
+                noise_analysis__isnull=False
+            ).aggregate(
+                avg_decibel=Avg('noise_analysis__mean_db'),
+                avg_energy=Avg('audio_features__rms_energy'),
+                avg_duration=Avg('audio_features__duration'),
+                avg_frequency=Avg('noise_analysis__dominant_frequency')
+            )
+            
+            # Compare by region
+            regional_comparison = list(queryset.filter(
+                audio_features__isnull=False,
+                noise_analysis__isnull=False
+            ).values('region__name').annotate(
+                avg_decibel=Avg('noise_analysis__mean_db'),
+                avg_energy=Avg('audio_features__rms_energy'),
+                dataset_count=Count('id'),
+                above_avg_decibel=Count(Case(
+                    When(noise_analysis__mean_db__gt=overall_stats['avg_decibel'], then=1),
+                    output_field=IntegerField()
+                )),
+                above_avg_energy=Count(Case(
+                    When(audio_features__rms_energy__gt=overall_stats['avg_energy'], then=1),
+                    output_field=IntegerField()
+                ))
+            ).order_by('-avg_decibel'))
+            
+            return {
+                "analysis_type": "benchmarking",
+                "system_benchmarks": overall_stats,
+                "regional_performance": regional_comparison,
+                "query": query,
+                "summary": f"Performance benchmarking across regions compared to system averages"
+            }
+            
+        except Exception as e:
+            return {"error": f"Benchmarking analysis failed: {str(e)}"}
+    
+    def _multi_dimensional_analysis(self, queryset, query):
+        """Multi-dimensional cross-tabulation analysis"""
+        try:
+            # Region + Category breakdown
+            region_category = list(queryset.values(
+                'region__name', 'category__name'
+            ).annotate(
+                dataset_count=Count('id'),
+                avg_decibel=Avg('noise_analysis__mean_db'),
+                avg_energy=Avg('audio_features__rms_energy')
+            ).order_by('region__name', 'category__name'))
+            
+            # Microphone + Time of Day breakdown
+            mic_time = list(queryset.values(
+                'microphone_type__name', 'time_of_day__name'
+            ).annotate(
+                dataset_count=Count('id'),
+                avg_decibel=Avg('noise_analysis__mean_db')
+            ).order_by('microphone_type__name', 'time_of_day__name'))
+            
+            return {
+                "analysis_type": "multi_dimensional",
+                "region_category_breakdown": region_category,
+                "microphone_time_breakdown": mic_time,
+                "query": query,
+                "summary": f"Multi-dimensional analysis across regions, categories, microphones, and time periods"
+            }
+            
+        except Exception as e:
+            return {"error": f"Multi-dimensional analysis failed: {str(e)}"}
+    
+    def _summary_analysis(self, queryset, query):
+        """General summary analysis"""
+        try:
+            # Overall system summary
+            summary = {
+                "total_datasets": queryset.count(),
+                "with_complete_analysis": queryset.filter(
+                    audio_features__isnull=False,
+                    noise_analysis__isnull=False
+                ).count(),
+                "unique_regions": queryset.values('region').distinct().count(),
+                "unique_categories": queryset.values('category').distinct().count(),
+                "unique_communities": queryset.values('community').distinct().count(),
+                "date_range": queryset.aggregate(
+                    earliest=Min('recording_date'),
+                    latest=Max('recording_date')
+                )
+            }
+            
+            return {
+                "analysis_type": "summary",
+                "system_summary": summary,
+                "query": query,
+                "summary": f"System contains {summary['total_datasets']} datasets across {summary['unique_regions']} regions"
+            }
+            
+        except Exception as e:
+            return {"error": f"Summary analysis failed: {str(e)}"}
 
 
 class NoiseDetailTool(BaseTool):
@@ -931,9 +1743,11 @@ def get_agent_tools():
     NoiseDatasetSearchTool(),
     DataAnalysisTool(),
                 VisualizationAnalysisTool(),
-                AudioFeatureSearchTool(),
-                NoiseDetailTool(),
-            ]
+    AudioFeatureSearchTool(),
+                AudioAnalysisTool(),
+                AudioDataAggregationTool(),
+    NoiseDetailTool(),
+]
         except Exception as e:
             logger.warning(f"Failed to initialize some tools: {e}")
             # Fallback to tools that don't require database connection
