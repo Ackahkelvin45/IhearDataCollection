@@ -23,11 +23,57 @@ QUERY_TIMEOUT = 30  # seconds
 MAX_RESULTS_LIMIT = 1000
 DEFAULT_RESULTS_LIMIT = 100
 
+# Valid field mappings to prevent field reference errors
+VALID_AUDIO_FEATURE_FIELDS = {
+    'rms_energy', 'zero_crossing_rate', 'spectral_centroid', 'spectral_bandwidth', 
+    'spectral_rolloff', 'spectral_flatness', 'duration', 'sample_rate', 'num_samples',
+    'mfccs', 'chroma_stft', 'mel_spectrogram', 'waveform_data', 'harmonic_ratio', 'percussive_ratio'
+}
+
+VALID_NOISE_ANALYSIS_FIELDS = {
+    'mean_db', 'max_db', 'min_db', 'std_db', 'peak_count', 'peak_interval_mean',
+    'dominant_frequency', 'frequency_range', 'event_count', 'event_durations'
+}
+
+VALID_NOISE_DATASET_FIELDS = {
+    'name', 'collector', 'description', 'region', 'category', 'time_of_day', 'community',
+    'class_name', 'subclass', 'microphone_type', 'audio', 'recording_date', 'recording_device',
+    'updated_at', 'noise_id', 'created_at', 'dataset_type'
+}
+
+# Related field mappings
+VALID_RELATED_FIELDS = {
+    'region__name': True,
+    'category__name': True, 
+    'community__name': True,
+    'microphone_type__name': True,
+    'time_of_day__name': True,
+    'class_name__name': True,
+    'subclass__name': True,
+    'collector__username': True,
+    'collector__first_name': True,
+    'collector__last_name': True,
+}
+
+def validate_field_reference(model_prefix: str, field_name: str) -> bool:
+    """Validate that a field reference is correct for the given model"""
+    if model_prefix == 'audio_features':
+        return field_name in VALID_AUDIO_FEATURE_FIELDS
+    elif model_prefix == 'noise_analysis':
+        return field_name in VALID_NOISE_ANALYSIS_FIELDS
+    elif model_prefix == '' or model_prefix == 'noise_dataset':
+        return field_name in VALID_NOISE_DATASET_FIELDS
+    elif f"{model_prefix}__{field_name}" in VALID_RELATED_FIELDS:
+        return True
+    return False
+
 def get_user_friendly_error(error_msg: str, context: str = "") -> str:
     """Convert technical errors to user-friendly messages"""
     error_lower = str(error_msg).lower()
     
-    if "timeout" in error_lower:
+    if "cannot resolve keyword" in error_lower and "into field" in error_lower:
+        return "Invalid field reference in audio data query. The system is using an outdated field name. Please contact support to resolve this issue."
+    elif "timeout" in error_lower:
         return "The query is taking too long to process. Please try a more specific search or contact support."
     elif "connection" in error_lower or "database" in error_lower:
         return "Unable to connect to the audio database. Please check your connection and try again."
@@ -41,6 +87,46 @@ def get_user_friendly_error(error_msg: str, context: str = "") -> str:
         return "The request is too large to process. Please try filtering your search to fewer results."
     else:
         return f"An unexpected error occurred while processing your audio data request. {context}"
+
+def safe_field_reference(model_prefix: str, field_name: str) -> str:
+    """Get a safe field reference, with fallback for known field mappings"""
+    
+    # Handle common field name mappings/corrections
+    field_corrections = {
+        'rms': 'rms_energy',
+        'zcr': 'zero_crossing_rate', 
+        'db': 'mean_db',
+        'decibel': 'mean_db',
+        'frequency': 'dominant_frequency'
+    }
+    
+    # Apply corrections if needed
+    corrected_field = field_corrections.get(field_name, field_name)
+    
+    # Build the full field reference
+    if model_prefix:
+        full_reference = f"{model_prefix}__{corrected_field}"
+    else:
+        full_reference = corrected_field
+    
+    # Validate the reference
+    if validate_field_reference(model_prefix, corrected_field):
+        return full_reference
+    else:
+        logger.warning(f"Potentially invalid field reference: {full_reference}")
+        return full_reference  # Return anyway, let Django handle the error
+
+def validate_query_fields(queryset_operations: list) -> list:
+    """Validate field references in query operations before execution"""
+    validated_operations = []
+    
+    for operation in queryset_operations:
+        # This is a placeholder for more sophisticated validation
+        # For now, just log the operations
+        logger.debug(f"Query operation: {operation}")
+        validated_operations.append(operation)
+    
+    return validated_operations
 
 AI_CONFIG = getattr(settings, "AI_INSIGHT", {})
 DB_CONFIG = AI_CONFIG.get("DATABASE", {})
@@ -283,16 +369,17 @@ class NoiseDatasetSearchTool(BaseTool):
                             "event_count": analysis.event_count,
                         })
 
-                    if include_features and hasattr(dataset, "features"):
-                        features = dataset.features
+                    if include_features and hasattr(dataset, "audio_features"):
+                        features = dataset.audio_features
                         dataset_data["features"] = {
-                            "rms": getattr(features, "rms", None),
+                            "rms_energy": getattr(features, "rms_energy", None),
                             "spectral_centroid": getattr(
                                 features, "spectral_centroid", None
                             ),
                             "zero_crossing_rate": getattr(
                                 features, "zero_crossing_rate", None
                             ),
+                            "duration": getattr(features, "duration", None),
                         }
 
                     result_data.append(dataset_data)
@@ -373,7 +460,7 @@ class AudioFeatureSearchTool(BaseTool):
 
                 sample_features = list(
                     queryset[:5].values(
-                        "id", "rms", "zcr", "spectral_centroid", "spectral_bandwidth"
+                        "id", "rms_energy", "zero_crossing_rate", "spectral_centroid", "spectral_bandwidth", "duration"
                     )
                 )
 
@@ -410,7 +497,8 @@ class AudioFeatureSearchTool(BaseTool):
 
         except Exception as e:
             logger.error(f"Error in audio feature search: {str(e)}")
-            return {"error": f"Audio feature search failed: {str(e)}"}
+            user_friendly_error = get_user_friendly_error(str(e), "searching audio features")
+            return {"error": user_friendly_error, "technical_details": str(e)}
 
 
 class AudioAnalysisTool(BaseTool):
@@ -495,7 +583,8 @@ class AudioAnalysisTool(BaseTool):
                 
         except Exception as e:
             logger.error(f"Error in audio analysis: {e}")
-            return {"error": f"Audio analysis failed: {str(e)}"}
+            user_friendly_error = get_user_friendly_error(str(e), "analyzing audio data")
+            return {"error": user_friendly_error, "technical_details": str(e)}
     
     def _energy_analysis(self, queryset, group_by, query):
         """Analyze energy-related metrics"""
@@ -875,7 +964,8 @@ class AudioDataAggregationTool(BaseTool):
                 
         except Exception as e:
             logger.error(f"Error in audio data aggregation: {e}")
-            return {"error": f"Audio data aggregation failed: {str(e)}"}
+            user_friendly_error = get_user_friendly_error(str(e), "aggregating audio data")
+            return {"error": user_friendly_error, "technical_details": str(e)}
     
     def _data_quality_analysis(self, queryset, query):
         """Analyze data quality and completeness"""
