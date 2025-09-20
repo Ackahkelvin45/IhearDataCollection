@@ -273,7 +273,16 @@ class ChatSessionView(ModelViewSet):
                                     logger.warning(f"Error formatting tool_call message: {tc_e}")
                             elif msg.content:
                                 try:
-                                    content = str(msg.content)
+                                    # Ensure content is ALWAYS a string for LLM messages
+                                    content = msg.content
+                                    if isinstance(content, dict) or isinstance(content, list):
+                                        logger.warning(f"LLM content is object type {type(content)}, converting to string")
+                                        content = str(content)
+                                    elif content is None:
+                                        content = ""
+                                    else:
+                                        content = str(content)
+                                    
                                     llm_response += content
                                     yield self._format_stream_message("llm", content)
                                 except Exception as llm_e:
@@ -448,14 +457,24 @@ class ChatSessionView(ModelViewSet):
             return json.dumps({"action": action, "data": None}).encode("utf-8") + b"\n"
 
         try:
-            # First, sanitize the data to remove any HumanMessage objects
-            sanitized_data = self._sanitize_data(data)
-            
-            # Handle specific data processing for certain actions
-            if isinstance(sanitized_data, dict):
-                if action == "visualization":
-                    # Keep visualization data as-is after sanitization
-                    pass
+            # For LLM actions, ensure data is ALWAYS a string
+            if action == "llm":
+                if isinstance(data, (dict, list)):
+                    logger.warning(f"LLM action received object data: {type(data)}")
+                    sanitized_data = str(data)
+                elif data is None:
+                    sanitized_data = ""
+                else:
+                    sanitized_data = str(data)
+            else:
+                # First, sanitize the data to remove any HumanMessage objects
+                sanitized_data = self._sanitize_data(data)
+                
+                # Handle specific data processing for certain actions
+                if isinstance(sanitized_data, dict):
+                    if action == "visualization":
+                        # Keep visualization data as-is after sanitization
+                        pass
                 elif "customers" in sanitized_data:
                     sanitized_data = sanitized_data["customers"]
                 elif "likely_dormant_accounts" in sanitized_data:
