@@ -184,6 +184,12 @@
 <!-- Include Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
+<!-- Include Marked.js for proper markdown rendering -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<!-- Include DOMPurify for security -->
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.5/dist/purify.min.js"></script>
+
 <script>
 // Unified Audio Data Chat Implementation
 class UnifiedAudioDataChat {
@@ -208,6 +214,9 @@ class UnifiedAudioDataChat {
             updateTimes: []
         };
         
+        // Configure marked.js for better markdown rendering
+        this.configureMarkdownRenderer();
+        
         this.initializeEventListeners();
         this.loadSessions();
     }
@@ -215,6 +224,83 @@ class UnifiedAudioDataChat {
     getCSRFToken() {
         return document.querySelector('[name=csrfmiddlewaretoken]')?.value || 
                document.querySelector('meta[name="csrf-token"]')?.content || '';
+    }
+    
+    configureMarkdownRenderer() {
+        // Configure marked.js for better rendering
+        if (typeof marked !== 'undefined') {
+            marked.setOptions({
+                breaks: true,
+                gfm: true,
+                headerIds: false,
+                mangle: false,
+                sanitize: false, // We'll use DOMPurify for sanitization
+            });
+
+            // Custom renderer for better styling
+            const renderer = new marked.Renderer();
+            
+            // Custom table rendering with proper CSS classes
+            renderer.table = function(header, body) {
+                return `
+                    <div class="table-container">
+                        <table class="markdown-table">
+                            <thead>${header}</thead>
+                            <tbody>${body}</tbody>
+                        </table>
+                    </div>
+                `;
+            };
+            
+            // Custom table row rendering
+            renderer.tablerow = function(content) {
+                return `<tr class="table-row">${content}</tr>`;
+            };
+            
+            // Custom table cell rendering
+            renderer.tablecell = function(content, flags) {
+                const type = flags.header ? 'th' : 'td';
+                const className = flags.header ? 'table-header' : 'table-cell';
+                const align = flags.align ? ` style="text-align: ${flags.align}"` : '';
+                return `<${type} class="${className}"${align}>${content}</${type}>`;
+            };
+            
+            // Custom code block rendering
+            renderer.code = function(code, language) {
+                return `
+                    <div class="code-block-container">
+                        <pre class="code-block"><code class="language-${language || 'text'}">${code}</code></pre>
+                    </div>
+                `;
+            };
+            
+            // Custom list rendering
+            renderer.list = function(body, ordered) {
+                const type = ordered ? 'ol' : 'ul';
+                return `<${type} class="markdown-list">${body}</${type}>`;
+            };
+            
+            renderer.listitem = function(text) {
+                return `<li class="markdown-list-item">${text}</li>`;
+            };
+            
+            // Custom paragraph rendering
+            renderer.paragraph = function(text) {
+                return `<p class="markdown-paragraph">${text}</p>`;
+            };
+            
+            // Custom heading rendering
+            renderer.heading = function(text, level) {
+                return `<h${level} class="markdown-heading markdown-h${level}">${text}</h${level}>`;
+            };
+            
+            // Custom blockquote rendering
+            renderer.blockquote = function(quote) {
+                return `<blockquote class="markdown-blockquote">${quote}</blockquote>`;
+            };
+            
+            marked.setOptions({ renderer: renderer });
+        }
     }
     
     initializeEventListeners() {
@@ -677,8 +763,9 @@ class UnifiedAudioDataChat {
           </p>
         </div>
         <div style="flex-shrink:0; margin-left:0.75rem;">
-          <div style="width:2rem; height:2rem; background-color:#3b82f6; border-radius:9999px; display:flex; align-items:center; justify-content:center;">
-            <span style="color:white; font-size:0.75rem;">👤</span>
+          <div class="rounded-full border border-primary" style="width:2rem; height:2rem; border-radius:9999px; display:flex; align-items:center; justify-content:center;">
+            <img src="{% static 'assets/img/rail.png' %}" alt="User" style="width:1.5rem; height:1.5rem;"/>
+
           </div>
         </div>
       </div>
@@ -688,8 +775,9 @@ class UnifiedAudioDataChat {
     messageDiv.innerHTML = `
       <div style="display:flex; justify-content:flex-start; margin-bottom:1rem;">
         <div style="flex-shrink:0; margin-right:0.75rem;">
-          <div style="width:2rem; height:2rem; background-color:#22c55e; border-radius:9999px; display:flex; align-items:center; justify-content:center;">
-            <span style="color:white; font-size:0.75rem;">🤖</span>
+          <div class="border border-primary rounded-full" style="width:2rem; height:2rem; border-radius:9999px; display:flex; align-items:center; justify-content:center;">
+                        <img src="{% static 'assets/img/ai.png' %}" alt="User" style="width:1.5rem; height:1.5rem;"/>
+
           </div>
         </div>
         <div style="max-width:70%; min-width:0; flex:1;">
@@ -1248,7 +1336,7 @@ class UnifiedAudioDataChat {
     }
     
     formatMarkdown(text) {
-        // Fast markdown formatting optimized for streaming
+        // Professional markdown formatting with proper table support
         if (!text || typeof text !== 'string') {
             return '';
         }
@@ -1258,60 +1346,65 @@ class UnifiedAudioDataChat {
             return this._markdownCache.output;
         }
         
-        let formattedText = text;
-        
         try {
+            let cleanText = text;
+            
             // Remove chart configuration JSON blocks (they're handled by visualizations)
-            formattedText = formattedText.replace(/```json\s*\{\s*"recommended_chart"[\s\S]*?```/g, '');
-            formattedText = formattedText.replace(/```json\s*\{\s*"type":\s*"(pie|bar|line)"[\s\S]*?```/g, '');
+            cleanText = cleanText.replace(/```json\s*\{\s*"recommended_chart"[\s\S]*?```/g, '');
+            cleanText = cleanText.replace(/```json\s*\{\s*"type":\s*"(pie|bar|line|heatmap|scatter|box|area)"[\s\S]*?```/g, '');
             
             // Remove chart reasoning sections
-            formattedText = formattedText.replace(/### Recommended Visualization:[\s\S]*?(?=###|$)/g, '');
-            formattedText = formattedText.replace(/#### [^:]*Chart Configuration:[\s\S]*?(?=###|####|$)/g, '');
+            cleanText = cleanText.replace(/### Recommended Visualization:[\s\S]*?(?=###|$)/g, '');
+            cleanText = cleanText.replace(/#### [^:]*Chart Configuration:[\s\S]*?(?=###|####|$)/g, '');
+            cleanText = cleanText.replace(/Here's the template for creating[\s\S]*?```/g, '');
             
-            // Fast replacements for common markdown patterns
-            const replacements = [
-                // Code blocks
-                [/```(\w+)?\n([\s\S]*?)```/g, '<pre class="bg-gray-100 p-4 rounded-lg overflow-x-auto"><code class="language-$1">$2</code></pre>'],
-                // Inline code
-                [/`([^`]+)`/g, '<code class="bg-gray-100 px-2 py-1 rounded text-sm font-mono">$1</code>'],
-                // Headers (most common first)
-                [/^###\s+(.+)$/gm, '<h3 class="text-xl font-semibold mt-6 mb-3 text-gray-800">$1</h3>'],
-                [/^##\s+(.+)$/gm, '<h2 class="text-2xl font-bold mt-8 mb-4 text-gray-800">$1</h2>'],
-                [/^####\s+(.+)$/gm, '<h4 class="text-lg font-semibold mt-4 mb-2 text-gray-800">$1</h4>'],
-                // Bold/italic
-                [/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>'],
-                [/\*(.*?)\*/g, '<em class="italic text-gray-700">$1</em>'],
-                // Lists
-                [/^-\s+(.+)$/gm, '<li class="ml-4 mb-1">• $1</li>'],
-                // Line breaks
-                [/\n\n/g, '</p><p class="mb-4">'],
-                [/\n/g, '<br>']
-            ];
-            
-            // Apply replacements efficiently
-            for (const [pattern, replacement] of replacements) {
-                formattedText = formattedText.replace(pattern, replacement);
+            // Use marked.js for proper markdown rendering
+            let formattedText;
+            if (typeof marked !== 'undefined') {
+                formattedText = marked.parse(cleanText);
+                
+                // Sanitize the HTML for security
+                if (typeof DOMPurify !== 'undefined') {
+                    formattedText = DOMPurify.sanitize(formattedText, {
+                        ALLOWED_TAGS: [
+                            'p', 'br', 'strong', 'em', 'u', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+                            'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'table', 'thead', 'tbody',
+                            'tr', 'th', 'td', 'div', 'span', 'a', 'img'
+                        ],
+                        ALLOWED_ATTR: ['class', 'style', 'href', 'src', 'alt', 'title']
+                    });
+                }
+            } else {
+                // Fallback to basic formatting if marked.js isn't loaded
+                formattedText = this.basicMarkdownFormat(cleanText);
             }
             
-            // Wrap in paragraphs and cleanup
-            if (!formattedText.includes('<h') && !formattedText.includes('<pre')) {
-                formattedText = `<p class="mb-4">${formattedText}</p>`;
-            }
+            // Cache the result
+            this._markdownCache = { input: text, output: formattedText };
             
-            // Clean up empty tags
-            formattedText = formattedText.replace(/<p class="mb-4"><\/p>/g, '');
+            return formattedText;
             
         } catch (error) {
             console.warn('Markdown formatting error:', error);
-            // Fallback: just escape HTML and preserve line breaks
-            formattedText = text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+            // Fallback: basic text formatting
+            return this.basicMarkdownFormat(text);
         }
-        
-        // Cache the result for repeated calls during streaming
-        this._markdownCache = { input: text, output: formattedText };
-        
-        return formattedText;
+    }
+    
+    basicMarkdownFormat(text) {
+        // Basic fallback markdown formatting
+        return text
+            .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold">$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em class="italic">$1</em>')
+            .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
+            .replace(/^###\s+(.+)$/gm, '<h3 class="markdown-h3">$1</h3>')
+            .replace(/^##\s+(.+)$/gm, '<h2 class="markdown-h2">$1</h2>')
+            .replace(/^#\s+(.+)$/gm, '<h1 class="markdown-h1">$1</h1>')
+            .replace(/^-\s+(.+)$/gm, '<li class="markdown-list-item">• $1</li>')
+            .replace(/\n\n/g, '</p><p class="markdown-paragraph">')
+            .replace(/\n/g, '<br>')
+            .replace(/^(?!<)(.+)$/gm, '<p class="markdown-paragraph">$1</p>')
+            .replace(/<p class="markdown-paragraph"><\/p>/g, '');
     }
     
     getStreamingStats() {
@@ -1476,6 +1569,206 @@ document.addEventListener('DOMContentLoaded', () => {
 #messagesContainer > div {
     max-width: 100%;
     overflow: hidden;
+}
+
+/* Professional Markdown Styling */
+
+/* Table styling - responsive and professional */
+.table-container {
+    overflow-x: auto;
+    margin: 1.5rem 0;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e5e7eb;
+    max-width: 100%;
+}
+
+@media (max-width: 768px) {
+    .table-container {
+        font-size: 0.75rem;
+    }
+    
+    .table-header,
+    .table-cell {
+        padding: 0.5rem 0.75rem;
+    }
+}
+
+.markdown-table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: white;
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+.table-header {
+    background-color: #f8fafc;
+    color: #374151;
+    font-weight: 600;
+    padding: 0.75rem 1rem;
+    text-align: left;
+    border-bottom: 2px solid #e5e7eb;
+    border-right: 1px solid #e5e7eb;
+}
+
+.table-header:last-child {
+    border-right: none;
+}
+
+.table-cell {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #f3f4f6;
+    border-right: 1px solid #f3f4f6;
+    color: #374151;
+}
+
+.table-cell:last-child {
+    border-right: none;
+}
+
+.table-row:nth-child(even) {
+    background-color: #f9fafb;
+}
+
+.table-row:hover {
+    background-color: #f3f4f6;
+}
+
+/* Code styling */
+.code-block-container {
+    margin: 1.5rem 0;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.code-block {
+    background-color: #f8fafc;
+    border: 1px solid #e5e7eb;
+    padding: 1.25rem;
+    margin: 0;
+    overflow-x: auto;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: #374151;
+}
+
+.inline-code {
+    background-color: #f1f5f9;
+    color: #dc2626;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.25rem;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+    font-size: 0.875rem;
+    border: 1px solid #e2e8f0;
+}
+
+/* Heading styling */
+.markdown-heading {
+    color: #111827;
+    font-weight: 700;
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+    line-height: 1.25;
+}
+
+.markdown-h1 {
+    font-size: 2rem;
+    border-bottom: 2px solid #e5e7eb;
+    padding-bottom: 0.5rem;
+}
+
+.markdown-h2 {
+    font-size: 1.5rem;
+    color: #1f2937;
+}
+
+.markdown-h3 {
+    font-size: 1.25rem;
+    color: #374151;
+}
+
+.markdown-h4 {
+    font-size: 1.125rem;
+    color: #4b5563;
+}
+
+/* List styling */
+.markdown-list {
+    margin: 1rem 0;
+    padding-left: 1.5rem;
+}
+
+.markdown-list-item {
+    margin-bottom: 0.5rem;
+    line-height: 1.6;
+    color: #374151;
+}
+
+/* Paragraph styling */
+.markdown-paragraph {
+    margin-bottom: 1rem;
+    line-height: 1.7;
+    color: #374151;
+}
+
+/* Blockquote styling */
+.markdown-blockquote {
+    border-left: 4px solid #3b82f6;
+    background-color: #f8fafc;
+    padding: 1rem 1.5rem;
+    margin: 1.5rem 0;
+    font-style: italic;
+    color: #4b5563;
+    border-radius: 0 0.5rem 0.5rem 0;
+}
+
+/* Link styling */
+.message-content a {
+    color: #3b82f6;
+    text-decoration: underline;
+    text-decoration-color: #93c5fd;
+    transition: color 0.2s ease;
+}
+
+.message-content a:hover {
+    color: #1d4ed8;
+    text-decoration-color: #3b82f6;
+}
+
+/* Horizontal rule styling */
+.message-content hr {
+    border: none;
+    height: 1px;
+    background-color: #e5e7eb;
+    margin: 2rem 0;
+}
+
+/* Image styling */
+.message-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    margin: 1rem 0;
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+    .markdown-h1 { font-size: 1.5rem; }
+    .markdown-h2 { font-size: 1.25rem; }
+    .markdown-h3 { font-size: 1.125rem; }
+    .markdown-h4 { font-size: 1rem; }
+    
+    .markdown-paragraph {
+        font-size: 0.9rem;
+    }
+    
+    .table-container {
+        margin: 1rem 0;
+    }
 }
 
 /* Enhanced markdown styling */
