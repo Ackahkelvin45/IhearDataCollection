@@ -7,4 +7,4 @@ class StaticStorage(S3Boto3Storage):
     custom_domain = 'datacollectionfiles.lon1.cdn.digitaloceanspaces.com'
     
     def path(self, name):
-        return name  # Minimal implementation to satisfy Django
+        return name  

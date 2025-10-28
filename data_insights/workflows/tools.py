@@ -528,18 +528,21 @@ class AudioAnalysisTool(BaseTool):
             query_lower = query.lower()
             
             if not analysis_type:
-                if any(word in query_lower for word in ['energy', 'rms', 'decibel', 'db', 'amplitude', 'cumulative']):
+                # Prioritize statistical analysis for distribution queries
+                if any(word in query_lower for word in ['distribution', 'statistical', 'quartile', 'outlier', 'spread', 'range']):
+                    analysis_type = 'statistical'
+                elif any(word in query_lower for word in ['trend', 'over time', 'month', 'date', 'timeline']):
+                    analysis_type = 'temporal'
+                elif any(word in query_lower for word in ['correlation', 'relationship', 'vs', 'against']):
+                    analysis_type = 'correlation'
+                elif any(word in query_lower for word in ['cumulative', 'total over', 'area under']):
+                    analysis_type = 'temporal'  # Cumulative is temporal
+                elif any(word in query_lower for word in ['energy', 'rms', 'decibel', 'db', 'amplitude']):
                     analysis_type = 'energy'
                 elif any(word in query_lower for word in ['spectral', 'centroid', 'bandwidth', 'rolloff', 'flatness']):
                     analysis_type = 'spectral'
                 elif any(word in query_lower for word in ['frequency', 'dominant', 'hz', 'crossing']):
                     analysis_type = 'frequency'
-                elif any(word in query_lower for word in ['correlation', 'relationship', 'vs', 'against']):
-                    analysis_type = 'correlation'
-                elif any(word in query_lower for word in ['distribution', 'statistical', 'quartile', 'outlier']):
-                    analysis_type = 'statistical'
-                elif any(word in query_lower for word in ['trend', 'over time', 'month', 'date', 'timeline']):
-                    analysis_type = 'temporal'
                 else:
                     analysis_type = 'overview'
             
@@ -776,8 +779,73 @@ class AudioAnalysisTool(BaseTool):
             return {"error": f"Correlation analysis failed: {str(e)}"}
     
     def _statistical_analysis(self, queryset, group_by, query):
-        """Statistical distribution analysis"""
+        """Statistical distribution analysis with actual data for box plots"""
         try:
+            query_lower = query.lower()
+            
+            # For distribution queries, provide actual data values for box plots
+            if 'distribution' in query_lower and group_by:
+                if group_by == 'category':
+                    # Get actual decibel values grouped by category for box plot
+                    categories = queryset.values_list('category__name', flat=True).distinct()
+                    distribution_data = {}
+                    
+                    for category in categories:
+                        if category:  # Skip null categories
+                            decibel_values = list(queryset.filter(
+                                category__name=category,
+                                noise_analysis__mean_db__isnull=False
+                            ).values_list('noise_analysis__mean_db', flat=True))
+                            
+                            if decibel_values:  # Only include categories with data
+                                distribution_data[category] = {
+                                    'decibel_values': decibel_values,
+                                    'count': len(decibel_values),
+                                    'avg': sum(decibel_values) / len(decibel_values),
+                                    'max': max(decibel_values),
+                                    'min': min(decibel_values)
+                                }
+                    
+                    return {
+                        "analysis_type": "statistical_distribution",
+                        "grouped_by": group_by,
+                        "distribution_data": distribution_data,
+                        "categories": list(distribution_data.keys()),
+                        "query": query,
+                        "summary": f"Decibel level distribution across {len(distribution_data)} categories with actual values for box plot visualization"
+                    }
+                
+                elif group_by == 'region':
+                    # Get actual decibel values grouped by region for box plot
+                    regions = queryset.values_list('region__name', flat=True).distinct()
+                    distribution_data = {}
+                    
+                    for region in regions:
+                        if region:  # Skip null regions
+                            decibel_values = list(queryset.filter(
+                                region__name=region,
+                                noise_analysis__mean_db__isnull=False
+                            ).values_list('noise_analysis__mean_db', flat=True))
+                            
+                            if decibel_values:  # Only include regions with data
+                                distribution_data[region] = {
+                                    'decibel_values': decibel_values,
+                                    'count': len(decibel_values),
+                                    'avg': sum(decibel_values) / len(decibel_values),
+                                    'max': max(decibel_values),
+                                    'min': min(decibel_values)
+                                }
+                    
+                    return {
+                        "analysis_type": "statistical_distribution", 
+                        "grouped_by": group_by,
+                        "distribution_data": distribution_data,
+                        "regions": list(distribution_data.keys()),
+                        "query": query,
+                        "summary": f"Decibel level distribution across {len(distribution_data)} regions with actual values for box plot visualization"
+                    }
+            
+            # Fallback to summary statistics if not a distribution query
             if group_by == 'category':
                 results = list(queryset.values('category__name').annotate(
                     dataset_count=Count('id'),
@@ -818,7 +886,7 @@ class AudioAnalysisTool(BaseTool):
                 "grouped_by": group_by,
                 "results": results,
                 "query": query,
-                "summary": f"Statistical distribution analysis of audio features"
+                "summary": f"Statistical analysis of audio features grouped by {group_by}"
             }
             
         except Exception as e:
@@ -1077,39 +1145,80 @@ class VisualizationAnalysisTool(BaseTool):
 
     def _run(self, query: str, data_summary: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         try:
-            # Analyze the query and data to determine the best visualization
+            # First, analyze the query characteristics
+            query_analysis = self._analyze_query_characteristics(query, data_summary)
+            
+            # Create enhanced analysis prompt for the LLM
             analysis_prompt = f"""
-            Analyze the following audio data query and data to recommend the best visualization type:
+            You are an expert data visualization analyst specializing in audio data. Your task is to recommend the BEST chart type for this specific audio data query.
+
+            QUERY: "{query}"
+            DATA SUMMARY: {data_summary or "No specific data provided"}
             
-            Query: {query}
-            Data Summary: {data_summary or "No data summary provided"}
+            QUERY ANALYSIS:
+            - Query Type: {query_analysis['query_type']}
+            - Data Dimensions: {query_analysis['dimensions']}
+            - Temporal Aspect: {query_analysis['temporal']}
+            - Comparison Needed: {query_analysis['comparison']}
+            - Statistical Focus: {query_analysis['statistical']}
             
-            Available chart types for audio data:
-            - pie_chart: Best for showing proportions/percentages of audio categories, regions, or device types
-            - bar_chart: Best for comparing audio metrics across categories (decibel levels, frequency ranges, etc.)
-            - line_chart: Best for showing audio trends over time, frequency response curves, or decibel trends
-            - heatmap: Best for showing frequency correlations, spectral patterns, or geographic audio patterns
-            - scatter_plot: Best for showing relationships between audio variables (frequency vs amplitude, etc.)
-            - box_plot: Best for showing distribution of audio metrics (decibel levels, frequency ranges, etc.)
-            - area_chart: Best for showing cumulative audio energy or frequency spectrum analysis
+            CHART SELECTION RULES (FOLLOW STRICTLY):
             
-            Audio-specific considerations:
-            - Frequency analysis often benefits from line charts or area charts
-            - Decibel level comparisons work well with bar charts or box plots
-            - Geographic audio data distribution works well with pie charts or heatmaps
-            - Spectral characteristics are best shown with line charts or heatmaps
-            - Audio feature correlations work well with scatter plots
+            🥧 PIE CHART - Use ONLY when:
+            - Query asks for proportions, percentages, or parts of a whole
+            - Keywords: "distribution of", "percentage of", "proportion", "share"
+            - Data shows how categories make up 100% of something
+            - Example: "What percentage of audio files are in each category?"
             
-            Return a JSON response with:
-            1. recommended_chart: The best chart type for this audio data
-            2. reasoning: Why this chart type is best for the audio data and analysis
-            3. chart_template: A template object for creating the visualization
-            4. data_requirements: What audio data fields are needed for this visualization
+            📊 BAR CHART - Use when:
+            - Comparing discrete values across categories
+            - Keywords: "compare", "which has higher", "levels across", "by region/category"
+            - Data has distinct categories with values to compare
+            - Example: "Compare decibel levels across different regions"
+            
+            📈 LINE CHART - Use when:
+            - Showing trends, changes, or progression over time
+            - Keywords: "over time", "trends", "changes", "timeline", "progression"
+            - Data has temporal or sequential component
+            - Example: "Show me audio recording trends over time"
+            
+            🔥 HEATMAP - Use when:
+            - Showing correlations, patterns, or 2D relationships
+            - Keywords: "correlation", "pattern", "relationship between", "matrix"
+            - Data has two dimensions that interact
+            - Example: "Show correlation between frequency and amplitude"
+            
+            🔵 SCATTER PLOT - Use when:
+            - Showing relationship between two continuous variables
+            - Keywords: "relationship between X and Y", "vs", "against", "correlation"
+            - Data points need to show individual relationships
+            - Example: "Plot RMS energy vs spectral centroid"
+            
+            📦 BOX PLOT - Use when:
+            - Showing statistical distributions, quartiles, outliers
+            - Keywords: "distribution", "outliers", "quartiles", "statistical", "range"
+            - Data needs to show statistical properties
+            - Example: "Show distribution of decibel levels across categories"
+            
+            🏔️ AREA CHART - Use when:
+            - Showing cumulative data or area under curves
+            - Keywords: "cumulative", "total over time", "area under", "spectrum"
+            - Data shows accumulation or stacked composition
+            - Example: "Show cumulative audio energy over time"
+            
+            RESPOND WITH ONLY JSON:
+            {{
+                "recommended_chart": "chart_type",
+                "reasoning": "Detailed explanation why this specific chart type is optimal for this audio data query",
+                "data_requirements": ["field1", "field2"],
+                "confidence": "high"
+            }}
             """
             
-            # Use a simple LLM call to analyze and recommend
+            # Use LLM to analyze and recommend
             llm = ChatOpenAI(
-                model=AGENT_CONFIG.get("MODEL", "gpt-4o-mini"),
+                model=AGENT_CONFIG.get("MODEL", "gpt-5-nano"),
+                temperature=0.1,  # Low temperature for consistent reasoning
                 api_key=os.getenv("OPENAI_API_KEY")
             )
             response = llm.invoke([HumanMessage(content=analysis_prompt)])
@@ -1117,20 +1226,23 @@ class VisualizationAnalysisTool(BaseTool):
             # Parse the response and create chart template
             recommendation = self._parse_visualization_recommendation(response.content, query)
             
-            chart_type = recommendation["recommended_chart"]
+            # Validate and potentially override the recommendation
+            final_recommendation = self._validate_recommendation(recommendation, query_analysis, query)
+            
+            chart_type = final_recommendation["recommended_chart"]
             chart_template = self._generate_chart_template(chart_type)
             
             return {
                 "visualization_type": chart_type,
                 "visualization_name": self._get_visualization_name(chart_type),
                 "chart_template": chart_template,
-                "recommendation": recommendation,
+                "recommendation": final_recommendation,
                 "frontend_data": {
                     "type": chart_type,
                     "name": self._get_visualization_name(chart_type),
                     "config": chart_template["config"],
                     "data_structure": self._get_data_structure(chart_type),
-                    "description": recommendation.get("reasoning", "Audio data visualization")
+                    "description": final_recommendation.get("reasoning", "Audio data visualization")
                 },
                 "message": f"Recommended {self._get_visualization_name(chart_type)} for this data analysis"
             }
@@ -1159,73 +1271,252 @@ class VisualizationAnalysisTool(BaseTool):
                 "message": "Error in visualization analysis, using default bar chart"
             }
     
-    def _parse_visualization_recommendation(self, llm_response: str, query: str) -> Dict[str, Any]:
-        """Parse LLM response and extract visualization recommendation"""
-        try:
-            # Audio-specific keyword-based analysis if JSON parsing fails
-            query_lower = query.lower()
+    def _analyze_query_characteristics(self, query: str, data_summary: Optional[str] = None) -> Dict[str, Any]:
+        """Analyze query characteristics to inform visualization choice"""
+        query_lower = query.lower()
+        
+        # Determine query type
+        query_type = "unknown"
+        if any(word in query_lower for word in ["distribution", "percentage", "proportion", "share"]):
+            query_type = "distribution"
+        elif any(word in query_lower for word in ["compare", "comparison", "vs", "against", "between"]):
+            query_type = "comparison"
+        elif any(word in query_lower for word in ["trend", "over time", "timeline", "change"]):
+            query_type = "temporal"
+        elif any(word in query_lower for word in ["correlation", "relationship", "pattern"]):
+            query_type = "correlation"
+        elif any(word in query_lower for word in ["cumulative", "total", "sum", "area under"]):
+            query_type = "cumulative"
+        elif any(word in query_lower for word in ["outlier", "quartile", "statistical", "distribution"]):
+            query_type = "statistical"
+        
+        # Determine data dimensions
+        dimensions = 1
+        if any(word in query_lower for word in ["vs", "against", "correlation", "relationship between"]):
+            dimensions = 2
+        elif any(word in query_lower for word in ["by region and category", "cross", "matrix"]):
+            dimensions = 3
             
-            # Audio-specific keywords for pie charts
-            if any(word in query_lower for word in ["proportion", "percentage", "share", "part of", "distribution by", "breakdown by", "region", "category", "device type"]):
+        # Check for temporal aspect
+        temporal = any(word in query_lower for word in ["time", "date", "month", "day", "timeline", "trend"])
+        
+        # Check for comparison needs
+        comparison = any(word in query_lower for word in ["compare", "vs", "higher", "lower", "best", "worst"])
+        
+        # Check for statistical focus
+        statistical = any(word in query_lower for word in ["distribution", "outlier", "quartile", "statistical", "median", "average"])
+        
+        # Suggest chart type based on analysis
+        suggested_type = self._suggest_chart_type(query_type, dimensions, temporal, comparison, statistical)
+        
+        return {
+            "query_type": query_type,
+            "dimensions": dimensions,
+            "temporal": temporal,
+            "comparison": comparison,
+            "statistical": statistical,
+            "suggested_type": suggested_type,
+            "reasoning": f"Query appears to be {query_type} analysis with {dimensions} dimensions"
+        }
+    
+    def _suggest_chart_type(self, query_type: str, dimensions: int, temporal: bool, comparison: bool, statistical: bool) -> str:
+        """Suggest chart type based on query characteristics"""
+        
+        # Temporal data almost always needs line or area charts
+        if temporal and query_type == "cumulative":
+            return "area_chart"
+        elif temporal:
+            return "line_chart"
+            
+        # Statistical analysis usually needs box plots
+        if statistical and query_type == "statistical":
+            return "box_plot"
+            
+        # Correlation analysis needs scatter plots or heatmaps
+        if query_type == "correlation":
+            if dimensions == 2:
+                return "scatter_plot"
+            else:
+                return "heatmap"
+                
+        # Distribution analysis - pie only for parts of whole
+        if query_type == "distribution":
+            return "pie_chart"
+            
+        # Comparison analysis needs bar charts
+        if query_type == "comparison" or comparison:
+            return "bar_chart"
+            
+        # Cumulative data needs area charts
+        if query_type == "cumulative":
+            return "area_chart"
+            
+        # Default to bar chart for general comparisons
+        return "bar_chart"
+    
+    def _validate_recommendation(self, recommendation: Dict[str, Any], query_analysis: Dict[str, Any], query: str) -> Dict[str, Any]:
+        """Validate and potentially override LLM recommendation based on query analysis"""
+        
+        llm_chart = recommendation.get("recommended_chart", "bar_chart")
+        suggested_chart = query_analysis["suggested_type"]
+        
+        # Override pie chart if it's not truly a distribution query
+        if llm_chart == "pie_chart" and query_analysis["query_type"] != "distribution":
+            query_lower = query.lower()
+            if not any(word in query_lower for word in ["percentage", "proportion", "share", "part of"]):
+                logger.info(f"Overriding pie chart recommendation for query: {query}")
                 return {
-                    "recommended_chart": "pie_chart",
-                    "reasoning": "Query asks for proportions or distribution of audio categories/regions",
-                    "data_requirements": ["audio_category", "count_or_percentage"]
+                    "recommended_chart": suggested_chart,
+                    "reasoning": f"Changed from pie chart to {suggested_chart} because this query is about {query_analysis['query_type']}, not proportions",
+                    "data_requirements": recommendation.get("data_requirements", ["category", "value"]),
+                    "confidence": "high",
+                    "override_reason": f"Query type '{query_analysis['query_type']}' is better suited for {suggested_chart}"
                 }
-            # Audio-specific keywords for line charts
-            elif any(word in query_lower for word in ["trend", "over time", "time series", "change over", "frequency response", "spectrum", "decibel trend", "audio level"]):
-                return {
-                    "recommended_chart": "line_chart",
-                    "reasoning": "Query asks for audio trends over time or frequency analysis",
-                    "data_requirements": ["time_or_frequency", "audio_value"]
-                }
-            # Audio-specific keywords for heatmaps
-            elif any(word in query_lower for word in ["correlation", "relationship", "pattern", "heat", "spectral", "frequency correlation", "geographic pattern"]):
-                return {
-                    "recommended_chart": "heatmap",
-                    "reasoning": "Query asks for audio correlations, spectral patterns, or geographic audio patterns",
-                    "data_requirements": ["x_axis", "y_axis", "audio_intensity"]
-                }
-            # Audio-specific keywords for box plots
-            elif any(word in query_lower for word in ["distribution", "outliers", "quartile", "median", "decibel level", "frequency range", "audio statistics"]):
-                return {
-                    "recommended_chart": "box_plot",
-                    "reasoning": "Query asks for distribution analysis of audio metrics",
-                    "data_requirements": ["audio_category", "numerical_audio_values"]
-                }
-            # Audio-specific keywords for scatter plots
-            elif any(word in query_lower for word in ["scatter", "relationship between", "correlation between", "frequency vs", "amplitude vs", "audio feature"]):
-                return {
-                    "recommended_chart": "scatter_plot",
-                    "reasoning": "Query asks for relationship between audio variables",
-                    "data_requirements": ["audio_variable_x", "audio_variable_y"]
-                }
-            # Audio-specific keywords for area charts
-            elif any(word in query_lower for word in ["cumulative", "total over", "area under", "energy", "spectrum analysis", "frequency spectrum"]):
+        
+        # Override if temporal data is using wrong chart type
+        if query_analysis["temporal"] and llm_chart not in ["line_chart", "area_chart"]:
+            logger.info(f"Overriding {llm_chart} for temporal query: {query}")
+            chart_type = "area_chart" if "cumulative" in query.lower() else "line_chart"
+            return {
+                "recommended_chart": chart_type,
+                "reasoning": f"Changed to {chart_type} because this query involves temporal data which is best shown with time-based charts",
+                "data_requirements": ["time", "value"],
+                "confidence": "high",
+                "override_reason": "Temporal data requires time-based visualization"
+            }
+        
+        # Override if correlation data is using wrong chart type
+        if query_analysis["query_type"] == "correlation" and llm_chart not in ["scatter_plot", "heatmap"]:
+            logger.info(f"Overriding {llm_chart} for correlation query: {query}")
+            chart_type = "scatter_plot" if query_analysis["dimensions"] == 2 else "heatmap"
+            return {
+                "recommended_chart": chart_type,
+                "reasoning": f"Changed to {chart_type} because correlation analysis requires charts that show relationships between variables",
+                "data_requirements": ["variable_x", "variable_y"],
+                "confidence": "high",
+                "override_reason": "Correlation data requires relationship visualization"
+            }
+        
+        # If LLM recommendation is good, use it
+        return recommendation
+    
+    def _parse_visualization_recommendation(self, llm_response: str, query: str) -> Dict[str, Any]:
+        """Parse LLM response and extract visualization recommendation with intelligent fallback"""
+        try:
+            # Try to parse JSON response from LLM first
+            import json
+            import re
+            
+            # Look for JSON in the response
+            json_match = re.search(r'\{[^}]*"recommended_chart"[^}]*\}', llm_response, re.DOTALL)
+            if json_match:
+                try:
+                    parsed_json = json.loads(json_match.group())
+                    if "recommended_chart" in parsed_json:
+                        logger.info(f"Successfully parsed LLM recommendation: {parsed_json['recommended_chart']}")
+                        return parsed_json
+                except json.JSONDecodeError as je:
+                    logger.warning(f"JSON parsing failed: {je}")
+            
+            # If JSON parsing fails, use intelligent keyword analysis
+            logger.info(f"Using fallback keyword analysis for query: {query}")
+            return self._intelligent_keyword_analysis(query, llm_response)
+            
+        except Exception as e:
+            logger.error(f"Error parsing visualization recommendation: {e}")
+            return self._intelligent_keyword_analysis(query, "")
+    
+    def _intelligent_keyword_analysis(self, query: str, llm_response: str = "") -> Dict[str, Any]:
+        """Intelligent keyword-based chart selection with strict rules to avoid pie chart bias"""
+        query_lower = query.lower()
+        
+        # 1. TEMPORAL ANALYSIS - Line/Area Charts (HIGH PRIORITY)
+        if any(word in query_lower for word in ["over time", "timeline", "trend", "change", "month", "date", "day", "progression"]):
+            if any(word in query_lower for word in ["cumulative", "total", "sum", "area under"]):
                 return {
                     "recommended_chart": "area_chart",
-                    "reasoning": "Query asks for cumulative audio energy or spectrum analysis",
-                    "data_requirements": ["frequency_or_time", "cumulative_audio_value"]
-                }
-            # Audio-specific keywords for bar charts
-            elif any(word in query_lower for word in ["compare", "comparison", "decibel", "audio level", "frequency", "acoustic", "noise level"]):
-                return {
-                    "recommended_chart": "bar_chart",
-                    "reasoning": "Query asks for comparison of audio metrics across categories",
-                    "data_requirements": ["audio_category", "audio_metric_value"]
+                    "reasoning": "Temporal query with cumulative aspect - area chart shows accumulation over time",
+                    "data_requirements": ["time", "cumulative_value"],
+                    "confidence": "high"
                 }
             else:
                 return {
-                    "recommended_chart": "bar_chart",
-                    "reasoning": "Default choice for general audio data comparisons",
-                    "data_requirements": ["audio_category", "audio_value"]
+                    "recommended_chart": "line_chart", 
+                    "reasoning": "Temporal query - line chart best shows trends and changes over time",
+                    "data_requirements": ["time", "value"],
+                    "confidence": "high"
                 }
-        except Exception as e:
-            logger.error(f"Error parsing visualization recommendation: {e}")
+        
+        # 2. CORRELATION/RELATIONSHIP ANALYSIS - Scatter/Heatmap (HIGH PRIORITY)
+        elif any(word in query_lower for word in ["relationship between", " vs ", " against ", "correlation between", "plot"]):
+            return {
+                "recommended_chart": "scatter_plot",
+                "reasoning": "Query asks for relationship between two specific variables - scatter plot shows individual data point correlations",
+                "data_requirements": ["variable_x", "variable_y"],
+                "confidence": "high"
+            }
+        elif any(word in query_lower for word in ["correlation", "pattern", "matrix", "spectral pattern"]):
+            return {
+                "recommended_chart": "heatmap",
+                "reasoning": "Query asks for correlations or patterns - heatmap shows complex multi-dimensional relationships",
+                "data_requirements": ["dimension_x", "dimension_y", "intensity"],
+                "confidence": "high"
+            }
+        
+        # 3. STATISTICAL ANALYSIS - Box Plots (HIGH PRIORITY)
+        elif any(word in query_lower for word in ["outlier", "quartile", "statistical", "range", "spread", "median"]):
+            return {
+                "recommended_chart": "box_plot",
+                "reasoning": "Statistical analysis query - box plot shows distribution, quartiles, and outliers",
+                "data_requirements": ["category", "value_distribution"],
+                "confidence": "high"
+            }
+        
+        # 4. CUMULATIVE ANALYSIS - Area Charts (HIGH PRIORITY)
+        elif any(word in query_lower for word in ["cumulative", "total over", "area under", "spectrum analysis", "energy over"]):
+            return {
+                "recommended_chart": "area_chart",
+                "reasoning": "Cumulative analysis query - area chart shows accumulation and total values",
+                "data_requirements": ["sequence", "cumulative_value"],
+                "confidence": "high"
+            }
+        
+        # 5. STRICT PROPORTION ANALYSIS - Pie Charts (VERY STRICT CRITERIA)
+        elif (any(word in query_lower for word in ["percentage", "proportion", "share", "part of"]) and 
+              any(word in query_lower for word in ["of", "by", "across"]) and
+              not any(word in query_lower for word in ["compare", "vs", "against", "higher", "lower"])):
+            return {
+                "recommended_chart": "pie_chart",
+                "reasoning": "Query specifically asks for proportions or percentages of a whole - pie chart shows parts-to-whole relationships",
+                "data_requirements": ["category", "percentage"],
+                "confidence": "high"
+            }
+        
+        # 6. COMPARISON ANALYSIS - Bar Charts (DEFAULT FOR MOST QUERIES)
+        elif any(word in query_lower for word in ["compare", "comparison", "which", "higher", "lower", "across", "between", "levels"]):
             return {
                 "recommended_chart": "bar_chart",
-                "reasoning": "Default recommendation due to parsing error",
-                "data_requirements": ["category", "value"]
+                "reasoning": "Comparison query - bar chart clearly shows differences between categories",
+                "data_requirements": ["category", "value"],
+                "confidence": "high"
+            }
+        
+        # 7. DISTRIBUTION BY COUNT (NOT PERCENTAGE) - Bar Charts
+        elif any(word in query_lower for word in ["distribution", "breakdown"]):
+            return {
+                "recommended_chart": "bar_chart",
+                "reasoning": "Distribution query by count - bar chart shows quantities across categories (not percentages)",
+                "data_requirements": ["category", "count"],
+                "confidence": "medium"
+            }
+        
+        # 8. DEFAULT - Bar Chart (NEVER default to pie!)
+        else:
+            return {
+                "recommended_chart": "bar_chart",
+                "reasoning": "General audio data query - bar chart provides clear comparison of values across categories",
+                "data_requirements": ["category", "value"],
+                "confidence": "medium"
             }
     
     def _generate_chart_template(self, chart_type: str) -> Dict[str, Any]:

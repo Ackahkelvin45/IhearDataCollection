@@ -17,7 +17,6 @@ class RegionAdmin(ModelAdmin):
     pass
 
 
-# Repeat for other models or use a loop:
 models_to_register = [Community, Microphone_Type, Time_Of_Day]
 
 for model in models_to_register:

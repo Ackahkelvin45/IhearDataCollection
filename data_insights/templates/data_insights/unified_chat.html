@@ -181,8 +181,9 @@
     </div>
 </div>
 
-<!-- Include Chart.js -->
+<!-- Include Chart.js with Box Plot Plugin -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-boxplot@0.2.0/dist/chartjs-chart-boxplot.min.js"></script>
 
 <script>
 // Unified Audio Data Chat Implementation
@@ -847,7 +848,7 @@ class UnifiedAudioDataChat {
                             labels: actualData.labels,
                             datasets: [{
                                 data: actualData.data,
-                                backgroundColor: actualData.colors,
+                                backgroundColor: Array.isArray(actualData.colors) ? actualData.colors : this.generateColors(actualData.labels.length),
                                 borderWidth: 2,
                                 borderColor: '#ffffff'
                             }]
@@ -882,8 +883,8 @@ class UnifiedAudioDataChat {
                             datasets: [{
                                 label: 'Count',
                                 data: actualData.data,
-                                backgroundColor: actualData.colors[0] || '#36A2EB',
-                                borderColor: actualData.colors[0] || '#36A2EB',
+                                backgroundColor: Array.isArray(actualData.colors) ? actualData.colors : this.generateColors(actualData.labels.length),
+                                borderColor: Array.isArray(actualData.colors) ? actualData.colors : this.generateColors(actualData.labels.length),
                                 borderWidth: 1
                             }]
                         },
@@ -913,8 +914,8 @@ class UnifiedAudioDataChat {
                             datasets: [{
                                 label: 'Trend',
                                 data: actualData.data,
-                                borderColor: actualData.colors[0] || '#36A2EB',
-                                backgroundColor: (actualData.colors[0] || '#36A2EB') + '20',
+                                borderColor: Array.isArray(actualData.colors) ? actualData.colors[0] : '#36A2EB',
+                                backgroundColor: (Array.isArray(actualData.colors) ? actualData.colors[0] : '#36A2EB') + '20',
                                 tension: 0.4,
                                 fill: false
                             }]
@@ -936,6 +937,198 @@ class UnifiedAudioDataChat {
                     };
                     break;
                     
+                case 'box_plot':
+                    // Use proper box plot with chartjs-chart-boxplot plugin
+                    if (actualData.boxPlotData && actualData.boxPlotData.length > 0) {
+                        config = {
+                            type: 'boxplot',
+                            data: {
+                                labels: actualData.labels,
+                                datasets: [{
+                                    label: 'Decibel Distribution',
+                                    data: actualData.boxPlotData,
+                                    backgroundColor: Array.isArray(actualData.colors) ? actualData.colors[0] : '#36A2EB',
+                                    borderColor: Array.isArray(actualData.colors) ? actualData.colors[0] : '#36A2EB',
+                                    borderWidth: 2
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                scales: {
+                                    y: { 
+                                        title: {
+                                            display: true,
+                                            text: 'Decibel Level (dB)'
+                                        }
+                                    }
+                                },
+                                plugins: {
+                                    legend: { display: true },
+                                    title: {
+                                        display: true,
+                                        text: actualData.title,
+                                        font: { size: 16, weight: 'bold' }
+                                    }
+                                }
+                            }
+                        };
+                    } else {
+                        // Fallback to bar chart if box plot data not available
+                        config = {
+                            type: 'bar',
+                            data: {
+                                labels: actualData.labels,
+                                datasets: [{
+                                    label: 'Average dB',
+                                    data: actualData.data,
+                                    backgroundColor: Array.isArray(actualData.colors) ? actualData.colors[0] : '#36A2EB',
+                                    borderColor: Array.isArray(actualData.colors) ? actualData.colors[0] : '#36A2EB',
+                                    borderWidth: 1
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                scales: {
+                                    y: { 
+                                        beginAtZero: true,
+                                        title: {
+                                            display: true,
+                                            text: 'Decibel Level (dB)'
+                                        }
+                                    }
+                                },
+                                plugins: {
+                                    legend: { display: true },
+                                    title: {
+                                        display: true,
+                                        text: actualData.title,
+                                        font: { size: 16, weight: 'bold' }
+                                    },
+                                    tooltip: {
+                                        callbacks: {
+                                            afterBody: function(context) {
+                                                if (actualData.distributionInfo) {
+                                                    const category = context[0].label;
+                                                    const info = actualData.distributionInfo[category];
+                                                    if (info) {
+                                                        return [
+                                                            `Count: ${info.count}`,
+                                                            `Min: ${info.min?.toFixed(1)} dB`,
+                                                            `Max: ${info.max?.toFixed(1)} dB`,
+                                                            `Avg: ${info.avg?.toFixed(1)} dB`
+                                                        ];
+                                                    }
+                                                }
+                                                return [];
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        };
+                    }
+                    break;
+                    
+                case 'scatter_plot':
+                    config = {
+                        type: 'scatter',
+                        data: {
+                            datasets: [{
+                                label: 'Audio Data Points',
+                                data: actualData.scatterData || [],
+                                backgroundColor: Array.isArray(actualData.colors) ? actualData.colors[0] : '#36A2EB',
+                                borderColor: Array.isArray(actualData.colors) ? actualData.colors[0] : '#36A2EB'
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                x: { 
+                                    type: 'linear',
+                                    title: {
+                                        display: true,
+                                        text: actualData.xLabel || 'X Axis'
+                                    }
+                                },
+                                y: { 
+                                    title: {
+                                        display: true,
+                                        text: actualData.yLabel || 'Y Axis'
+                                    }
+                                }
+                            },
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: actualData.title,
+                                    font: { size: 16, weight: 'bold' }
+                                }
+                            }
+                        }
+                    };
+                    break;
+                    
+                case 'area_chart':
+                    config = {
+                        type: 'line',
+                        data: {
+                            labels: actualData.labels,
+                            datasets: [{
+                                label: 'Cumulative Value',
+                                data: actualData.data,
+                                borderColor: Array.isArray(actualData.colors) ? actualData.colors[0] : '#36A2EB',
+                                backgroundColor: (Array.isArray(actualData.colors) ? actualData.colors[0] : '#36A2EB') + '40',
+                                tension: 0.4,
+                                fill: true
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                y: { beginAtZero: true }
+                            },
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: actualData.title,
+                                    font: { size: 16, weight: 'bold' }
+                                }
+                            }
+                        }
+                    };
+                    break;
+                    
+                case 'heatmap':
+                    // Chart.js doesn't have native heatmap, use a matrix-style bar chart
+                    config = {
+                        type: 'bar',
+                        data: {
+                            labels: actualData.labels,
+                            datasets: [{
+                                label: 'Correlation Intensity',
+                                data: actualData.data,
+                                backgroundColor: Array.isArray(actualData.colors) ? actualData.colors : this.generateColors(actualData.labels.length),
+                                borderWidth: 1
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                title: {
+                                    display: true,
+                                    text: actualData.title,
+                                    font: { size: 16, weight: 'bold' }
+                                }
+                            }
+                        }
+                    };
+                    break;
+                    
                 default:
                     // Default to bar chart
                     config = {
@@ -945,7 +1138,7 @@ class UnifiedAudioDataChat {
                             datasets: [{
                                 label: 'Count',
                                 data: actualData.data,
-                                backgroundColor: actualData.colors,
+                                backgroundColor: Array.isArray(actualData.colors) ? actualData.colors : this.generateColors(actualData.labels.length),
                                 borderWidth: 1
                             }]
                         },
@@ -982,8 +1175,48 @@ class UnifiedAudioDataChat {
         let extractedData = null;
         
         for (const toolResponse of toolResponses) {
+            // Handle statistical distribution data (for box plots)
+            if (typeof toolResponse === 'object' && toolResponse.analysis_type === 'statistical_distribution') {
+                try {
+                    const distributionData = toolResponse.distribution_data;
+                    if (distributionData) {
+                        const labels = Object.keys(distributionData);
+                        const data = labels.map(label => distributionData[label].avg);
+                        
+                        // Generate box plot data (min, q1, median, q3, max) for each category
+                        const boxPlotData = labels.map(label => {
+                            const values = distributionData[label].decibel_values || [];
+                            if (values.length === 0) return null;
+                            
+                            // Sort values for quartile calculation
+                            const sortedValues = [...values].sort((a, b) => a - b);
+                            const n = sortedValues.length;
+                            
+                            const min = sortedValues[0];
+                            const max = sortedValues[n - 1];
+                            const median = this.calculateMedian(sortedValues);
+                            const q1 = this.calculateQuartile(sortedValues, 0.25);
+                            const q3 = this.calculateQuartile(sortedValues, 0.75);
+                            
+                            return [min, q1, median, q3, max];
+                        }).filter(data => data !== null);
+                        
+                        extractedData = {
+                            labels: labels,
+                            data: data,
+                            boxPlotData: boxPlotData,
+                            colors: this.generateColors(labels.length),
+                            title: 'Distribution of Decibel Levels Across Categories',
+                            distributionInfo: distributionData  // For tooltips
+                        };
+                        break;
+                    }
+                } catch (e) {
+                    console.log('Error parsing statistical distribution:', e);
+                }
+            }
             // Handle array responses (like region counts)
-            if (Array.isArray(toolResponse)) {
+            else if (Array.isArray(toolResponse)) {
                 try {
                     if (toolResponse.length > 0 && toolResponse[0].region_name) {
                         // Extract region data from array format
@@ -1023,6 +1256,73 @@ class UnifiedAudioDataChat {
                     }
                 } catch (e) {
                     console.log('Error processing dataset response:', e);
+                }
+            }
+            // Handle analysis results with different types
+            else if (typeof toolResponse === 'object' && toolResponse.analysis_type) {
+                try {
+                    if (toolResponse.analysis_type === 'energy_analysis' && toolResponse.results) {
+                        const results = toolResponse.results;
+                        if (Array.isArray(results) && results.length > 0) {
+                            const labels = results.map(r => r.region__name || r.category__name || 'Overall');
+                            const data = results.map(r => r.avg_decibel || r.avg_rms_energy || 0);
+                            
+                            extractedData = {
+                                labels: labels,
+                                data: data,
+                                colors: this.generateColors(labels.length),
+                                title: 'Energy Analysis Results'
+                            };
+                            break;
+                        }
+                    } else if (toolResponse.analysis_type === 'spectral_analysis' && toolResponse.results) {
+                        const results = toolResponse.results;
+                        if (Array.isArray(results) && results.length > 0) {
+                            const labels = results.map(r => r.region__name || r.category__name || 'Overall');
+                            const data = results.map(r => r.avg_spectral_centroid || 0);
+                            
+                            extractedData = {
+                                labels: labels,
+                                data: data,
+                                colors: this.generateColors(labels.length),
+                                title: 'Spectral Analysis Results'
+                            };
+                            break;
+                        }
+                    } else if (toolResponse.analysis_type === 'temporal_analysis' && toolResponse.monthly_trends) {
+                        const trends = toolResponse.monthly_trends;
+                        if (Array.isArray(trends) && trends.length > 0) {
+                            const labels = trends.map(t => t.month);
+                            const data = trends.map(t => t.count);
+                            
+                            extractedData = {
+                                labels: labels,
+                                data: data,
+                                colors: this.generateColors(1),
+                                title: 'Audio Recording Trends Over Time'
+                            };
+                            break;
+                        }
+                    } else if (toolResponse.analysis_type === 'correlation_analysis' && toolResponse.correlation_data) {
+                        const correlationData = toolResponse.correlation_data;
+                        if (Array.isArray(correlationData) && correlationData.length > 0) {
+                            const scatterData = correlationData.map(item => ({
+                                x: item.x_value || item.rms_energy || 0,
+                                y: item.y_value || item.spectral_centroid || 0
+                            }));
+                            
+                            extractedData = {
+                                scatterData: scatterData,
+                                colors: this.generateColors(1),
+                                title: 'Correlation Analysis',
+                                xLabel: 'RMS Energy',
+                                yLabel: 'Spectral Centroid'
+                            };
+                            break;
+                        }
+                    }
+                } catch (e) {
+                    console.log('Error processing analysis response:', e);
                 }
             }
             // Handle string responses
@@ -1089,6 +1389,26 @@ class UnifiedAudioDataChat {
             '#4BC0C0', '#FF6384', '#36A2EB', '#FFCE56'
         ];
         return colors.slice(0, count);
+    }
+    
+    calculateMedian(sortedArray) {
+        const n = sortedArray.length;
+        if (n % 2 === 0) {
+            return (sortedArray[n / 2 - 1] + sortedArray[n / 2]) / 2;
+        } else {
+            return sortedArray[Math.floor(n / 2)];
+        }
+    }
+    
+    calculateQuartile(sortedArray, percentile) {
+        const n = sortedArray.length;
+        const index = percentile * (n - 1);
+        const lower = Math.floor(index);
+        const upper = Math.ceil(index);
+        const weight = index % 1;
+        
+        if (upper >= n) return sortedArray[n - 1];
+        return sortedArray[lower] * (1 - weight) + sortedArray[upper] * weight;
     }
     
     async deleteSession(sessionId) {
@@ -1560,6 +1880,46 @@ class UnifiedAudioDataChat {
     debugStreamingPerformance() {
         console.log('🚀 Streaming Performance Stats:', this.getStreamingStats());
     }
+    
+    // Test function to verify all chart types work
+    testAllChartTypes() {
+        console.log('🧪 Testing all chart types...');
+        
+        const testData = {
+            labels: ['Category A', 'Category B', 'Category C'],
+            data: [10, 20, 15],
+            colors: this.generateColors(3),
+            title: 'Test Chart',
+            scatterData: [
+                {x: 1, y: 2}, {x: 2, y: 4}, {x: 3, y: 6}
+            ],
+            xLabel: 'X Axis',
+            yLabel: 'Y Axis'
+        };
+        
+        const chartTypes = ['pie_chart', 'bar_chart', 'line_chart', 'box_plot', 'scatter_plot', 'area_chart', 'heatmap'];
+        
+        chartTypes.forEach((chartType, index) => {
+            try {
+                // Create a test canvas
+                const testCanvas = document.createElement('canvas');
+                testCanvas.id = `test-chart-${index}`;
+                testCanvas.width = 400;
+                testCanvas.height = 200;
+                
+                // Test chart creation
+                this.createChart({frontend_data: {type: chartType}}, `test-chart-${index}`, [testData]);
+                console.log(`✅ ${chartType} - Chart created successfully`);
+                
+                // Clean up
+                testCanvas.remove();
+            } catch (error) {
+                console.error(`❌ ${chartType} - Error:`, error);
+            }
+        });
+        
+        console.log('🧪 Chart type testing completed');
+    }
 }
 
 // Global functions for suggestion handling
@@ -1598,6 +1958,7 @@ function debugStreamingDOM() {
 
 // Add to global scope for debugging
 window.debugStreamingDOM = debugStreamingDOM;
+window.testAllCharts = () => window.unifiedChat.testAllChartTypes();
 
 // Initialize the unified chat when the page loads
 document.addEventListener('DOMContentLoaded', () => {

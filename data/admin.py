@@ -17,6 +17,41 @@ from .tasks import process_audio_task, bulk_reprocess_audio_analysis
 from celery import group
 import logging
 
+
+class MissingClassificationFilter(admin.SimpleListFilter):
+    title = 'Missing Classification'
+    parameter_name = 'missing_classification'
+
+    def lookups(self, request, model_admin):
+        return (
+            ('missing_category', 'Missing Category'),
+            ('missing_class', 'Missing Class'),
+            ('missing_subclass', 'Missing Subclass'),
+            ('missing_all', 'Missing All (Category, Class, Subclass)'),
+            ('missing_any', 'Missing Any Classification'),
+        )
+
+    def queryset(self, request, queryset):
+        if self.value() == 'missing_category':
+            return queryset.filter(category__isnull=True)
+        elif self.value() == 'missing_class':
+            return queryset.filter(class_name__isnull=True)
+        elif self.value() == 'missing_subclass':
+            return queryset.filter(subclass__isnull=True)
+        elif self.value() == 'missing_all':
+            return queryset.filter(
+                category__isnull=True,
+                class_name__isnull=True,
+                subclass__isnull=True
+            )
+        elif self.value() == 'missing_any':
+            return queryset.filter(
+                Q(category__isnull=True) |
+                Q(class_name__isnull=True) |
+                Q(subclass__isnull=True)
+            )
+        return queryset
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,6 +78,7 @@ class NoiseDatasetAdmin(ModelAdmin):
         "class_name",
         "subclass",
         "recording_date",
+        MissingClassificationFilter,
     )
     search_fields = (
         "noise_id",

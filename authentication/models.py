@@ -31,7 +31,7 @@ class CustomUser(AbstractUser):
     last_name = models.CharField(max_length=30, blank=True, null=True)
     speaker_id = models.CharField(max_length=20, blank=True, null=True, unique=True)
 
-    # Make username and password not required at the model level
+
     username = models.CharField(
         max_length=150,
         unique=True,
