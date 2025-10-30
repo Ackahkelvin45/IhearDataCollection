@@ -8,7 +8,7 @@ from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework import status
-from django_filters.rest_framework import DjangoFilterBackend 
+from django_filters.rest_framework import DjangoFilterBackend
 from .serializers import (
     ChatMessageCreateSerializer,
     ChatMessageDetailSerializer,
@@ -18,18 +18,21 @@ from .serializers import (
     MessageStatusSerializer,
     ChatSessionCreateSerializer,
     ChatSessionDetailSerializer,
-    ChatSessionListSerializer
-    
-
-
+    ChatSessionListSerializer,
 )
 
-from .models import ChatSession,ChatMessage
+from .models import ChatSession, ChatMessage
 from rest_framework.decorators import action
-import time 
+import time
 import json
 from django.http import StreamingHttpResponse
-from langchain_core.messages import AIMessageChunk, ToolMessage, HumanMessage, AIMessage, BaseMessage
+from langchain_core.messages import (
+    AIMessageChunk,
+    ToolMessage,
+    HumanMessage,
+    AIMessage,
+    BaseMessage,
+)
 from langchain_openai import ChatOpenAI
 from psycopg_pool import ConnectionPool
 from langgraph.checkpoint.postgres import PostgresSaver
@@ -37,7 +40,7 @@ from loguru import logger
 from typing import Any, Dict, cast
 from django.conf import settings
 
-from  data_insights.workflows.agent_workflow import create_data_insights_agent
+from data_insights.workflows.agent_workflow import create_data_insights_agent
 from data_insights.workflows.tools import get_tool_by_name
 from data_insights.workflows.prompt import SYSTEM_TEMPLATE
 from rest_framework.response import Response
@@ -55,6 +58,8 @@ DB_URI = (
     f"{DB_CONFIG.get('PORT', 5432)}/"
     f"{DB_CONFIG.get('NAME', 'brainbox-crm')}"
 )
+
+
 def home(request):
     """Landing page for the insights chat UI."""
     # Order suggestions so the first one maps to a chart
@@ -66,9 +71,11 @@ def home(request):
     ]
     return render(request, "data_insights/home.html", {"suggestions": suggestions})
 
+
 def chat(request):
     """Main chat interface."""
     return render(request, "data_insights/chat.html")
+
 
 def unified_chat(request):
     """Unified chat interface with sessions, suggestions, and chat in one page."""
@@ -78,26 +85,26 @@ def unified_chat(request):
         "Which data has the highest decibel level?",
         "Which community has the lowest decibel level?",
     ]
-    return render(request, "data_insights/unified_chat.html", {"suggestions": suggestions})
-
-
+    return render(
+        request, "data_insights/unified_chat.html", {"suggestions": suggestions}
+    )
 
 
 class ChatSessionView(ModelViewSet):
-    permission_classes=[IsAuthenticated]
-    filter_backends=[SearchFilter,OrderingFilter,DjangoFilterBackend]
-    filterset_fields=["title"]
-    search_fields=["title"]
-    ordering_fields=["-created_at","-updated_at"]
+    permission_classes = [IsAuthenticated]
+    filter_backends = [SearchFilter, OrderingFilter, DjangoFilterBackend]
+    filterset_fields = ["title"]
+    search_fields = ["title"]
+    ordering_fields = ["-created_at", "-updated_at"]
 
     def get_serializer_class(self):
-        if self.action=="list":
+        if self.action == "list":
             return ChatSessionListSerializer
-        elif self.action=="create":
+        elif self.action == "create":
             return ChatSessionCreateSerializer
-        elif self.action in ['partial','partial_update']:
-            return  ChatSessionUpdateSerializer
-        elif self.action =="create_message":
+        elif self.action in ["partial", "partial_update"]:
+            return ChatSessionUpdateSerializer
+        elif self.action == "create_message":
             return ChatMessageCreateSerializer
         elif self.action == "retrieve":
             return ChatSessionDetailSerializer
@@ -105,18 +112,21 @@ class ChatSessionView(ModelViewSet):
             return ChatSessionArchiveSerializer
         else:
             return ChatSessionDetailSerializer
-        
 
     def get_queryset(self):
-        return ChatSession.objects.filter(
-            user=self.request.user,
-            status__in=[ChatSession.Status.ACTIVE,ChatSession.Status.ARCHIVED]
-        ).prefetch_related("messages").order_by("-updated_at")
-    
+        return (
+            ChatSession.objects.filter(
+                user=self.request.user,
+                status__in=[ChatSession.Status.ACTIVE, ChatSession.Status.ARCHIVED],
+            )
+            .prefetch_related("messages")
+            .order_by("-updated_at")
+        )
+
     def perform_create(self, serializer):
         """Set the user when creating a new chat session"""
         serializer.save(user=self.request.user)
-    
+
     @action(detail=True, methods=["post"], url_path="messages")
     def create_message(self, request, pk=None):
         session = self.get_object()
@@ -133,7 +143,7 @@ class ChatSessionView(ModelViewSet):
             if not session.title:
                 session.title = session.generate_title_from_message(user_input)
                 session.save()
-            
+
             message = ChatMessage.objects.create(
                 session=session,
                 user_input=user_input,
@@ -147,7 +157,9 @@ class ChatSessionView(ModelViewSet):
         """Archive a chat session"""
         session = self.get_object()
         session.archive()
-        return Response({"message": "Session archived successfully"}, status=status.HTTP_200_OK)
+        return Response(
+            {"message": "Session archived successfully"}, status=status.HTTP_200_OK
+        )
 
     def _process_message_sync(
         self, message: ChatMessage, session: ChatSession, ai_answer: bool = False
@@ -193,10 +205,10 @@ class ChatSessionView(ModelViewSet):
                                 continue
 
                             msg = seq[0]
-                            
+
                             # Debug logging to see what message types we're getting
                             logger.debug(f"Processing message type: {type(msg)}")
-                            
+
                             # Skip ALL LangChain Message objects except the ones we can handle
                             if isinstance(msg, BaseMessage):
                                 if isinstance(msg, (ToolMessage, AIMessageChunk)):
@@ -204,9 +216,11 @@ class ChatSessionView(ModelViewSet):
                                     pass
                                 else:
                                     # Skip all other message types (HumanMessage, AIMessage, etc.)
-                                    logger.debug(f"Skipping {msg.__class__.__name__} in stream")
+                                    logger.debug(
+                                        f"Skipping {msg.__class__.__name__} in stream"
+                                    )
                                     continue
-                        
+
                         except Exception as stream_e:
                             logger.warning(f"Error processing stream part: {stream_e}")
                             continue
@@ -215,24 +229,30 @@ class ChatSessionView(ModelViewSet):
                             try:
                                 # Safely extract content from ToolMessage
                                 content = msg.content
-                                if hasattr(content, 'content'):
+                                if hasattr(content, "content"):
                                     content = str(content.content)
                                 else:
                                     content = str(content) if content else ""
-                                
+
                                 tool_call = json.loads(content)
-                                
+
                                 # Check if this is a visualization analysis tool response
-                                if isinstance(tool_call, dict) and "recommendation" in tool_call:
+                                if (
+                                    isinstance(tool_call, dict)
+                                    and "recommendation" in tool_call
+                                ):
                                     visualization_data = tool_call
                                     try:
                                         yield self._format_stream_message(
                                             "visualization", tool_call
                                         )
                                     except Exception as viz_e:
-                                        logger.warning(f"Error formatting visualization message: {viz_e}")
+                                        logger.warning(
+                                            f"Error formatting visualization message: {viz_e}"
+                                        )
                                         yield self._format_stream_message(
-                                            "visualization", {"error": "Visualization formatting error"}
+                                            "visualization",
+                                            {"error": "Visualization formatting error"},
                                         )
                                 else:
                                     try:
@@ -240,9 +260,12 @@ class ChatSessionView(ModelViewSet):
                                             "tool_response", tool_call
                                         )
                                     except Exception as tool_e:
-                                        logger.warning(f"Error formatting tool response: {tool_e}")
+                                        logger.warning(
+                                            f"Error formatting tool response: {tool_e}"
+                                        )
                                         yield self._format_stream_message(
-                                            "tool_response", {"error": "Tool response formatting error"}
+                                            "tool_response",
+                                            {"error": "Tool response formatting error"},
                                         )
                             except json.JSONDecodeError:
                                 # Ensure we only store JSON-serializable data
@@ -250,18 +273,18 @@ class ChatSessionView(ModelViewSet):
                                     content = str(msg.content) if msg.content else ""
                                 except Exception:
                                     content = "Error parsing tool response"
-                                
+
                                 tool_call = (
-                                    content
-                                    if "error" not in content.lower()
-                                    else []
+                                    content if "error" not in content.lower() else []
                                 )
                                 try:
                                     yield self._format_stream_message(
                                         "tool_response", tool_call
                                     )
                                 except Exception as fallback_e:
-                                    logger.warning(f"Error in fallback tool response: {fallback_e}")
+                                    logger.warning(
+                                        f"Error in fallback tool response: {fallback_e}"
+                                    )
                                     yield self._format_stream_message(
                                         "tool_response", "Tool response error"
                                     )
@@ -271,41 +294,47 @@ class ChatSessionView(ModelViewSet):
                                 try:
                                     yield self._format_stream_message("tool_call", None)
                                 except Exception as tc_e:
-                                    logger.warning(f"Error formatting tool_call message: {tc_e}")
+                                    logger.warning(
+                                        f"Error formatting tool_call message: {tc_e}"
+                                    )
                             elif msg.content:
                                 try:
                                     content = str(msg.content)
                                     llm_response += content
                                     yield self._format_stream_message("llm", content)
                                 except Exception as llm_e:
-                                    logger.warning(f"Error formatting LLM message: {llm_e}")
+                                    logger.warning(
+                                        f"Error formatting LLM message: {llm_e}"
+                                    )
                                     # Continue without yielding if there's an error
 
                 except Exception as stream_error:
                     # If there's an error in streaming, log it but continue to save
                     error_str = str(stream_error)
                     logger.warning(f"Error in streaming process: {error_str}")
-                    
+
                     # If it's a HumanMessage serialization error, don't treat it as a failure
                     if "HumanMessage" in error_str and "JSON serializable" in error_str:
-                        logger.info("HumanMessage serialization error detected - treating as successful completion")
+                        logger.info(
+                            "HumanMessage serialization error detected - treating as successful completion"
+                        )
                     else:
                         logger.error(f"Genuine streaming error: {error_str}")
-                
+
                 finally:
                     # Always save the message data, even if streaming failed
                     try:
                         processing_time = int((time.time() - start_time) * 1000)
-                        
+
                         # Determine if we should mark as completed or failed
                         should_mark_completed = True
                         response_to_save = llm_response
-                        
+
                         if not llm_response or llm_response.strip() == "":
                             # No response was generated
                             response_to_save = "I encountered an issue processing your request. Please try again."
                             should_mark_completed = False
-                        
+
                         # If no visualization was produced by tools, auto-recommend one
                         try:
                             if not visualization_data:
@@ -315,27 +344,44 @@ class ChatSessionView(ModelViewSet):
                                         query=message.user_input,
                                         data_summary=(
                                             f"tool:{tool_call.get('analysis_type')}"
-                                            if isinstance(tool_call, dict) and tool_call.get('analysis_type')
+                                            if isinstance(tool_call, dict)
+                                            and tool_call.get("analysis_type")
                                             else None
                                         ),
                                     )
                                     # Only attach if it looks valid
-                                    if isinstance(auto_viz, dict) and auto_viz.get("recommendation"):
+                                    if isinstance(auto_viz, dict) and auto_viz.get(
+                                        "recommendation"
+                                    ):
                                         visualization_data = auto_viz
                         except Exception as auto_viz_e:
-                            logger.warning(f"Auto visualization recommendation failed: {auto_viz_e}")
+                            logger.warning(
+                                f"Auto visualization recommendation failed: {auto_viz_e}"
+                            )
 
                         message.assistant_response = response_to_save
-                        
+
                         # Sanitize data before storing in database
-                        message.tool_called = self._sanitize_data(tool_call) if tool_call else None
-                        message.visulization = self._sanitize_data(visualization_data) if visualization_data else None
-                        
+                        message.tool_called = (
+                            self._sanitize_data(tool_call) if tool_call else None
+                        )
+                        message.visulization = (
+                            self._sanitize_data(visualization_data)
+                            if visualization_data
+                            else None
+                        )
+
                         # Mark as completed if we have a response, even if there were serialization issues
-                        message.status = ChatMessage.MessageStatus.COMPLETED if should_mark_completed else ChatMessage.MessageStatus.FAILED
+                        message.status = (
+                            ChatMessage.MessageStatus.COMPLETED
+                            if should_mark_completed
+                            else ChatMessage.MessageStatus.FAILED
+                        )
                         message.save()
-                        
-                        logger.info(f"Message {message.id} saved as {message.status} with response length: {len(message.assistant_response)}")
+
+                        logger.info(
+                            f"Message {message.id} saved as {message.status} with response length: {len(message.assistant_response)}"
+                        )
 
                         # Send completion message with maximum safety
                         try:
@@ -343,47 +389,66 @@ class ChatSessionView(ModelViewSet):
                             completion_data = {
                                 "message_id": str(message.id),
                                 "processing_time_ms": processing_time,
-                                "status": message.status
+                                "status": message.status,
                             }
-                            
+
                             # Only add visualization if it exists and is safe
                             if visualization_data:
                                 try:
-                                    safe_viz_data = self._sanitize_data(visualization_data)
+                                    safe_viz_data = self._sanitize_data(
+                                        visualization_data
+                                    )
                                     # Test serialization before adding
                                     json.dumps(safe_viz_data)
                                     completion_data["visualization"] = safe_viz_data
                                 except Exception as viz_test_e:
-                                    logger.warning(f"Visualization data not serializable, skipping: {viz_test_e}")
-                            
-                            yield self._format_stream_message("completed", completion_data)
-                            
+                                    logger.warning(
+                                        f"Visualization data not serializable, skipping: {viz_test_e}"
+                                    )
+
+                            yield self._format_stream_message(
+                                "completed", completion_data
+                            )
+
                         except Exception as comp_e:
-                            logger.warning(f"Error formatting completion message: {comp_e}")
+                            logger.warning(
+                                f"Error formatting completion message: {comp_e}"
+                            )
                             # Ultra-safe fallback - direct JSON
                             try:
                                 safe_completion = {
                                     "action": "completed",
                                     "data": {
                                         "message_id": str(message.id),
-                                        "status": "completed"
-                                    }
+                                        "status": "completed",
+                                    },
                                 }
-                                yield json.dumps(safe_completion).encode("utf-8") + b"\n"
+                                yield json.dumps(safe_completion).encode(
+                                    "utf-8"
+                                ) + b"\n"
                             except Exception:
                                 # Absolute final fallback
                                 yield b'{"action": "completed", "data": {"status": "completed"}}\n'
-                    
+
                     except Exception as save_error:
                         # If saving fails, mark as failed
-                        logger.error(f"Failed to save message {message.id}: {save_error}")
+                        logger.error(
+                            f"Failed to save message {message.id}: {save_error}"
+                        )
                         try:
                             message.status = ChatMessage.MessageStatus.FAILED
                             message.assistant_response = "I encountered an error processing your request. Please try again."
                             message.save()
-                            yield json.dumps({"action": "error", "data": {"message": "Failed to process message"}}).encode("utf-8") + b"\n"
+                            yield json.dumps(
+                                {
+                                    "action": "error",
+                                    "data": {"message": "Failed to process message"},
+                                }
+                            ).encode("utf-8") + b"\n"
                         except Exception:
-                            logger.error(f"Failed to mark message {message.id} as failed")
+                            logger.error(
+                                f"Failed to mark message {message.id} as failed"
+                            )
 
             return StreamingHttpResponse(
                 stream(),
@@ -403,7 +468,7 @@ class ChatSessionView(ModelViewSet):
     def _create_ai_agent(self, ai_answer: bool = False):
         llm = ChatOpenAI(
             model=AGENT_CONFIG.get("MODEL", "o4-mini"),
-            api_key=os.getenv("OPENAI_API_KEY")
+            api_key=os.getenv("OPENAI_API_KEY"),
         )
 
         agent = create_data_insights_agent(
@@ -419,28 +484,27 @@ class ChatSessionView(ModelViewSet):
         """Recursively sanitize data to remove ALL LangChain Message objects and other non-serializable items"""
         if data is None:
             return None
-            
+
         # Handle all LangChain message types
         if isinstance(data, BaseMessage):
             message_type = data.__class__.__name__
-            content = str(data.content) if hasattr(data, 'content') and data.content else ""
-            
+            content = (
+                str(data.content) if hasattr(data, "content") and data.content else ""
+            )
+
             # Return a safe dictionary representation
-            return {
-                "type": message_type,
-                "content": content
-            }
-            
+            return {"type": message_type, "content": content}
+
         # Legacy check for any message-like objects
-        if hasattr(data, '__class__') and 'Message' in data.__class__.__name__:
-            if hasattr(data, 'content'):
+        if hasattr(data, "__class__") and "Message" in data.__class__.__name__:
+            if hasattr(data, "content"):
                 return {
                     "type": data.__class__.__name__,
-                    "content": str(data.content) if data.content else ""
+                    "content": str(data.content) if data.content else "",
                 }
             else:
                 return {"type": data.__class__.__name__, "content": ""}
-            
+
         if isinstance(data, dict):
             sanitized = {}
             for key, value in data.items():
@@ -450,7 +514,7 @@ class ChatSessionView(ModelViewSet):
                     logger.debug(f"Error sanitizing dict key '{key}': {e}")
                     sanitized[key] = str(value) if value is not None else None
             return sanitized
-            
+
         if isinstance(data, (list, tuple)):
             sanitized = []
             for i, item in enumerate(data):
@@ -460,7 +524,7 @@ class ChatSessionView(ModelViewSet):
                     logger.debug(f"Error sanitizing list item {i}: {e}")
                     sanitized.append(str(item) if item is not None else None)
             return sanitized
-                
+
         return data
 
     def _format_stream_message(self, action: str, data: Any) -> bytes:
@@ -470,7 +534,7 @@ class ChatSessionView(ModelViewSet):
         try:
             # First, sanitize the data to remove any HumanMessage objects
             sanitized_data = self._sanitize_data(data)
-            
+
             # Handle specific data processing for certain actions
             if isinstance(sanitized_data, dict):
                 if action == "visualization":
@@ -488,34 +552,50 @@ class ChatSessionView(ModelViewSet):
                     sanitized_data = sanitized_data["dormant_reactivation_requests"]
                 elif "success" in sanitized_data:
                     sanitized_data = [sanitized_data]
-            
+
             # Pre-test serialization to catch any remaining issues
             try:
                 json.dumps(sanitized_data)
             except (TypeError, ValueError) as pre_test_e:
-                logger.warning(f"Pre-test serialization failed for {action}: {pre_test_e}")
+                logger.warning(
+                    f"Pre-test serialization failed for {action}: {pre_test_e}"
+                )
                 # Convert to string as ultimate fallback
-                sanitized_data = str(sanitized_data) if sanitized_data is not None else None
-            
+                sanitized_data = (
+                    str(sanitized_data) if sanitized_data is not None else None
+                )
+
             # Try to serialize the sanitized data
-            return json.dumps({"action": action, "data": sanitized_data}).encode("utf-8") + b"\n"
-            
+            return (
+                json.dumps({"action": action, "data": sanitized_data}).encode("utf-8")
+                + b"\n"
+            )
+
         except (TypeError, ValueError) as e:
             # If serialization still fails, use a final fallback
-            logger.warning(f"Failed to serialize data for action {action} even after sanitization: {e}")
-            
+            logger.warning(
+                f"Failed to serialize data for action {action} even after sanitization: {e}"
+            )
+
             # Check if this is a HumanMessage error and just skip it
             if "HumanMessage" in str(e):
-                logger.info(f"Skipping {action} due to HumanMessage serialization issue")
+                logger.info(
+                    f"Skipping {action} due to HumanMessage serialization issue"
+                )
                 return b""  # Return empty bytes to skip this message
-            
+
             try:
                 # Final attempt with string conversion
                 safe_data = str(data) if data is not None else None
-                return json.dumps({"action": action, "data": safe_data}).encode("utf-8") + b"\n"
+                return (
+                    json.dumps({"action": action, "data": safe_data}).encode("utf-8")
+                    + b"\n"
+                )
             except (TypeError, ValueError):
                 # Ultimate fallback - return a safe error message
-                return json.dumps({"action": action, "data": "Serialization error"}).encode("utf-8") + b"\n"
-
-
-    
+                return (
+                    json.dumps(
+                        {"action": action, "data": "Serialization error"}
+                    ).encode("utf-8")
+                    + b"\n"
+                )

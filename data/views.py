@@ -34,6 +34,7 @@ import csv
 from io import BytesIO, StringIO
 from django.http import HttpResponse
 from django.utils.encoding import smart_str
+
 try:
     import openpyxl
 except Exception:
@@ -273,12 +274,16 @@ class DashboardView(APIView):
                     {
                         "name": item.get(list(item.keys())[0]) or "Unknown",
                         "avg_count": item["avg_count"],
-                        "avg_duration": round(((item["avg_duration"] or 0) / 3600), 2)
-                        if duration_unit == "hours"
-                        else round(item["avg_duration"] or 0, 2),
-                        "total_duration": round(((item.get("total_duration") or 0) / 3600), 2)
-                        if duration_unit == "hours"
-                        else round(item.get("total_duration") or 0, 2),
+                        "avg_duration": (
+                            round(((item["avg_duration"] or 0) / 3600), 2)
+                            if duration_unit == "hours"
+                            else round(item["avg_duration"] or 0, 2)
+                        ),
+                        "total_duration": (
+                            round(((item.get("total_duration") or 0) / 3600), 2)
+                            if duration_unit == "hours"
+                            else round(item.get("total_duration") or 0, 2)
+                        ),
                         "duration_unit": duration_unit,
                     }
                     for item in queryset
@@ -585,13 +590,27 @@ def export_noise_datasets(request):
         return [
             smart_str(getattr(obj, "noise_id", "")),
             smart_str(getattr(obj, "name", "")),
-            smart_str(getattr(getattr(obj, "dataset_type", None), "get_name_display", lambda: getattr(getattr(obj, "dataset_type", None), "name", ""))()),
+            smart_str(
+                getattr(
+                    getattr(obj, "dataset_type", None),
+                    "get_name_display",
+                    lambda: getattr(getattr(obj, "dataset_type", None), "name", ""),
+                )()
+            ),
             smart_str(getattr(getattr(obj, "collector", None), "username", "")),
             smart_str(getattr(obj, "description", "")),
             smart_str(getattr(obj, "recording_device", "")),
-            smart_str(obj.recording_date.isoformat() if getattr(obj, "recording_date", None) else ""),
-            smart_str(obj.created_at.isoformat() if getattr(obj, "created_at", None) else ""),
-            smart_str(obj.updated_at.isoformat() if getattr(obj, "updated_at", None) else ""),
+            smart_str(
+                obj.recording_date.isoformat()
+                if getattr(obj, "recording_date", None)
+                else ""
+            ),
+            smart_str(
+                obj.created_at.isoformat() if getattr(obj, "created_at", None) else ""
+            ),
+            smart_str(
+                obj.updated_at.isoformat() if getattr(obj, "updated_at", None) else ""
+            ),
             smart_str(getattr(getattr(obj, "region", None), "name", "")),
             smart_str(getattr(getattr(obj, "community", None), "name", "")),
             smart_str(getattr(getattr(obj, "category", None), "name", "")),
@@ -642,9 +661,7 @@ def export_noise_datasets(request):
             output.getvalue(),
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-        response["Content-Disposition"] = (
-            'attachment; filename="noise_datasets.xlsx"'
-        )
+        response["Content-Disposition"] = 'attachment; filename="noise_datasets.xlsx"'
         return response
 
     # default CSV
@@ -1279,7 +1296,3 @@ def create_frequency_features_plot(audio_features):
         showlegend=False,  # Since we're showing labels on markers
     )
     return fig
-
-
-
-

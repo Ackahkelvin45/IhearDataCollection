@@ -6,7 +6,7 @@ app_name = "data"
 
 urlpatterns = [
     path("", views.view_dashboard, name="dashboard"),
-    path ("dashboard/",views.DashboardView.as_view(),name="dashboardapi"), 
+    path("dashboard/", views.DashboardView.as_view(), name="dashboardapi"),
     path("datasetlist/", views.NoiseDatasetListView.as_view(), name="datasetlist"),
     path(
         "dataset/detail/<int:dataset_id>/",
