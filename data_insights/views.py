@@ -38,6 +38,7 @@ from typing import Any, Dict, cast
 from django.conf import settings
 
 from  data_insights.workflows.agent_workflow import create_data_insights_agent
+from data_insights.workflows.tools import get_tool_by_name
 from data_insights.workflows.prompt import SYSTEM_TEMPLATE
 from rest_framework.response import Response
 
@@ -305,6 +306,25 @@ class ChatSessionView(ModelViewSet):
                             response_to_save = "I encountered an issue processing your request. Please try again."
                             should_mark_completed = False
                         
+                        # If no visualization was produced by tools, auto-recommend one
+                        try:
+                            if not visualization_data:
+                                viz_tool = get_tool_by_name("visualization_analysis")
+                                if viz_tool is not None:
+                                    auto_viz = viz_tool._run(
+                                        query=message.user_input,
+                                        data_summary=(
+                                            f"tool:{tool_call.get('analysis_type')}"
+                                            if isinstance(tool_call, dict) and tool_call.get('analysis_type')
+                                            else None
+                                        ),
+                                    )
+                                    # Only attach if it looks valid
+                                    if isinstance(auto_viz, dict) and auto_viz.get("recommendation"):
+                                        visualization_data = auto_viz
+                        except Exception as auto_viz_e:
+                            logger.warning(f"Auto visualization recommendation failed: {auto_viz_e}")
+
                         message.assistant_response = response_to_save
                         
                         # Sanitize data before storing in database

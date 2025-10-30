@@ -270,6 +270,13 @@
                   <button id="filter-subclass" style="margin-right: 3px;"  class="filter-btn  mr-2  inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-primary align-middle transition-all ease-in bg-transparent border border-primary border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-50 hover:border-blue-600 tracking-tight-rem" data-filter="subclass" onclick="handleFilterClick('subclass')">Sub Classes</button>
                   <button id="filter-region"  style="margin-right: 3px;"  class="filter-btn  mr-2  inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-primary align-middle transition-all ease-in bg-transparent border border-primary border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-50 hover:border-blue-600 tracking-tight-rem" data-filter="region" onclick="handleFilterClick('region')">Regions</button>
                   <button id="filter-community" style="margin-right: 3px;"   class="filter-btn  mr-2  inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-primary align-middle transition-all ease-in bg-transparent border border-primary border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-50 hover:border-blue-600 tracking-tight-rem" data-filter="community" onclick="handleFilterClick('community')">Communities</button>
+                  <div class="ml-auto flex items-center mt-2 gap-2">
+                    <label for="unit-select" class="text-xs font-bold text-slate-600 dark:text-white/80 mr-2 ">Duration Unit</label>
+                    <select id="unit-select" class="unit-select focus:shadow-primary-outline text-xs leading-5.6 ease block w-fit rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
+                      <option value="seconds" selected>Seconds</option>
+                      <option value="hours">Hours</option>
+                    </select>
+                  </div>
               </div>
               </div>
               <!-- Loading skeleton for table -->
@@ -298,7 +305,8 @@
                       <tr>
                         <th class="px-6 py-3 font-bold text-left uppercase align-middle bg-transparent border-b border-collapse shadow-none dark:border-white/40 dark:text-white text-xxs border-b-solid tracking-none whitespace-nowrap text-slate-400 opacity-70">Name</th>
                         <th class="px-6 py-3 pl-2 font-bold text-left uppercase align-middle bg-transparent border-b border-collapse shadow-none dark:border-white/40 dark:text-white text-xxs border-b-solid tracking-none whitespace-nowrap text-slate-400 opacity-70">Total Count</th>
-                        <th class="px-6 py-3 pl-2 font-bold text-left uppercase align-middle bg-transparent border-b border-collapse shadow-none dark:border-white/40 dark:text-white text-xxs border-b-solid tracking-none whitespace-nowrap text-slate-400 opacity-70">Average Duration (s)</th>
+                        <th class="px-6 py-3 pl-2 font-bold text-left uppercase align-middle bg-transparent border-b border-collapse shadow-none dark:border-white/40 dark:text-white text-xxs border-b-solid tracking-none whitespace-nowrap text-slate-400 opacity-70">Average Duration (<span id="avgDurationHeaderUnit">s</span>)</th>
+                        <th class="px-6 py-3 pl-2 font-bold text-left uppercase align-middle bg-transparent border-b border-collapse shadow-none dark:border-white/40 dark:text-white text-xxs border-b-solid tracking-none whitespace-nowrap text-slate-400 opacity-70">Total Duration (<span id="totalDurationHeaderUnit">s</span>)</th>
                       </tr>
                     </thead>
                     <tbody id="averageParametersTableBody">
@@ -450,10 +458,13 @@
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-streaming@2.0.0"></script>
 
   <script>
+    // Global state for current filter and unit
+    let currentFilter = 'category';
+    let durationUnit = 'seconds';
     // Function to fetch data from API
     async function fetchDashboardData() {
       try {
-        const response = await fetch('/dashboard/');
+        const response = await fetch(`/dashboard/?filter_type=${currentFilter}&duration_unit=${durationUnit}`);
         if (!response.ok) {
           throw new Error('Network response was not ok');
         }
@@ -480,8 +491,15 @@
       document.getElementById('totalDurationHours').textContent = data.basic_stats.total_duration_hours;
       document.getElementById('averageDurationSeconds').textContent = data.basic_stats.avg_duration_seconds;
 
+      // Persist current filter/unit
+      currentFilter = data.current_filter || currentFilter;
+      durationUnit = data.current_unit || durationUnit;
+
+      // Update unit select visual state
+      updateUnitSelect(durationUnit);
+
       // Update average parameters table
-      updateAverageParametersTable(data.average_parameters, data.current_filter);
+      updateAverageParametersTable(data.average_parameters, data.current_filter, data.current_unit);
 
       // Update class hours cards
       const classHoursContainer = document.getElementById('classHoursContainer');
@@ -940,20 +958,27 @@
     }
 
     // Function to update average parameters table
-    function updateAverageParametersTable(data, currentFilter) {
+    function updateAverageParametersTable(data, currentFilter, unit) {
       const tableBody = document.getElementById('averageParametersTableBody');
       tableBody.innerHTML = '';
 
       if (!data || data.length === 0) {
         tableBody.innerHTML = `
           <tr>
-            <td colspan="3" class="p-4 text-center text-slate-500 dark:text-white/60">
+            <td colspan="4" class="p-4 text-center text-slate-500 dark:text-white/60">
               No data available
             </td>
           </tr>
         `;
         return;
       }
+
+      // Update header units
+      const avgUnitEl = document.getElementById('avgDurationHeaderUnit');
+      const totalUnitEl = document.getElementById('totalDurationHeaderUnit');
+      const unitLabel = (unit === 'hours') ? 'hrs' : 's';
+      if (avgUnitEl) avgUnitEl.textContent = unitLabel;
+      if (totalUnitEl) totalUnitEl.textContent = unitLabel;
 
       data.forEach((item, index) => {
         const row = document.createElement('tr');
@@ -974,6 +999,9 @@
           </td>
           <td class="p-2 align-middle bg-transparent ${index === data.length - 1 ? 'border-b-0' : 'border-b dark:border-white/40'} whitespace-nowrap shadow-transparent">
             <p class="mb-0 text-sm font-semibold leading-tight dark:text-white dark:opacity-80">${item.avg_duration}</p>
+          </td>
+          <td class="p-2 align-middle bg-transparent ${index === data.length - 1 ? 'border-b-0' : 'border-b dark:border-white/40'} whitespace-nowrap shadow-transparent">
+            <p class="mb-0 text-sm font-semibold leading-tight dark:text-white dark:opacity-80">${item.total_duration}</p>
           </td>
         `;
         tableBody.appendChild(row);
@@ -1012,6 +1040,7 @@
     // Global function to handle filter clicks (called by inline onclick)
     function handleFilterClick(filterType) {
       console.log('=== HANDLE FILTER CLICK ===', filterType);
+      currentFilter = filterType;
       fetchFilteredData(filterType);
     }
 
@@ -1020,7 +1049,7 @@
       try {
         console.log('=== FETCHING FILTERED DATA ===', filterType);
         showTableLoading();
-        const url = `/dashboard/?filter_type=${filterType}`;
+        const url = `/dashboard/?filter_type=${filterType}&duration_unit=${durationUnit}`;
         console.log('Making request to:', url);
         const response = await fetch(url);
         console.log('Response status:', response.status);
@@ -1029,8 +1058,9 @@
         }
         const data = await response.json();
         console.log('Received data:', data);
-        updateAverageParametersTable(data.average_parameters, data.current_filter);
+        updateAverageParametersTable(data.average_parameters, data.current_filter, data.current_unit);
         updateFilterButtons(data.current_filter);
+        updateUnitSelect(data.current_unit);
         hideTableLoading();
       } catch (error) {
         console.error('Error fetching filtered data:', error);
@@ -1071,6 +1101,25 @@
       console.log('=== FILTER BUTTONS SETUP COMPLETE ===');
     }
 
+    // Unit select state updater
+    function updateUnitSelect(activeUnit) {
+      const sel = document.getElementById('unit-select');
+      if (sel) sel.value = activeUnit;
+    }
+
+    // Setup unit select change handler
+    function setupUnitSelect() {
+      const sel = document.getElementById('unit-select');
+      if (!sel) return;
+      sel.addEventListener('change', function() {
+        console.log('=== UNIT SELECT CHANGED ===', this.value);
+        const val = this.value === 'hours' ? 'hours' : 'seconds';
+        durationUnit = val;
+        updateUnitSelect(durationUnit);
+        fetchFilteredData(currentFilter);
+      });
+    }
+
     // Event delegation fallback
     function setupEventDelegation() {
       console.log('=== SETTING UP EVENT DELEGATION ===');
@@ -1089,6 +1138,16 @@
           }, 150);
 
           fetchFilteredData(filterType);
+        }
+      });
+      // Fallback for unit select changes
+      document.addEventListener('change', function(e) {
+        if (e.target && e.target.id === 'unit-select') {
+          const val = e.target.value === 'hours' ? 'hours' : 'seconds';
+          console.log('=== EVENT DELEGATION: UNIT CHANGE ===', val);
+          durationUnit = val;
+          updateUnitSelect(durationUnit);
+          fetchFilteredData(currentFilter);
         }
       });
       console.log('=== EVENT DELEGATION SETUP COMPLETE ===');
@@ -1117,6 +1176,8 @@
         setTimeout(() => {
           console.log('Setting up filter buttons after delay...');
           setupFilterButtons();
+          updateUnitSelect(durationUnit);
+          setupUnitSelect();
         }, 100);
 
         // Also set up event delegation as a fallback
@@ -1129,6 +1190,8 @@
     document.addEventListener('DOMContentLoaded', function() {
       console.log('=== DOM CONTENT LOADED ===');
       initDashboard();
+      // Ensure unit select is wired even before data returns
+      setupUnitSelect();
     });
 
     // Also try immediate setup as a test

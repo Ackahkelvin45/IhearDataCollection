@@ -30,6 +30,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 import math
+import csv
+from io import BytesIO, StringIO
+from django.http import HttpResponse
+from django.utils.encoding import smart_str
+try:
+    import openpyxl
+except Exception:
+    openpyxl = None
 
 logger = logging.getLogger(__name__)
 
@@ -74,8 +82,11 @@ class DashboardView(APIView):
 
     def get(self, request):
         try:
-            # Get filter type from request
+            # Get filter type and duration unit from request
             filter_type = request.GET.get("filter_type", "category")
+            duration_unit = request.GET.get("duration_unit", "seconds").lower()
+            if duration_unit not in ["seconds", "hours"]:
+                duration_unit = "seconds"
 
             # Basic stats
             total_recordings = NoiseDataset.objects.count()
@@ -196,13 +207,14 @@ class DashboardView(APIView):
             ]
 
             # Average parameters data for different filters
-            def get_average_parameters(filter_type):
+            def get_average_parameters(filter_type, duration_unit):
                 if filter_type == "category":
                     queryset = (
                         NoiseDataset.objects.values("category__name")
                         .annotate(
                             avg_count=Count("id"),
                             avg_duration=Avg("audio_features__duration"),
+                            total_duration=Sum("audio_features__duration"),
                         )
                         .order_by("-avg_count")
                     )
@@ -212,6 +224,7 @@ class DashboardView(APIView):
                         .annotate(
                             avg_count=Count("id"),
                             avg_duration=Avg("audio_features__duration"),
+                            total_duration=Sum("audio_features__duration"),
                         )
                         .order_by("-avg_count")
                     )
@@ -221,6 +234,7 @@ class DashboardView(APIView):
                         .annotate(
                             avg_count=Count("id"),
                             avg_duration=Avg("audio_features__duration"),
+                            total_duration=Sum("audio_features__duration"),
                         )
                         .order_by("-avg_count")
                     )
@@ -230,6 +244,7 @@ class DashboardView(APIView):
                         .annotate(
                             avg_count=Count("id"),
                             avg_duration=Avg("audio_features__duration"),
+                            total_duration=Sum("audio_features__duration"),
                         )
                         .order_by("-avg_count")
                     )
@@ -239,6 +254,7 @@ class DashboardView(APIView):
                         .annotate(
                             avg_count=Count("id"),
                             avg_duration=Avg("audio_features__duration"),
+                            total_duration=Sum("audio_features__duration"),
                         )
                         .order_by("-avg_count")
                     )
@@ -248,6 +264,7 @@ class DashboardView(APIView):
                         .annotate(
                             avg_count=Count("id"),
                             avg_duration=Avg("audio_features__duration"),
+                            total_duration=Sum("audio_features__duration"),
                         )
                         .order_by("-avg_count")
                     )
@@ -256,13 +273,19 @@ class DashboardView(APIView):
                     {
                         "name": item.get(list(item.keys())[0]) or "Unknown",
                         "avg_count": item["avg_count"],
-                        "avg_duration": round(item["avg_duration"] or 0, 2),
+                        "avg_duration": round(((item["avg_duration"] or 0) / 3600), 2)
+                        if duration_unit == "hours"
+                        else round(item["avg_duration"] or 0, 2),
+                        "total_duration": round(((item.get("total_duration") or 0) / 3600), 2)
+                        if duration_unit == "hours"
+                        else round(item.get("total_duration") or 0, 2),
+                        "duration_unit": duration_unit,
                     }
                     for item in queryset
                 ]
 
-            # Get average parameters data for different filters
-            average_parameters = get_average_parameters(filter_type)
+            # Get average parameters data for different filters and selected unit
+            average_parameters = get_average_parameters(filter_type, duration_unit)
 
             response_data = {
                 "basic_stats": {
@@ -278,6 +301,7 @@ class DashboardView(APIView):
                 "class_hours": class_hours,
                 "average_parameters": average_parameters,
                 "current_filter": filter_type,
+                "current_unit": duration_unit,
                 "charts": {
                     "category": {
                         "labels": category_labels,
@@ -335,7 +359,15 @@ class NoiseDatasetListView(ListView, LoginRequiredMixin):
     template_name = "data/datasetlist.html"
     context_object_name = "datasets"
     ordering = ["-created_at"]
-    paginate_by = 200  # More practical default
+    paginate_by = 200  # default, can be overridden by query param
+
+    def get_paginate_by(self, queryset):
+        try:
+            page_size = int(self.request.GET.get("page_size", self.paginate_by))
+        except (TypeError, ValueError):
+            page_size = self.paginate_by
+        allowed = {50, 100, 200, 300}
+        return page_size if page_size in allowed else self.paginate_by
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -417,9 +449,212 @@ class NoiseDatasetListView(ListView, LoginRequiredMixin):
             "region": self.request.GET.get("region"),
             "community": self.request.GET.get("community"),
             "date_range": self.request.GET.get("date_range"),
+            "page_size": self.request.GET.get("page_size"),
         }
 
         return context
+
+
+def _filtered_noise_queryset(request):
+    queryset = NoiseDataset.objects.all().order_by("-created_at")
+
+    # Search
+    search = request.GET.get("search")
+    if search:
+        queryset = queryset.filter(
+            Q(noise_id__icontains=search) | Q(name__icontains=search)
+        )
+
+    # Category
+    category = request.GET.get("category")
+    if category:
+        queryset = queryset.filter(category__name=category)
+
+    # Class
+    class_name = request.GET.get("class")
+    if class_name:
+        queryset = queryset.filter(class_name__name=class_name)
+
+    # Subclass
+    subclass = request.GET.get("subclass")
+    if subclass:
+        queryset = queryset.filter(subclass__name=subclass)
+
+    # Region
+    region = request.GET.get("region")
+    if region:
+        queryset = queryset.filter(region__name=region)
+
+    # Community
+    community = request.GET.get("community")
+    if community:
+        queryset = queryset.filter(community__name=community)
+
+    # Date range
+    date_range = request.GET.get("date_range")
+    if date_range:
+        today = timezone.now().date()
+        if date_range == "today":
+            queryset = queryset.filter(recording_date__date=today)
+        elif date_range == "week":
+            start_date = today - timedelta(days=today.weekday())
+            queryset = queryset.filter(recording_date__date__gte=start_date)
+        elif date_range == "month":
+            queryset = queryset.filter(
+                recording_date__month=today.month, recording_date__year=today.year
+            )
+        elif date_range == "year":
+            queryset = queryset.filter(recording_date__year=today.year)
+
+    return queryset
+
+
+@login_required
+def export_noise_datasets(request):
+    fmt = (request.GET.get("format") or "csv").lower()
+    queryset = _filtered_noise_queryset(request)
+
+    # Preload related to minimize queries
+    queryset = queryset.select_related(
+        "category",
+        "class_name",
+        "subclass",
+        "region",
+        "community",
+        "collector",
+        "dataset_type",
+        "microphone_type",
+        "time_of_day",
+        "audio_features",
+        "noise_analysis",
+    )
+
+    # Define full set of columns
+    columns = [
+        ("Noise ID", None),
+        ("Name", None),
+        ("Dataset Type", None),
+        ("Collector", None),
+        ("Description", None),
+        ("Recording Device", None),
+        ("Recording Date", None),
+        ("Created At", None),
+        ("Updated At", None),
+        ("Region", None),
+        ("Community", None),
+        ("Category", None),
+        ("Class", None),
+        ("Subclass", None),
+        ("Time Of Day", None),
+        ("Microphone Type", None),
+        ("Audio File", None),
+        ("Audio Size (bytes)", None),
+        ("Audio Duration (s)", None),
+        ("Sample Rate", None),
+        ("Num Samples", None),
+        ("RMS Energy", None),
+        ("Zero Crossing Rate", None),
+        ("Spectral Centroid", None),
+        ("Spectral Bandwidth", None),
+        ("Spectral Rolloff", None),
+        ("Spectral Flatness", None),
+        ("Harmonic Ratio", None),
+        ("Percussive Ratio", None),
+        ("Mean dB", None),
+        ("Max dB", None),
+        ("Min dB", None),
+        ("Std dB", None),
+        ("Peak Count", None),
+        ("Peak Interval Mean", None),
+        ("Dominant Frequency (Hz)", None),
+        ("Frequency Range", None),
+        ("Event Count", None),
+    ]
+
+    def build_row(obj):
+        af = getattr(obj, "audio_features", None)
+        na = getattr(obj, "noise_analysis", None)
+        try:
+            audio_name = obj.audio.name if obj.audio else ""
+        except Exception:
+            audio_name = ""
+        try:
+            audio_size = obj.audio.size if obj.audio else None
+        except Exception:
+            audio_size = None
+        return [
+            smart_str(getattr(obj, "noise_id", "")),
+            smart_str(getattr(obj, "name", "")),
+            smart_str(getattr(getattr(obj, "dataset_type", None), "get_name_display", lambda: getattr(getattr(obj, "dataset_type", None), "name", ""))()),
+            smart_str(getattr(getattr(obj, "collector", None), "username", "")),
+            smart_str(getattr(obj, "description", "")),
+            smart_str(getattr(obj, "recording_device", "")),
+            smart_str(obj.recording_date.isoformat() if getattr(obj, "recording_date", None) else ""),
+            smart_str(obj.created_at.isoformat() if getattr(obj, "created_at", None) else ""),
+            smart_str(obj.updated_at.isoformat() if getattr(obj, "updated_at", None) else ""),
+            smart_str(getattr(getattr(obj, "region", None), "name", "")),
+            smart_str(getattr(getattr(obj, "community", None), "name", "")),
+            smart_str(getattr(getattr(obj, "category", None), "name", "")),
+            smart_str(getattr(getattr(obj, "class_name", None), "name", "")),
+            smart_str(getattr(getattr(obj, "subclass", None), "name", "")),
+            smart_str(getattr(getattr(obj, "time_of_day", None), "name", "")),
+            smart_str(getattr(getattr(obj, "microphone_type", None), "name", "")),
+            smart_str(audio_name),
+            audio_size if audio_size is not None else "",
+            af.duration if af and af.duration is not None else "",
+            af.sample_rate if af and af.sample_rate is not None else "",
+            af.num_samples if af and af.num_samples is not None else "",
+            af.rms_energy if af and af.rms_energy is not None else "",
+            af.zero_crossing_rate if af and af.zero_crossing_rate is not None else "",
+            af.spectral_centroid if af and af.spectral_centroid is not None else "",
+            af.spectral_bandwidth if af and af.spectral_bandwidth is not None else "",
+            af.spectral_rolloff if af and af.spectral_rolloff is not None else "",
+            af.spectral_flatness if af and af.spectral_flatness is not None else "",
+            af.harmonic_ratio if af and af.harmonic_ratio is not None else "",
+            af.percussive_ratio if af and af.percussive_ratio is not None else "",
+            na.mean_db if na and na.mean_db is not None else "",
+            na.max_db if na and na.max_db is not None else "",
+            na.min_db if na and na.min_db is not None else "",
+            na.std_db if na and na.std_db is not None else "",
+            na.peak_count if na and na.peak_count is not None else "",
+            na.peak_interval_mean if na and na.peak_interval_mean is not None else "",
+            na.dominant_frequency if na and na.dominant_frequency is not None else "",
+            smart_str(na.frequency_range) if na and na.frequency_range else "",
+            na.event_count if na and na.event_count is not None else "",
+        ]
+
+    if fmt == "xlsx":
+        if openpyxl is None:
+            return HttpResponse(
+                "Excel export requires openpyxl. Please install it.", status=500
+            )
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Noise Datasets"
+        # Header
+        ws.append([c[0] for c in columns])
+        for obj in queryset:
+            ws.append(build_row(obj))
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+        response = HttpResponse(
+            output.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = (
+            'attachment; filename="noise_datasets.xlsx"'
+        )
+        return response
+
+    # default CSV
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="noise_datasets.csv"'
+    writer = csv.writer(response)
+    writer.writerow([c[0] for c in columns])
+    for obj in queryset:
+        writer.writerow(build_row(obj))
+    return response
 
 
 @login_required
@@ -522,7 +757,6 @@ def bulk_upload_view(request):
                     "recording_device": form.cleaned_data["recording_device"],
                 }
 
-                # Get all files in the upload directory for this user (exclude temp dirs)
                 upload_dir = os.path.join(
                     settings.SHARED_UPLOADS_DIR, f"user_{request.user.id}"
                 )

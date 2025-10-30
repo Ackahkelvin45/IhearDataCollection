@@ -19,38 +19,37 @@ import logging
 
 
 class MissingClassificationFilter(admin.SimpleListFilter):
-    title = 'Missing Classification'
-    parameter_name = 'missing_classification'
+    title = "Missing Classification"
+    parameter_name = "missing_classification"
 
     def lookups(self, request, model_admin):
         return (
-            ('missing_category', 'Missing Category'),
-            ('missing_class', 'Missing Class'),
-            ('missing_subclass', 'Missing Subclass'),
-            ('missing_all', 'Missing All (Category, Class, Subclass)'),
-            ('missing_any', 'Missing Any Classification'),
+            ("missing_category", "Missing Category"),
+            ("missing_class", "Missing Class"),
+            ("missing_subclass", "Missing Subclass"),
+            ("missing_all", "Missing All (Category, Class, Subclass)"),
+            ("missing_any", "Missing Any Classification"),
         )
 
     def queryset(self, request, queryset):
-        if self.value() == 'missing_category':
+        if self.value() == "missing_category":
             return queryset.filter(category__isnull=True)
-        elif self.value() == 'missing_class':
+        elif self.value() == "missing_class":
             return queryset.filter(class_name__isnull=True)
-        elif self.value() == 'missing_subclass':
+        elif self.value() == "missing_subclass":
             return queryset.filter(subclass__isnull=True)
-        elif self.value() == 'missing_all':
+        elif self.value() == "missing_all":
             return queryset.filter(
-                category__isnull=True,
-                class_name__isnull=True,
-                subclass__isnull=True
+                category__isnull=True, class_name__isnull=True, subclass__isnull=True
             )
-        elif self.value() == 'missing_any':
+        elif self.value() == "missing_any":
             return queryset.filter(
-                Q(category__isnull=True) |
-                Q(class_name__isnull=True) |
-                Q(subclass__isnull=True)
+                Q(category__isnull=True)
+                | Q(class_name__isnull=True)
+                | Q(subclass__isnull=True)
             )
         return queryset
+
 
 logger = logging.getLogger(__name__)
 
@@ -142,13 +141,13 @@ class NoiseDatasetAdmin(ModelAdmin):
     def processing_status(self, obj):
         """Show the processing status of the dataset"""
         if not obj.audio:
-            return "❌ No Audio File"
+            return " No Audio File"
         elif not hasattr(obj, "audio_features") or obj.audio_features is None:
-            return "⚠️ Missing Audio Features"
+            return " Missing Audio Features"
         elif not hasattr(obj, "noise_analysis") or obj.noise_analysis is None:
-            return "⚠️ Missing Noise Analysis"
+            return "Missing Noise Analysis"
         else:
-            return "✅ Complete"
+            return "Complete"
 
     processing_status.short_description = "Processing Status"
 
@@ -190,7 +189,7 @@ class NoiseDatasetAdmin(ModelAdmin):
                 )
 
     reprocess_audio_analysis.short_description = (
-        "🔄 Reprocess audio analysis for selected datasets"
+        "Reprocess audio analysis for selected datasets"
     )
 
     def get_urls(self):
@@ -290,7 +289,7 @@ class NoiseDatasetAdmin(ModelAdmin):
                 if total_count > 100:
                     messages.warning(
                         request,
-                        f"⚠️ Large batch detected: {total_count} datasets. "
+                        f" Large batch detected: {total_count} datasets. "
                         f"This may take a significant amount of time. "
                         f"Estimated time: {total_count * 2} seconds ({total_count * 2 / 60:.1f} minutes).",
                     )
@@ -313,7 +312,7 @@ class NoiseDatasetAdmin(ModelAdmin):
 
                 messages.success(
                     request,
-                    f"✅ Started bulk reprocessing for {total_count} datasets. "
+                    f" Started bulk reprocessing for {total_count} datasets. "
                     f"Task ID: {task.id}. "
                     f"You can monitor progress on the task tracking page.",
                 )

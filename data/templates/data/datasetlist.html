@@ -246,6 +246,22 @@
           </select>
         </div>
 
+        <!-- Page Size Selector -->
+        <div class="mr-2" style="margin-bottom: 3px;">
+          <select name="page_size" class="filter-select focus:shadow-primary-outline text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
+            <option value="50" {% if current_filters.page_size == '50' %}selected{% endif %}>50 per page</option>
+            <option value="100" {% if current_filters.page_size == '100' %}selected{% endif %}>100 per page</option>
+            <option value="200" {% if current_filters.page_size == '200' or not current_filters.page_size %}selected{% endif %}>200 per page</option>
+            <option value="300" {% if current_filters.page_size == '300' %}selected{% endif %}>300 per page</option>
+          </select>
+        </div>
+
+        <!-- Export Buttons -->
+        <div class="flex gap-2 items-center mr-4" >
+          <button type="button" id="export-csv" class="px-4 py-2 border border-primary rounded-lg  mr-2 text-primary text-sm">Export CSV</button>
+          <button type="button" id="export-xlsx" class="px-4 py-2 border border-emerald-600 rounded-lg text-emerald-600 text-sm">Export Excel</button>
+        </div>
+
         <!-- Filter Buttons -->
         <div class="flex gap-2" >
           <button type="submit" class="filter-btn px-6 py-2.5 mr-2 border border-primary  rounded-lg text-primary font-medium">
@@ -372,11 +388,11 @@
               {% if is_paginated %}
               <div class="pagination-container  mx-2 mt-2">
                 {% if page_obj.has_previous %}
-                  <a href="?page=1{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}"
+                  <a href="?page=1{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}{% if request.GET.page_size %}&page_size={{ request.GET.page_size }}{% endif %}"
                      class="pagination-btn">
                     <i class="fas fa-angle-double-left"></i>
                   </a>
-                  <a href="?page={{ page_obj.previous_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}"
+                  <a href="?page={{ page_obj.previous_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}{% if request.GET.page_size %}&page_size={{ request.GET.page_size }}{% endif %}"
                      class="pagination-btn">
                     <i class="fas fa-angle-left"></i>
                   </a>
@@ -393,10 +409,10 @@
                   {% if num == page_obj.number %}
                     <span class="pagination-btn active">{{ num }}</span>
                   {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-                    <a href="?page={{ num }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}"
+                    <a href="?page={{ num }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}{% if request.GET.page_size %}&page_size={{ request.GET.page_size }}{% endif %}"
                        class="pagination-btn">{{ num }}</a>
                   {% elif num == 1 or num == page_obj.paginator.num_pages %}
-                    <a href="?page={{ num }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}"
+                    <a href="?page={{ num }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}{% if request.GET.page_size %}&page_size={{ request.GET.page_size }}{% endif %}"
                        class="pagination-btn">{{ num }}</a>
                   {% elif num == 2 and page_obj.number > 5 %}
                     <span class="pagination-dots">...</span>
@@ -406,11 +422,11 @@
                 {% endfor %}
 
                 {% if page_obj.has_next %}
-                  <a href="?page={{ page_obj.next_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}"
+                  <a href="?page={{ page_obj.next_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}{% if request.GET.page_size %}&page_size={{ request.GET.page_size }}{% endif %}"
                      class="pagination-btn">
                     <i class="fas fa-angle-right"></i>
                   </a>
-                  <a href="?page={{ page_obj.paginator.num_pages }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}"
+                  <a href="?page={{ page_obj.paginator.num_pages }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class %}&class={{ request.GET.class }}{% endif %}{% if request.GET.region %}&region={{ request.GET.region }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}{% if request.GET.page_size %}&page_size={{ request.GET.page_size }}{% endif %}"
                      class="pagination-btn">
                     <i class="fas fa-angle-double-right"></i>
                   </a>
@@ -501,6 +517,20 @@
 </style>
 
 <script>
+  // Export helpers
+  function buildExportUrl(format) {
+    const base = "{% url 'data:export_noise_datasets' %}";
+    const params = new URLSearchParams(window.location.search);
+    params.set('format', format);
+    return `${base}?${params.toString()}`;
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    const btnCsv = document.getElementById('export-csv');
+    const btnXlsx = document.getElementById('export-xlsx');
+    if (btnCsv) btnCsv.addEventListener('click', () => { window.location.href = buildExportUrl('csv'); });
+    if (btnXlsx) btnXlsx.addEventListener('click', () => { window.location.href = buildExportUrl('xlsx'); });
+  });
   function confirmDelete(url, noiseId) {
     Swal.fire({
       title: 'Delete Dataset?',

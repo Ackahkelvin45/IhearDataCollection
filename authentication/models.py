@@ -31,7 +31,6 @@ class CustomUser(AbstractUser):
     last_name = models.CharField(max_length=30, blank=True, null=True)
     speaker_id = models.CharField(max_length=20, blank=True, null=True, unique=True)
 
-
     username = models.CharField(
         max_length=150,
         unique=True,

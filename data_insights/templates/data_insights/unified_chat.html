@@ -29,7 +29,7 @@
                 </button>
             </div>
         </div>
-        
+
         <!-- Sessions List -->
         <div id="sessionsList" class="flex-1 overflow-y-auto p-4">
             <div class="text-center text-gray-500 py-8">
@@ -64,8 +64,8 @@
                     <i class="fa-solid fa-chart-line text-6xl text-primary mb-4"></i>
                     <h4 class="font-semibold text-gray-800 mb-4">Get Started</h4>
                     <p class="text-gray-600 mb-8 text-sm">Try one of these suggestions or ask your own question:</p>
-               
-               
+
+
                      <div class="flex flex-wrap justify-center gap-3 mb-8">
                     {% for s in suggestions %}
                     <button style="margin-right: 10px;margin-bottom: 10px;" onclick="startChatWithSuggestion('{{ s|escapejs }}')" class="px-4 py-2 rounded-full bg-primary-light text-primary hover:bg-primary-hover border border-primary/10 shadow-sm transition">
@@ -76,19 +76,19 @@
                 </div>
 
                 <!-- Suggestions -->
-               
+
 
                 <!-- Input Form -->
  <form id="welcomeForm" style="width:100%; padding: 5px; margin:0 auto; margin-bottom: 10px;">
   <div style="position:relative; width:100%;">
-    <input 
-      id="welcomeInput" 
-      type="text" 
+    <input
+      id="welcomeInput"
+      type="text"
       placeholder="Type your question..."
       style="
         width:100%;
-        background-color:#f8fafc; 
-        border:1px solid #e2e8f0; 
+        background-color:#f8fafc;
+        border:1px solid #e2e8f0;
         border-radius:9999px;
         padding:1rem 4rem 1rem 1rem;
         outline:none;
@@ -96,22 +96,22 @@
         font-size:1rem;
       "
     />
-    <button 
-      type="submit" 
+    <button
+      type="submit"
       aria-label="Send"
       style="
-        position:absolute; 
-        right:0.5rem; 
-        top:50%; 
+        position:absolute;
+        right:0.5rem;
+        top:50%;
         transform:translateY(-50%);
-        width:3rem; 
-        height:3rem; 
-        border-radius:9999px; 
+        width:3rem;
+        height:3rem;
+        border-radius:9999px;
         background-color:#22c55e; /* secondary color */
-        color:#fff; 
-        display:flex; 
-        align-items:center; 
-        justify-content:center; 
+        color:#fff;
+        display:flex;
+        align-items:center;
+        justify-content:center;
         box-shadow:0 1px 3px rgba(0,0,0,0.2);
         cursor:pointer;
       "
@@ -135,14 +135,14 @@
         <div id="chatInputContainer" class="bg-white border-t border-gray-200 p-4 hidden">
 <form id="chatForm" class="w-full max-w-xl mx-auto">
   <div class="flex items-center w-full bg-slate-50 border border-slate-200 rounded-full px-3 py-2 focus-within:ring-2 focus-within:ring-secondary/30 focus-within:border-secondary">
-    <input 
-      id="messageInput" 
-      type="text" 
+    <input
+      id="messageInput"
+      type="text"
       placeholder="Ask about your audio data..."
       class="flex-1 bg-transparent outline-none text-slate-700 text-base px-2"
     />
-    <button 
-      type="submit" 
+    <button
+      type="submit"
       id="sendBtn"
       aria-label="Send"
       class="w-12 h-12 rounded-full bg-secondary text-white flex items-center justify-center shadow hover:opacity-90 disabled:opacity-50"
@@ -197,7 +197,7 @@ class UnifiedAudioDataChat {
         this.currentSession = null;
         this.sessions = [];
         this.isLoading = false;
-        
+
         // Performance optimizations for streaming
         this.scrollThrottle = null;
         this.updateQueue = new Map();
@@ -208,22 +208,22 @@ class UnifiedAudioDataChat {
             lastUpdate: Date.now(),
             updateTimes: []
         };
-        
+
         this.initializeEventListeners();
         this.loadSessions();
     }
-    
+
     getCSRFToken() {
-        return document.querySelector('[name=csrfmiddlewaretoken]')?.value || 
+        return document.querySelector('[name=csrfmiddlewaretoken]')?.value ||
                document.querySelector('meta[name="csrf-token"]')?.content || '';
     }
-    
+
     initializeEventListeners() {
         // New chat button
         document.getElementById('newChatBtn').addEventListener('click', () => {
             this.createNewSession();
         });
-        
+
         // Welcome form submission
         document.getElementById('welcomeForm').addEventListener('submit', (e) => {
             e.preventDefault();
@@ -233,7 +233,7 @@ class UnifiedAudioDataChat {
                 input.value = '';
             }
         });
-        
+
         // Chat form submission
         document.getElementById('chatForm').addEventListener('submit', (e) => {
             e.preventDefault();
@@ -244,25 +244,25 @@ class UnifiedAudioDataChat {
                 this.autoResizeTextarea(input);
             }
         });
-        
+
         // Auto-resize textarea
         const messageInput = document.getElementById('messageInput');
         messageInput.addEventListener('input', () => {
             this.autoResizeTextarea(messageInput);
         });
     }
-    
+
     autoResizeTextarea(textarea) {
         textarea.style.height = 'auto';
         textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
     }
-    
+
     async loadSessions() {
         try {
             const response = await fetch(`${this.apiBaseUrl}/insights/sessions/`, {
                 headers: this.headers
             });
-            
+
             if (response.ok) {
                 const data = await response.json();
                 this.sessions = data.results || data;
@@ -279,14 +279,14 @@ class UnifiedAudioDataChat {
             this.updateSessionsList(); // Show empty state
         }
     }
-    
+
     updateSessionsList() {
         const container = document.getElementById('sessionsList');
-        
+
         if (!Array.isArray(this.sessions)) {
             this.sessions = [];
         }
-        
+
         if (this.sessions.length === 0) {
             container.innerHTML = `
                 <div class="text-center text-gray-500 py-8">
@@ -297,7 +297,7 @@ class UnifiedAudioDataChat {
             `;
             return;
         }
-        
+
         container.innerHTML = this.sessions.map(session => `
             <div class="session-item py-2 px-2 rounded-lg cursor-pointer transition-colors border-b   mb-2 ${
                 this.currentSession?.id === session.id ? 'bg-primary-light border border-primary ' : 'hover:bg-gray-50'
@@ -305,22 +305,22 @@ class UnifiedAudioDataChat {
                 <div class="flex items-start justify-between">
                     <div class="flex-1 min-w-0">
                 <h6 class="font-medium text-gray-800">
-                ${ (session.title && session.title.length > 25) 
-                    ? session.title.substring(0, 25) + "..." 
+                ${ (session.title && session.title.length > 25)
+                    ? session.title.substring(0, 25) + "..."
                     : (session.title || "Untitled Session") }
                 </h6>
 
                         <p class="text-xs text-gray-400">${this.formatDate(session.created_at)}</p>
                     </div>
                     <div class="flex items-center space-x-1 ml-2">
-                        <button class="session-delete-btn p-1 text-gray-400 hover:text-red-500" 
+                        <button class="session-delete-btn p-1 text-gray-400 hover:text-red-500"
                                 onclick="event.stopPropagation(); window.unifiedChat.deleteSession(${session.id})">
-                            <svg xmlns="http://www.w3.org/2000/svg" 
-     viewBox="0 0 24 24" 
-     fill="none" 
-     stroke="currentColor" 
-     stroke-width="1.5" 
-     stroke-linecap="round" 
+                            <svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 24 24"
+     fill="none"
+     stroke="currentColor"
+     stroke-width="1.5"
+     stroke-linecap="round"
      stroke-linejoin="round"
      style="width:20px; height:20px; color:#dc2626; cursor:pointer;">
   <path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/>
@@ -332,7 +332,7 @@ class UnifiedAudioDataChat {
             </div>
         `).join('');
     }
-    
+
     async createNewSession() {
         try {
             this.showLoading();
@@ -346,7 +346,7 @@ class UnifiedAudioDataChat {
             this.hideLoading();
         }
     }
-    
+
     async createSessionAndSendMessage(userInput) {
         try {
             this.showLoading();
@@ -360,7 +360,7 @@ class UnifiedAudioDataChat {
             this.hideLoading();
         }
     }
-    
+
     async createSession() {
         try {
             const response = await fetch(`${this.apiBaseUrl}/insights/sessions/`, {
@@ -368,32 +368,32 @@ class UnifiedAudioDataChat {
                 headers: this.headers,
                 body: JSON.stringify({ title: null })
             });
-            
+
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
                 throw new Error(errorData.detail || `HTTP ${response.status}: Failed to create session`);
             }
-            
+
             const session = await response.json();
             this.currentSession = session;
             this.sessions.unshift(session);
             this.updateSessionsList();
             this.updateChatTitle(session.title || 'New Chat');
-            
+
             return session;
         } catch (error) {
             console.error('Error creating session:', error);
             throw error;
         }
     }
-    
+
     async loadSession(sessionId) {
         try {
             this.showLoading();
             const response = await fetch(`${this.apiBaseUrl}/insights/sessions/${sessionId}/`, {
                 headers: this.headers
             });
-            
+
             if (response.ok) {
                 const session = await response.json();
                 this.currentSession = session;
@@ -412,17 +412,17 @@ class UnifiedAudioDataChat {
             this.hideLoading();
         }
     }
-    
+
     loadSessionMessages(session) {
         const container = document.getElementById('messagesContainer');
         container.innerHTML = '';
-        
+
         if (session.messages && session.messages.length > 0) {
             // Sort messages by creation date (oldest first)
-            const sortedMessages = [...session.messages].sort((a, b) => 
+            const sortedMessages = [...session.messages].sort((a, b) =>
                 new Date(a.created_at) - new Date(b.created_at)
             );
-            
+
             sortedMessages.forEach(message => {
                 // Add user message
                 this.addMessageToUI({
@@ -431,7 +431,7 @@ class UnifiedAudioDataChat {
                     created_at: message.created_at,
                     status: message.status
                 });
-                
+
                 // Add assistant message if it exists
                 if (message.assistant_response && message.assistant_response.trim()) {
                     this.addMessageToUI({
@@ -441,7 +441,7 @@ class UnifiedAudioDataChat {
                         status: message.status,
                         visulization: message.visulization
                     });
-                    
+
                     // Add visualization if it exists
                     if (message.visulization) {
                         setTimeout(() => {
@@ -459,16 +459,16 @@ class UnifiedAudioDataChat {
                 }
             });
         }
-        
+
         this.scrollToBottom();
     }
-    
+
     async sendMessage(userInput) {
         if (!this.currentSession || this.isLoading) return;
-        
+
         this.isLoading = true;
         this.setSendButtonLoading(true);
-        
+
         // Add user message to UI
         const userMessage = {
             id: Date.now(),
@@ -477,7 +477,7 @@ class UnifiedAudioDataChat {
             status: 'pending'
         };
         this.addMessageToUI(userMessage);
-        
+
         // Add assistant message placeholder
         const assistantMessage = {
             id: Date.now() + 1,
@@ -489,7 +489,7 @@ class UnifiedAudioDataChat {
             toolResponses: []
         };
         this.addMessageToUI(assistantMessage);
-        
+
         // Ensure the message DOM is ready for streaming updates
         setTimeout(() => {
             const messageDiv = document.getElementById(`message-${assistantMessage.id}`);
@@ -502,7 +502,7 @@ class UnifiedAudioDataChat {
                 }
             }
         }, 10);
-        
+
         try {
             const response = await fetch(
                 `${this.apiBaseUrl}/insights/sessions/${this.currentSession.id}/messages/`,
@@ -515,13 +515,13 @@ class UnifiedAudioDataChat {
                     })
                 }
             );
-            
+
             if (!response.ok) {
                 throw new Error('Failed to send message');
             }
-            
+
             await this.handleStreamingResponse(response, assistantMessage);
-            
+
         } catch (error) {
             console.error('Error sending message:', error);
             this.showErrorToast('Failed to send message');
@@ -531,39 +531,39 @@ class UnifiedAudioDataChat {
             this.setSendButtonLoading(false);
         }
     }
-    
+
     async handleStreamingResponse(response, assistantMessage) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
         let messageCount = 0;
-        
+
         try {
             while (true) {
                 const { done, value } = await reader.read();
-                
+
                 if (done) break;
-                
+
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\n');
                 buffer = lines.pop();
-                
+
                 // Process lines in batches for better performance
                 const linesToProcess = lines.filter(line => line.trim());
-                
+
                 for (const line of linesToProcess) {
                     try {
                         const message = JSON.parse(line);
                         messageCount++;
-                        
+
                         // Handle message immediately for fast rendering
                         this.handleStreamMessage(message, assistantMessage);
-                        
+
                         // Yield control to browser every 10 messages for responsiveness
                         if (messageCount % 10 === 0) {
                             await new Promise(resolve => setTimeout(resolve, 0));
                         }
-                        
+
                     } catch (e) {
                         console.warn('Failed to parse stream message:', line, e);
                     }
@@ -574,77 +574,77 @@ class UnifiedAudioDataChat {
             this.updateMessageStatus(assistantMessage.id, 'failed');
         }
     }
-    
+
     handleStreamMessage(message, assistantMessage) {
         const { action, data } = message;
-        
+
         // Skip null/undefined data
         if (data === null || data === undefined) {
             return;
         }
-        
+
         switch (action) {
             case 'tool_response':
                 // Store tool responses for chart data extraction
                 assistantMessage.toolResponses = assistantMessage.toolResponses || [];
                 assistantMessage.toolResponses.push(data);
-                
+
                 // Show a subtle indicator that tools are working
                 this.showToolActivity(assistantMessage.id);
                 break;
-                
+
             case 'llm':
                 // Performance tracking
                 const startTime = performance.now();
                 this.streamingStats.messagesReceived++;
-                
+
                 // Accumulate the response
                 if (!assistantMessage.assistant_response) {
                     assistantMessage.assistant_response = '';
                 }
                 assistantMessage.assistant_response += data;
-                
+
                 // Update UI immediately for fast rendering
                 this.updateMessageContent(assistantMessage.id, assistantMessage.assistant_response);
-                
+
                 // Track performance
                 const updateTime = performance.now() - startTime;
                 this.streamingStats.updateTimes.push(updateTime);
                 this.streamingStats.lastUpdate = Date.now();
-                
+
                 // Log performance if updates are slow
                 if (updateTime > 50) {
                     console.warn(`Slow streaming update: ${updateTime.toFixed(2)}ms for message ${assistantMessage.id}`);
                 }
                 break;
-                
+
             case 'visualization':
                 assistantMessage.visualizations = assistantMessage.visualizations || [];
                 assistantMessage.visualizations.push(data);
-                
+
                 // Add visualization immediately
                 this.addVisualizationToMessage(assistantMessage.id, data, assistantMessage.toolResponses);
                 break;
-                
+
             case 'completed':
                 this.updateMessageStatus(assistantMessage.id, 'completed');
                 this.hideToolActivity(assistantMessage.id);
-                
+
                 // Refresh sessions list asynchronously to avoid blocking
                 setTimeout(() => this.loadSessions(), 100);
                 break;
-                
+
             case 'error':
                 console.error('Stream error:', data);
                 this.updateMessageStatus(assistantMessage.id, 'failed');
                 this.hideToolActivity(assistantMessage.id);
                 break;
-                
+
             default:
                 console.debug('Unknown stream action:', action, data);
         }
     }
-    
+
  addMessageToUI(message) {
   const container = document.getElementById('messagesContainer');
   const messageDiv = document.createElement('div');
@@ -655,16 +655,16 @@ class UnifiedAudioDataChat {
     messageDiv.innerHTML = `
       <div style="display:flex; justify-content:flex-end; margin-bottom:1rem;">
         <div style="max-width:70%; text-align:right; min-width:0;">
-          <div 
+          <div
             style="
               background-color:#d9fdd3;   /* WhatsApp user green */
               border:1px solid #b7e6a1;
-              border-top-left-radius:0.75rem; 
-              border-bottom-right-radius:0.75rem; 
+              border-top-left-radius:0.75rem;
+              border-bottom-right-radius:0.75rem;
               border-bottom-left-radius:0.75rem;
-              padding:0.75rem 1rem; 
-              box-shadow:0 1px 2px rgba(0,0,0,0.05); 
-              color:#111827; 
+              padding:0.75rem 1rem;
+              box-shadow:0 1px 2px rgba(0,0,0,0.05);
+              color:#111827;
               font-size:0.95rem;
               word-wrap:break-word;
               overflow-wrap:break-word;
@@ -699,19 +699,19 @@ class UnifiedAudioDataChat {
           <div style="
             background-color:#ffffff;   /* WhatsApp assistant white */
             border:1px solid #e5e7eb;
-            border-top-right-radius:0.75rem; 
-            border-bottom-right-radius:0.75rem; 
+            border-top-right-radius:0.75rem;
+            border-bottom-right-radius:0.75rem;
             border-bottom-left-radius:0.75rem;
-            padding:0.75rem 1rem; 
-            box-shadow:0 1px 2px rgba(0,0,0,0.05); 
-            color:#111827; 
+            padding:0.75rem 1rem;
+            box-shadow:0 1px 2px rgba(0,0,0,0.05);
+            color:#111827;
             font-size:0.95rem;
             word-wrap:break-word;
             overflow-wrap:break-word;
             max-width:100%;
           ">
             <div class="message-content">
-              ${message.assistant_response ? this.formatMarkdown(message.assistant_response) : 
+              ${message.assistant_response ? this.formatMarkdown(message.assistant_response) :
                 '<div style="display:flex; align-items:center; gap:0.5rem;"><span style="color:#6b7280;">Thinking</span><div class="thinking-dots"><span>.</span><span>.</span><span>.</span></div></div>'}
             </div>
             <div class="visualizations-container" style="margin-top:1rem;"></div>
@@ -737,12 +737,12 @@ class UnifiedAudioDataChat {
 
         // Try multiple selectors to find the content div
         let contentDiv = messageDiv.querySelector('.message-content');
-        
+
         if (!contentDiv) {
             // Fallback: look for any div that might contain the content
             contentDiv = messageDiv.querySelector('div > div > div > div');
         }
-        
+
         if (!contentDiv) {
             // Last resort: create the content structure if it doesn't exist
             const messageContainer = messageDiv.querySelector('div > div > div');
@@ -760,7 +760,7 @@ class UnifiedAudioDataChat {
                 try {
                     // Immediately display the content as it streams in
                     contentDiv.innerHTML = this.formatMarkdown(content);
-                    
+
                     // Ensure the message container maintains its styling
                     const messageContainer = contentDiv.closest('div[style*="background-color:#ffffff"]');
                     if (messageContainer) {
@@ -769,7 +769,7 @@ class UnifiedAudioDataChat {
                         messageContainer.style.overflowWrap = 'break-word';
                         messageContainer.style.maxWidth = '100%';
                     }
-                    
+
                     // Auto-scroll to show new content (throttled)
                     this.throttledScrollToBottom();
                 } catch (error) {
@@ -782,7 +782,7 @@ class UnifiedAudioDataChat {
             console.error(`Could not find content div for message ${messageId}`);
         }
     }
-    
+
     updateMessageStatus(messageId, status) {
         const messageDiv = document.getElementById(`message-${messageId}`);
         if (messageDiv) {
@@ -793,7 +793,7 @@ class UnifiedAudioDataChat {
             }
         }
     }
-    
+
     addVisualizationToMessage(messageId, visualizationData, toolResponses = []) {
         const messageDiv = document.getElementById(`message-${messageId}`);
         if (messageDiv) {
@@ -815,7 +815,7 @@ class UnifiedAudioDataChat {
                     </div>
                 `;
                 container.appendChild(vizDiv);
-                
+
                 // Create the chart with actual data
                 setTimeout(() => {
                     this.createChart(visualizationData, chartId, toolResponses);
@@ -823,23 +823,23 @@ class UnifiedAudioDataChat {
             }
         }
     }
-    
+
     createChart(visualizationData, canvasId, toolResponses = []) {
         const canvas = document.getElementById(canvasId);
         if (!canvas) return;
-        
+
         try {
             const frontendData = visualizationData.frontend_data;
             const chartType = frontendData.type;
-            
+
             // Extract actual data from the tool responses
             const actualData = this.extractChartData(visualizationData, toolResponses);
-            
+
             console.log('Creating chart:', chartType, 'with data:', actualData);
-            
+
             // Create chart configuration based on type
             let config;
-            
+
             switch (chartType) {
                 case 'pie_chart':
                     config = {
@@ -874,7 +874,7 @@ class UnifiedAudioDataChat {
                         }
                     };
                     break;
-                    
+
                 case 'bar_chart':
                     config = {
                         type: 'bar',
@@ -905,7 +905,7 @@ class UnifiedAudioDataChat {
                         }
                     };
                     break;
-                    
+
                 case 'line_chart':
                     config = {
                         type: 'line',
@@ -936,7 +936,7 @@ class UnifiedAudioDataChat {
                         }
                     };
                     break;
-                    
+
                 case 'box_plot':
                     // Use proper box plot with chartjs-chart-boxplot plugin
                     if (actualData.boxPlotData && actualData.boxPlotData.length > 0) {
@@ -956,7 +956,7 @@ class UnifiedAudioDataChat {
                                 responsive: true,
                                 maintainAspectRatio: false,
                                 scales: {
-                                    y: { 
+                                    y: {
                                         title: {
                                             display: true,
                                             text: 'Decibel Level (dB)'
@@ -991,7 +991,7 @@ class UnifiedAudioDataChat {
                                 responsive: true,
                                 maintainAspectRatio: false,
                                 scales: {
-                                    y: { 
+                                    y: {
                                         beginAtZero: true,
                                         title: {
                                             display: true,
@@ -1030,7 +1030,7 @@ class UnifiedAudioDataChat {
                         };
                     }
                     break;
-                    
+
                 case 'scatter_plot':
                     config = {
                         type: 'scatter',
@@ -1046,14 +1046,14 @@ class UnifiedAudioDataChat {
                             responsive: true,
                             maintainAspectRatio: false,
                             scales: {
-                                x: { 
+                                x: {
                                     type: 'linear',
                                     title: {
                                         display: true,
                                         text: actualData.xLabel || 'X Axis'
                                     }
                                 },
-                                y: { 
+                                y: {
                                     title: {
                                         display: true,
                                         text: actualData.yLabel || 'Y Axis'
@@ -1070,7 +1070,7 @@ class UnifiedAudioDataChat {
                         }
                     };
                     break;
-                    
+
                 case 'area_chart':
                     config = {
                         type: 'line',
@@ -1101,7 +1101,7 @@ class UnifiedAudioDataChat {
                         }
                     };
                     break;
-                    
+
                 case 'heatmap':
                     // Chart.js doesn't have native heatmap, use a matrix-style bar chart
                     config = {
@@ -1128,7 +1128,7 @@ class UnifiedAudioDataChat {
                         }
                     };
                     break;
-                    
+
                 default:
                     // Default to bar chart
                     config = {
@@ -1155,10 +1155,10 @@ class UnifiedAudioDataChat {
                         }
                     };
             }
-            
+
             // Create the chart
             new Chart(canvas, config);
-            
+
             console.log('Chart created successfully:', canvasId);
         } catch (error) {
             console.error('Error creating chart:', error);
@@ -1167,13 +1167,13 @@ class UnifiedAudioDataChat {
             container.innerHTML = '<div class="text-red-500 text-center p-4">Failed to load chart</div>';
         }
     }
-    
+
     extractChartData(visualizationData, toolResponses = []) {
         console.log('Extracting chart data from:', visualizationData, 'Tool responses:', toolResponses);
-        
+
         // Try to extract actual data from tool responses
         let extractedData = null;
-        
+
         for (const toolResponse of toolResponses) {
             // Handle statistical distribution data (for box plots)
             if (typeof toolResponse === 'object' && toolResponse.analysis_type === 'statistical_distribution') {
@@ -1182,25 +1182,25 @@ class UnifiedAudioDataChat {
                     if (distributionData) {
                         const labels = Object.keys(distributionData);
                         const data = labels.map(label => distributionData[label].avg);
-                        
+
                         // Generate box plot data (min, q1, median, q3, max) for each category
                         const boxPlotData = labels.map(label => {
                             const values = distributionData[label].decibel_values || [];
                             if (values.length === 0) return null;
-                            
+
                             // Sort values for quartile calculation
                             const sortedValues = [...values].sort((a, b) => a - b);
                             const n = sortedValues.length;
-                            
+
                             const min = sortedValues[0];
                             const max = sortedValues[n - 1];
                             const median = this.calculateMedian(sortedValues);
                             const q1 = this.calculateQuartile(sortedValues, 0.25);
                             const q3 = this.calculateQuartile(sortedValues, 0.75);
-                            
+
                             return [min, q1, median, q3, max];
                         }).filter(data => data !== null);
-                        
+
                         extractedData = {
                             labels: labels,
                             data: data,
@@ -1222,7 +1222,7 @@ class UnifiedAudioDataChat {
                         // Extract region data from array format
                         const labels = toolResponse.map(item => item.region_name);
                         const data = toolResponse.map(item => item.noise_dataset_count);
-                        
+
                         extractedData = {
                             labels: labels,
                             data: data,
@@ -1242,10 +1242,10 @@ class UnifiedAudioDataChat {
                     if (Array.isArray(datasets)) {
                         const regions = datasets.map(d => d.region);
                         const uniqueRegions = [...new Set(regions)];
-                        const counts = uniqueRegions.map(region => 
+                        const counts = uniqueRegions.map(region =>
                             regions.filter(r => r === region).length
                         );
-                        
+
                         extractedData = {
                             labels: uniqueRegions,
                             data: counts,
@@ -1266,7 +1266,7 @@ class UnifiedAudioDataChat {
                         if (Array.isArray(results) && results.length > 0) {
                             const labels = results.map(r => r.region__name || r.category__name || 'Overall');
                             const data = results.map(r => r.avg_decibel || r.avg_rms_energy || 0);
-                            
+
                             extractedData = {
                                 labels: labels,
                                 data: data,
@@ -1280,7 +1280,7 @@ class UnifiedAudioDataChat {
                         if (Array.isArray(results) && results.length > 0) {
                             const labels = results.map(r => r.region__name || r.category__name || 'Overall');
                             const data = results.map(r => r.avg_spectral_centroid || 0);
-                            
+
                             extractedData = {
                                 labels: labels,
                                 data: data,
@@ -1294,7 +1294,7 @@ class UnifiedAudioDataChat {
                         if (Array.isArray(trends) && trends.length > 0) {
                             const labels = trends.map(t => t.month);
                             const data = trends.map(t => t.count);
-                            
+
                             extractedData = {
                                 labels: labels,
                                 data: data,
@@ -1310,7 +1310,7 @@ class UnifiedAudioDataChat {
                                 x: item.x_value || item.rms_energy || 0,
                                 y: item.y_value || item.spectral_centroid || 0
                             }));
-                            
+
                             extractedData = {
                                 scatterData: scatterData,
                                 colors: this.generateColors(1),
@@ -1335,10 +1335,10 @@ class UnifiedAudioDataChat {
                         if (match) {
                             const regions = match.map(m => m.match(/'region':\s*'([^']+)'/)[1]);
                             const uniqueRegions = [...new Set(regions)];
-                            const counts = uniqueRegions.map(region => 
+                            const counts = uniqueRegions.map(region =>
                                 regions.filter(r => r === region).length
                             );
-                            
+
                             extractedData = {
                                 labels: uniqueRegions,
                                 data: counts,
@@ -1353,12 +1353,12 @@ class UnifiedAudioDataChat {
                 }
             }
         }
-        
+
         // If we extracted data, return it
         if (extractedData) {
             return extractedData;
         }
-        
+
         // Check if there's a chart_template in the recommendation with actual data
         const recommendation = visualizationData.recommendation;
         if (recommendation && recommendation.chart_template) {
@@ -1372,7 +1372,7 @@ class UnifiedAudioDataChat {
                 };
             }
         }
-        
+
         // Fallback: Use the data from the sample response (Ashanti region with 2 files)
         return {
             labels: ['Ashanti'],
@@ -1381,16 +1381,16 @@ class UnifiedAudioDataChat {
             title: 'Distribution of Audio Files by Region'
         };
     }
-    
+
     generateColors(count) {
         const colors = [
-            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', 
+            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0',
             '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF',
             '#4BC0C0', '#FF6384', '#36A2EB', '#FFCE56'
         ];
         return colors.slice(0, count);
     }
-    
+
     calculateMedian(sortedArray) {
         const n = sortedArray.length;
         if (n % 2 === 0) {
@@ -1399,27 +1399,27 @@ class UnifiedAudioDataChat {
             return sortedArray[Math.floor(n / 2)];
         }
     }
-    
+
     calculateQuartile(sortedArray, percentile) {
         const n = sortedArray.length;
         const index = percentile * (n - 1);
         const lower = Math.floor(index);
         const upper = Math.ceil(index);
         const weight = index % 1;
-        
+
         if (upper >= n) return sortedArray[n - 1];
         return sortedArray[lower] * (1 - weight) + sortedArray[upper] * weight;
     }
-    
+
     async deleteSession(sessionId) {
         if (!confirm('Are you sure you want to delete this session?')) return;
-        
+
         try {
             const response = await fetch(`${this.apiBaseUrl}/insights/sessions/${sessionId}/archive/`, {
                 method: 'POST',
                 headers: this.headers
             });
-            
+
             if (response.ok) {
                 this.sessions = this.sessions.filter(s => s.id !== sessionId);
                 if (this.currentSession?.id === sessionId) {
@@ -1434,7 +1434,7 @@ class UnifiedAudioDataChat {
             this.showErrorToast('Failed to delete session');
         }
     }
-    
+
     showWelcomeScreen() {
         document.getElementById('welcomeScreen').classList.remove('hidden');
         document.getElementById('chatContainer').classList.add('hidden');
@@ -1442,35 +1442,35 @@ class UnifiedAudioDataChat {
         document.getElementById('messagesContainer').innerHTML = '';
         this.updateChatTitle('Welcome to Data Insights!');
     }
-    
+
     showChatInterface() {
         document.getElementById('welcomeScreen').classList.add('hidden');
         document.getElementById('chatContainer').classList.remove('hidden');
         document.getElementById('chatInputContainer').classList.remove('hidden');
     }
-    
+
     updateChatTitle(title) {
         document.getElementById('chatTitle').textContent = title;
     }
-    
+
     scrollToBottom() {
         const container = document.getElementById('chatContainer');
         if (container) {
             container.scrollTop = container.scrollHeight;
         }
     }
-    
+
     throttledScrollToBottom() {
         // Throttle scrolling for better performance during rapid streaming
         if (this.scrollThrottle) {
             clearTimeout(this.scrollThrottle);
         }
-        
+
         this.scrollThrottle = setTimeout(() => {
             this.scrollToBottom();
         }, 16); // ~60fps
     }
-    
+
     showToolActivity(messageId) {
         // Show a subtle indicator that AI tools are working
         const messageDiv = document.getElementById(`message-${messageId}`);
@@ -1480,7 +1480,7 @@ class UnifiedAudioDataChat {
                 indicator = document.createElement('div');
                 indicator.className = 'tool-activity-indicator';
                 indicator.innerHTML = '<div style="font-size:0.75rem; color:#6b7280; margin-top:0.25rem;"><span>🔧</span> Analyzing data...</div>';
-                
+
                 const contentContainer = messageDiv.querySelector('.message-content');
                 if (contentContainer && contentContainer.parentNode) {
                     contentContainer.parentNode.appendChild(indicator);
@@ -1488,7 +1488,7 @@ class UnifiedAudioDataChat {
             }
         }
     }
-    
+
     hideToolActivity(messageId) {
         // Hide the tool activity indicator
         const messageDiv = document.getElementById(`message-${messageId}`);
@@ -1499,7 +1499,7 @@ class UnifiedAudioDataChat {
             }
         }
     }
-    
+
     setSendButtonLoading(loading) {
         const btn = document.getElementById('sendBtn');
         if (loading) {
@@ -1510,93 +1510,93 @@ class UnifiedAudioDataChat {
             btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i>';
         }
     }
-    
+
     showLoading() {
         document.getElementById('loadingOverlay').classList.remove('hidden');
     }
-    
+
     hideLoading() {
         document.getElementById('loadingOverlay').classList.add('hidden');
     }
-    
+
     showErrorToast(message) {
         const toast = document.getElementById('errorToast');
         const messageEl = document.getElementById('errorMessage');
         messageEl.textContent = message;
         toast.classList.remove('hidden');
-        
+
         setTimeout(() => {
             toast.classList.add('hidden');
         }, 5000);
     }
-    
+
     showSuccessToast(message) {
         const toast = document.getElementById('successToast');
         const messageEl = document.getElementById('successMessage');
         messageEl.textContent = message;
         toast.classList.remove('hidden');
-        
+
         setTimeout(() => {
             toast.classList.add('hidden');
         }, 3000);
     }
-    
+
     formatDate(dateString) {
         const date = new Date(dateString);
         const now = new Date();
         const diffTime = Math.abs(now - date);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        
+
         if (diffDays === 1) return 'Today';
         if (diffDays === 2) return 'Yesterday';
         if (diffDays <= 7) return `${diffDays - 1} days ago`;
-        
+
         return date.toLocaleDateString();
     }
-    
+
     formatTime(dateString) {
         const date = new Date(dateString);
-        return date.toLocaleTimeString([], { 
-            hour: '2-digit', 
+        return date.toLocaleTimeString([], {
+            hour: '2-digit',
             minute: '2-digit',
-            hour12: true 
+            hour12: true
         });
     }
-    
+
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     }
-    
+
     formatMarkdown(text) {
         // Fast markdown formatting optimized for streaming
         if (!text || typeof text !== 'string') {
             return '';
         }
-        
+
         // Cache for performance during streaming
         if (this._markdownCache && this._markdownCache.input === text) {
             return this._markdownCache.output;
         }
-        
+
         let formattedText = text;
-        
+
         try {
             // Remove chart configuration JSON blocks (they're handled by visualizations)
             formattedText = formattedText.replace(/```json\s*\{\s*"recommended_chart"[\s\S]*?```/g, '');
             formattedText = formattedText.replace(/```json\s*\{\s*"type":\s*"(pie|bar|line)"[\s\S]*?```/g, '');
-            
+
             // Remove chart reasoning sections
             formattedText = formattedText.replace(/### Recommended Visualization:[\s\S]*?(?=###|$)/g, '');
             formattedText = formattedText.replace(/#### [^:]*Chart Configuration:[\s\S]*?(?=###|####|$)/g, '');
-            
+
             // Process tables first (before other formatting)
             formattedText = this.formatTables(formattedText);
-            
+
             // Also handle simple data tables (key: value pairs)
             formattedText = this.formatDataTables(formattedText);
-            
+
             // Fast replacements for common markdown patterns
             const replacements = [
                 // Code blocks
@@ -1623,20 +1623,20 @@ class UnifiedAudioDataChat {
                 [/\n\n/g, '</p><p class="mb-4">'],
                 [/\n/g, '<br>']
             ];
-            
+
             // Apply replacements efficiently
             for (const [pattern, replacement] of replacements) {
                 formattedText = formattedText.replace(pattern, replacement);
             }
-            
+
             // Wrap orphaned list items in proper ul/ol tags
             formattedText = this.wrapListItems(formattedText);
-            
+
             // Wrap in paragraphs and cleanup
             if (!formattedText.includes('<h') && !formattedText.includes('<pre') && !formattedText.includes('<table')) {
                 formattedText = `<p class="mb-4">${formattedText}</p>`;
             }
-            
+
             // Clean up empty tags and fix nested structures
             formattedText = formattedText
                 .replace(/<p class="mb-4"><\/p>/g, '')
@@ -1644,32 +1644,32 @@ class UnifiedAudioDataChat {
                 .replace(/<p class="mb-4">(<pre[^>]*>.*?<\/pre>)<\/p>/g, '$1')
                 .replace(/<p class="mb-4">(<div[^>]*>.*?<\/div>)<\/p>/g, '$1')
                 .replace(/<p class="mb-4">(<table[^>]*>.*?<\/table>)<\/p>/g, '$1');
-            
+
         } catch (error) {
             console.warn('Markdown formatting error:', error);
             // Fallback: just escape HTML and preserve line breaks
             formattedText = text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
         }
-        
+
         // Cache the result for repeated calls during streaming
         this._markdownCache = { input: text, output: formattedText };
-        
+
         return formattedText;
     }
-    
+
     formatTables(text) {
         // Enhanced table formatting for data analysis results
         try {
             // Match markdown tables (| header | header |)
             const tableRegex = /^\|(.+)\|\s*\n\|[-:\s|]+\|\s*\n((?:\|.+\|\s*\n?)*)/gm;
-            
+
             return text.replace(tableRegex, (match, headerRow, bodyRows) => {
                 try {
                     // Parse header
                     const headers = headerRow.split('|')
                         .map(h => h.trim())
                         .filter(h => h.length > 0);
-                    
+
                     // Parse body rows
                     const rows = bodyRows.split('\n')
                         .filter(row => row.trim().length > 0)
@@ -1679,7 +1679,7 @@ class UnifiedAudioDataChat {
                                 .filter(cell => cell.length > 0);
                         })
                         .filter(row => row.length > 0);
-                    
+
                     // Generate HTML table
                     let tableHTML = `
                         <div class="table-container my-4 overflow-x-auto">
@@ -1687,57 +1687,57 @@ class UnifiedAudioDataChat {
                                 <thead class="bg-gray-50">
                                     <tr>
                     `;
-                    
+
                     // Add headers
                     headers.forEach(header => {
                         tableHTML += `<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200">${this.escapeHtml(header)}</th>`;
                     });
-                    
+
                     tableHTML += `
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-200">
                     `;
-                    
+
                     // Add rows
                     rows.forEach((row, index) => {
                         const rowClass = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
                         tableHTML += `<tr class="${rowClass}">`;
-                        
+
                         row.forEach((cell, cellIndex) => {
                             if (cellIndex < headers.length) {
                                 // Check if cell contains numbers for right alignment
                                 const isNumeric = /^[\d.,\s%$-]+$/.test(cell.trim());
                                 const alignClass = isNumeric ? 'text-right' : 'text-left';
-                                
+
                                 tableHTML += `<td class="px-4 py-3 text-sm text-gray-900 ${alignClass} border-b border-gray-100">${this.escapeHtml(cell)}</td>`;
                             }
                         });
-                        
+
                         tableHTML += `</tr>`;
                     });
-                    
+
                     tableHTML += `
                                 </tbody>
                             </table>
                         </div>
                     `;
-                    
+
                     return tableHTML;
-                    
+
                 } catch (tableError) {
                     console.warn('Error formatting table:', tableError);
                     // Fallback: return original text
                     return match;
                 }
             });
-            
+
         } catch (error) {
             console.warn('Error in table formatting:', error);
             return text;
         }
     }
-    
+
     formatDataTables(text) {
         // Format simple data tables from AI analysis results
         try {
@@ -1745,7 +1745,7 @@ class UnifiedAudioDataChat {
             const dataListPattern = /^([A-Za-z\s]+):\s*(.+)$/gm;
             let matches = [];
             let match;
-            
+
             // Collect consecutive data lines
             while ((match = dataListPattern.exec(text)) !== null) {
                 matches.push({
@@ -1755,16 +1755,16 @@ class UnifiedAudioDataChat {
                     index: match.index
                 });
             }
-            
+
             // Group consecutive matches into tables
             if (matches.length >= 3) {
                 let tableGroups = [];
                 let currentGroup = [matches[0]];
-                
+
                 for (let i = 1; i < matches.length; i++) {
                     const prevMatch = matches[i - 1];
                     const currentMatch = matches[i];
-                    
+
                     // Check if matches are consecutive (within 50 characters)
                     if (currentMatch.index - (prevMatch.index + prevMatch.fullMatch.length) < 50) {
                         currentGroup.push(currentMatch);
@@ -1775,35 +1775,35 @@ class UnifiedAudioDataChat {
                         currentGroup = [currentMatch];
                     }
                 }
-                
+
                 if (currentGroup.length >= 3) {
                     tableGroups.push(currentGroup);
                 }
-                
+
                 // Replace groups with formatted tables
                 tableGroups.forEach(group => {
                     const tableHTML = this.createDataTable(group);
                     const firstMatch = group[0];
                     const lastMatch = group[group.length - 1];
-                    
+
                     // Replace the entire group with the table
                     const groupText = text.substring(
                         firstMatch.index,
                         lastMatch.index + lastMatch.fullMatch.length
                     );
-                    
+
                     text = text.replace(groupText, tableHTML);
                 });
             }
-            
+
             return text;
-            
+
         } catch (error) {
             console.warn('Error formatting data tables:', error);
             return text;
         }
     }
-    
+
     createDataTable(dataGroup) {
         // Create a nice table from data group
         let tableHTML = `
@@ -1812,12 +1812,12 @@ class UnifiedAudioDataChat {
                     <table class="w-full">
                         <tbody>
         `;
-        
+
         dataGroup.forEach((item, index) => {
             const rowClass = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
             const isNumeric = /^[\d.,\s%$-]+$/.test(item.value);
             const valueClass = isNumeric ? 'text-right font-mono' : 'text-left';
-            
+
             tableHTML += `
                 <tr class="${rowClass}">
                     <td class="px-4 py-3 text-sm font-medium text-gray-700 w-1/2">${this.escapeHtml(item.key)}</td>
@@ -1825,50 +1825,50 @@ class UnifiedAudioDataChat {
                 </tr>
             `;
         });
-        
+
         tableHTML += `
                         </tbody>
                     </table>
                 </div>
             </div>
         `;
-        
+
         return tableHTML;
     }
-    
+
     wrapListItems(text) {
         // Wrap orphaned list items in proper ul/ol containers
         try {
             // Find sequences of list items
             const listItemRegex = /<li class="[^"]*list-disc[^"]*"[^>]*>.*?<\/li>/g;
             const numberedListRegex = /<li class="[^"]*list-decimal[^"]*"[^>]*>.*?<\/li>/g;
-            
+
             // Wrap bullet lists
             text = text.replace(
                 /(<li class="[^"]*list-disc[^"]*"[^>]*>.*?<\/li>(?:\s*<li class="[^"]*list-disc[^"]*"[^>]*>.*?<\/li>)*)/g,
                 '<ul class="my-4">$1</ul>'
             );
-            
+
             // Wrap numbered lists
             text = text.replace(
                 /(<li class="[^"]*list-decimal[^"]*"[^>]*>.*?<\/li>(?:\s*<li class="[^"]*list-decimal[^"]*"[^>]*>.*?<\/li>)*)/g,
                 '<ol class="my-4">$1</ol>'
             );
-            
+
             return text;
-            
+
         } catch (error) {
             console.warn('Error wrapping list items:', error);
             return text;
         }
     }
-    
+
     getStreamingStats() {
         const stats = this.streamingStats;
-        const avgUpdateTime = stats.updateTimes.length > 0 
-            ? stats.updateTimes.reduce((a, b) => a + b, 0) / stats.updateTimes.length 
+        const avgUpdateTime = stats.updateTimes.length > 0
+            ? stats.updateTimes.reduce((a, b) => a + b, 0) / stats.updateTimes.length
             : 0;
-        
+
         return {
             messagesReceived: stats.messagesReceived,
             averageUpdateTime: avgUpdateTime.toFixed(2) + 'ms',
@@ -1876,15 +1876,15 @@ class UnifiedAudioDataChat {
             totalUpdates: stats.updateTimes.length
         };
     }
-    
+
     debugStreamingPerformance() {
         console.log('🚀 Streaming Performance Stats:', this.getStreamingStats());
     }
-    
+
     // Test function to verify all chart types work
     testAllChartTypes() {
         console.log('🧪 Testing all chart types...');
-        
+
         const testData = {
             labels: ['Category A', 'Category B', 'Category C'],
             data: [10, 20, 15],
@@ -1896,9 +1896,9 @@ class UnifiedAudioDataChat {
             xLabel: 'X Axis',
             yLabel: 'Y Axis'
         };
-        
+
         const chartTypes = ['pie_chart', 'bar_chart', 'line_chart', 'box_plot', 'scatter_plot', 'area_chart', 'heatmap'];
-        
+
         chartTypes.forEach((chartType, index) => {
             try {
                 // Create a test canvas
@@ -1906,18 +1906,18 @@ class UnifiedAudioDataChat {
                 testCanvas.id = `test-chart-${index}`;
                 testCanvas.width = 400;
                 testCanvas.height = 200;
-                
+
                 // Test chart creation
                 this.createChart({frontend_data: {type: chartType}}, `test-chart-${index}`, [testData]);
                 console.log(`✅ ${chartType} - Chart created successfully`);
-                
+
                 // Clean up
                 testCanvas.remove();
             } catch (error) {
                 console.error(`❌ ${chartType} - Error:`, error);
             }
         });
-        
+
         console.log('🧪 Chart type testing completed');
     }
 }
@@ -1935,16 +1935,16 @@ function debugStreamingDOM() {
         console.log('Current session:', chat.currentSession);
         console.log('Is loading:', chat.isLoading);
         console.log('Performance stats:', chat.getStreamingStats());
-        
+
         // Check DOM structure
         const messagesContainer = document.getElementById('messagesContainer');
         console.log('Messages container:', messagesContainer);
         console.log('Message count in DOM:', messagesContainer?.children.length || 0);
-        
+
         // Check for message divs
         const messageDivs = document.querySelectorAll('[id^="message-"]');
         console.log('Message divs found:', messageDivs.length);
-        
+
         messageDivs.forEach((div, index) => {
             const contentDiv = div.querySelector('.message-content');
             console.log(`Message ${index + 1}:`, {
@@ -1963,10 +1963,10 @@ window.testAllCharts = () => window.unifiedChat.testAllChartTypes();
 // Initialize the unified chat when the page loads
 document.addEventListener('DOMContentLoaded', () => {
     window.unifiedChat = new UnifiedAudioDataChat();
-    
+
     // Add global debugging
     window.debugStreaming = () => window.unifiedChat.debugStreamingPerformance();
-    
+
     console.log('🎵 Unified Audio Data Chat initialized');
     console.log('💡 Debug commands available: debugStreamingDOM(), debugStreaming()');
 });
@@ -2132,7 +2132,7 @@ document.addEventListener('DOMContentLoaded', () => {
     .data-table-container {
         font-size: 0.75rem;
     }
-    
+
     .table-container th,
     .table-container td,
     .data-table-container td {
@@ -2168,9 +2168,9 @@ document.addEventListener('DOMContentLoaded', () => {
     padding: 0;
 }
 
-.message-content h1, 
-.message-content h2, 
-.message-content h3, 
+.message-content h1,
+.message-content h2,
+.message-content h3,
 .message-content h4 {
     color: #1f2937;
     font-weight: 600;
