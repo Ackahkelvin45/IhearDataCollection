@@ -96,14 +96,10 @@ start_spinner "Starting db and redis..."
 if $COMPOSE up -d db redis; then stop_spinner 0 "Dependencies started"; else stop_spinner 1 "Failed to start dependencies"; exit 1; fi
 
 banner "Applying migrations and collecting static"
-# IMPORTANT: Run migrations via the web image to avoid any seeding or destructive steps
-start_spinner "Running Django migrations + collectstatic (no seeding)..."
-if $COMPOSE run --rm web /bin/sh -c 'python manage.py migrate --noinput && python manage.py collectstatic --noinput'; then
-  stop_spinner 0 "Migrations complete"
-else
-  stop_spinner 1 "Migrations failed"
-  exit 1
-fi
+# The migration service is defined in docker-compose.yml and runs:
+# python manage.py migrate && collectstatic && seed_db
+start_spinner "Running Django migrations + collectstatic..."
+if $COMPOSE run --rm migration; then stop_spinner 0 "Migrations complete"; else stop_spinner 1 "Migrations failed"; exit 1; fi
 
 banner "Starting application services"
 start_spinner "Starting web, celery-worker and nginx..."

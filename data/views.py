@@ -32,7 +32,7 @@ from rest_framework.permissions import IsAuthenticated
 import math
 import csv
 from io import BytesIO, StringIO
-from django.http import HttpResponse
+from django.http import HttpResponse, StreamingHttpResponse
 from django.utils.encoding import smart_str
 
 try:
@@ -519,7 +519,19 @@ def export_noise_datasets(request):
     fmt = (request.GET.get("format") or "csv").lower()
     queryset = _filtered_noise_queryset(request)
 
-    # Preload related to minimize queries
+    # Check total count before processing
+    total_count = queryset.count()
+    MAX_EXPORT_LIMIT = 50000  # Maximum records to export in one go
+    
+    if total_count > MAX_EXPORT_LIMIT:
+        return HttpResponse(
+            f"Export limit exceeded. You are trying to export {total_count} records, "
+            f"but the maximum allowed is {MAX_EXPORT_LIMIT}. Please use filters to reduce the dataset size.",
+            status=400,
+            content_type="text/plain"
+        )
+
+    # Preload related to minimize queries - use iterator() for memory efficiency
     queryset = queryset.select_related(
         "category",
         "class_name",
@@ -647,13 +659,43 @@ def export_noise_datasets(request):
             return HttpResponse(
                 "Excel export requires openpyxl. Please install it.", status=500
             )
+        
+        # For XLSX, process in chunks to avoid memory issues
+        # Limit XLSX exports to 10000 records to prevent timeouts
+        MAX_XLSX_LIMIT = 10000
+        if total_count > MAX_XLSX_LIMIT:
+            return HttpResponse(
+                f"Excel export limit exceeded. You are trying to export {total_count} records, "
+                f"but Excel export maximum is {MAX_XLSX_LIMIT}. Please use CSV export or apply filters to reduce the dataset size.",
+                status=400,
+                content_type="text/plain"
+            )
+        
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Noise Datasets"
         # Header
         ws.append([c[0] for c in columns])
-        for obj in queryset:
-            ws.append(build_row(obj))
+        
+        # Process in chunks to avoid memory issues
+        CHUNK_SIZE = 1000
+        offset = 0
+        processed = 0
+        
+        while processed < total_count:
+            chunk = queryset[offset:offset + CHUNK_SIZE]
+            for obj in chunk:
+                try:
+                    ws.append(build_row(obj))
+                except Exception as e:
+                    logger.error(f"Error building row for dataset {obj.id}: {e}")
+                    # Continue with next row
+                    continue
+            offset += CHUNK_SIZE
+            processed += len(chunk)
+            # Clear memory
+            del chunk
+        
         output = BytesIO()
         wb.save(output)
         output.seek(0)
@@ -664,13 +706,47 @@ def export_noise_datasets(request):
         response["Content-Disposition"] = 'attachment; filename="noise_datasets.xlsx"'
         return response
 
-    # default CSV
-    response = HttpResponse(content_type="text/csv")
+    # CSV: Use streaming response for large datasets
+    def csv_generator():
+        # Create a buffer for CSV writing
+        buffer = StringIO()
+        writer = csv.writer(buffer)
+        
+        # Write header first
+        writer.writerow([c[0] for c in columns])
+        header_data = buffer.getvalue()
+        buffer.seek(0)
+        buffer.truncate(0)
+        yield header_data
+        
+        # Process queryset in chunks using iterator() for memory efficiency
+        CHUNK_SIZE = 500
+        offset = 0
+        processed = 0
+        
+        while processed < total_count:
+            chunk = queryset[offset:offset + CHUNK_SIZE]
+            for obj in chunk:
+                try:
+                    row = build_row(obj)
+                    writer.writerow(row)
+                    row_data = buffer.getvalue()
+                    buffer.seek(0)
+                    buffer.truncate(0)
+                    yield row_data
+                except Exception as e:
+                    logger.error(f"Error building row for dataset {obj.id}: {e}")
+                    # Continue with next row
+                    continue
+            offset += CHUNK_SIZE
+            processed += len(chunk)
+            # Clear memory
+            del chunk
+        
+        buffer.close()
+
+    response = StreamingHttpResponse(csv_generator(), content_type="text/csv")
     response["Content-Disposition"] = 'attachment; filename="noise_datasets.csv"'
-    writer = csv.writer(response)
-    writer.writerow([c[0] for c in columns])
-    for obj in queryset:
-        writer.writerow(build_row(obj))
     return response
 
 
