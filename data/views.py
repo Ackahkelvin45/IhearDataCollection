@@ -522,13 +522,13 @@ def export_noise_datasets(request):
     # Check total count before processing
     total_count = queryset.count()
     MAX_EXPORT_LIMIT = 50000  # Maximum records to export in one go
-    
+
     if total_count > MAX_EXPORT_LIMIT:
         return HttpResponse(
             f"Export limit exceeded. You are trying to export {total_count} records, "
             f"but the maximum allowed is {MAX_EXPORT_LIMIT}. Please use filters to reduce the dataset size.",
             status=400,
-            content_type="text/plain"
+            content_type="text/plain",
         )
 
     # Preload related to minimize queries - use iterator() for memory efficiency
@@ -659,31 +659,33 @@ def export_noise_datasets(request):
             return HttpResponse(
                 "Excel export requires openpyxl. Please install it.", status=500
             )
-        
-        # For XLSX, process in chunks to avoid memory issues
-        # Limit XLSX exports to 10000 records to prevent timeouts
-        MAX_XLSX_LIMIT = 10000
+
+        # For XLSX, use write-only mode for better memory efficiency with large datasets
+        # Increased limit to 50,000 to match CSV limit - Excel can handle much more
+        MAX_XLSX_LIMIT = 50000
         if total_count > MAX_XLSX_LIMIT:
             return HttpResponse(
                 f"Excel export limit exceeded. You are trying to export {total_count} records, "
                 f"but Excel export maximum is {MAX_XLSX_LIMIT}. Please use CSV export or apply filters to reduce the dataset size.",
                 status=400,
-                content_type="text/plain"
+                content_type="text/plain",
             )
+
+        # Use write-only workbook for better memory efficiency with large datasets
+        output = BytesIO()
+        wb = openpyxl.Workbook(write_only=True)
+        ws = wb.create_sheet(title="Noise Datasets")
         
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Noise Datasets"
-        # Header
+        # Write header
         ws.append([c[0] for c in columns])
-        
+
         # Process in chunks to avoid memory issues
         CHUNK_SIZE = 1000
         offset = 0
         processed = 0
-        
+
         while processed < total_count:
-            chunk = queryset[offset:offset + CHUNK_SIZE]
+            chunk = queryset[offset : offset + CHUNK_SIZE]
             for obj in chunk:
                 try:
                     ws.append(build_row(obj))
@@ -695,8 +697,8 @@ def export_noise_datasets(request):
             processed += len(chunk)
             # Clear memory
             del chunk
-        
-        output = BytesIO()
+
+        # Save the workbook to the output stream
         wb.save(output)
         output.seek(0)
         response = HttpResponse(
@@ -711,21 +713,21 @@ def export_noise_datasets(request):
         # Create a buffer for CSV writing
         buffer = StringIO()
         writer = csv.writer(buffer)
-        
+
         # Write header first
         writer.writerow([c[0] for c in columns])
         header_data = buffer.getvalue()
         buffer.seek(0)
         buffer.truncate(0)
         yield header_data
-        
+
         # Process queryset in chunks using iterator() for memory efficiency
         CHUNK_SIZE = 500
         offset = 0
         processed = 0
-        
+
         while processed < total_count:
-            chunk = queryset[offset:offset + CHUNK_SIZE]
+            chunk = queryset[offset : offset + CHUNK_SIZE]
             for obj in chunk:
                 try:
                     row = build_row(obj)
@@ -742,7 +744,7 @@ def export_noise_datasets(request):
             processed += len(chunk)
             # Clear memory
             del chunk
-        
+
         buffer.close()
 
     response = StreamingHttpResponse(csv_generator(), content_type="text/csv")

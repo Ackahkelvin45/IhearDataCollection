@@ -80,8 +80,8 @@ INSTALLED_APPS = [
     "django_celery_results",
     "reports",
     "rest_framework",
-    'drf_spectacular',
-    'django_filters',
+    "drf_spectacular",
+    "django_filters",
 ]
 TAILWIND_APP_NAME = "theme"
 
@@ -182,22 +182,20 @@ USE_TZ = True
 
 
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000
-DATA_UPLOAD_MAX_MEMORY_SIZE = 26214400 
-
-
+DATA_UPLOAD_MAX_MEMORY_SIZE = 26214400
 
 
 REST_FRAMEWORK = {
-    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 100,  # default page size
 }
 
 
-SPECTACTULAR_SETTINGS={
-    'TITLE': 'Data Collection API',
-    'DESCRIPTION': 'API for Data Collection',
-    'VERSION': '1.0.0', 
+SPECTACTULAR_SETTINGS = {
+    "TITLE": "Data Collection API",
+    "DESCRIPTION": "API for Data Collection",
+    "VERSION": "1.0.0",
 }
 
 # Static files (CSS, JavaScript, Images)
@@ -423,17 +421,15 @@ if USE_SQLITE:
 
     AI_INSIGHT = {
         "DATABASE": {
-
-
             "USER": os.getenv("LOCAL_POSTGRES_USER", "postgres"),
             "PASSWORD": os.getenv("LOCAL_POSTGRES_PASSWORD", "localhost"),
             "HOST": os.getenv("LOCAL_POSTGRES_HOST", "db"),
             "PORT": int(os.getenv("LOCAL_POSTGRES_PORT", 5432)),
             "NAME": os.getenv("LOCAL_POSTGRES_DB", "iheardatadb"),
             "MAX_CONNECTIONS": int(os.getenv("AI_INSIGHT_DB_MAX_CONNECTIONS", 20)),
-            "CONNECTION_TIMEOUT": int(os.getenv("AI_INSIGHT_DB_CONNECTION_TIMEOUT", 30)),
-
-            
+            "CONNECTION_TIMEOUT": int(
+                os.getenv("AI_INSIGHT_DB_CONNECTION_TIMEOUT", 30)
+            ),
         },
         "AGENT": {
             "MODEL": OPENAI_MODEL,
@@ -445,31 +441,35 @@ if USE_SQLITE:
         },
         "SECURITY": {
             "DEFAULT_ALLOWED_TABLES": [],
-            "MAX_SESSIONS_PER_USER": int(os.getenv("AI_INSIGHT_MAX_SESSIONS_PER_USER", 10)),
+            "MAX_SESSIONS_PER_USER": int(
+                os.getenv("AI_INSIGHT_MAX_SESSIONS_PER_USER", 10)
+            ),
             "SESSION_INACTIVITY_HOURS": int(
                 os.getenv("AI_INSIGHT_SESSION_INACTIVITY_HOURS", 24)
             ),
-            "RATE_LIMIT_PER_MINUTE": int(os.getenv("AI_INSIGHT_RATE_LIMIT_PER_MINUTE", 30)),
-            "MAX_MESSAGE_LENGTH": int(os.getenv("AI_INSIGHT_MAX_MESSAGE_LENGTH", 10000)),
+            "RATE_LIMIT_PER_MINUTE": int(
+                os.getenv("AI_INSIGHT_RATE_LIMIT_PER_MINUTE", 30)
+            ),
+            "MAX_MESSAGE_LENGTH": int(
+                os.getenv("AI_INSIGHT_MAX_MESSAGE_LENGTH", 10000)
+            ),
         },
     }
 
 
 else:
 
-        AI_INSIGHT = {
+    AI_INSIGHT = {
         "DATABASE": {
-
-
             "USER": os.getenv("POSTGRES_USER", "postgres"),
             "PASSWORD": os.getenv("POSTGRES_PASSWORD", "localhost"),
             "HOST": os.getenv("POSTGRES_HOST", "db"),
             "PORT": int(os.getenv("POSTGRES_PORT", 5432)),
             "NAME": os.getenv("POSTGRES_DB", "iheardatadb"),
             "MAX_CONNECTIONS": int(os.getenv("AI_INSIGHT_DB_MAX_CONNECTIONS", 20)),
-            "CONNECTION_TIMEOUT": int(os.getenv("AI_INSIGHT_DB_CONNECTION_TIMEOUT", 30)),
-
-            
+            "CONNECTION_TIMEOUT": int(
+                os.getenv("AI_INSIGHT_DB_CONNECTION_TIMEOUT", 30)
+            ),
         },
         "AGENT": {
             "MODEL": OPENAI_MODEL,
@@ -481,12 +481,17 @@ else:
         },
         "SECURITY": {
             "DEFAULT_ALLOWED_TABLES": [],
-            "MAX_SESSIONS_PER_USER": int(os.getenv("AI_INSIGHT_MAX_SESSIONS_PER_USER", 10)),
+            "MAX_SESSIONS_PER_USER": int(
+                os.getenv("AI_INSIGHT_MAX_SESSIONS_PER_USER", 10)
+            ),
             "SESSION_INACTIVITY_HOURS": int(
                 os.getenv("AI_INSIGHT_SESSION_INACTIVITY_HOURS", 24)
             ),
-            "RATE_LIMIT_PER_MINUTE": int(os.getenv("AI_INSIGHT_RATE_LIMIT_PER_MINUTE", 30)),
-            "MAX_MESSAGE_LENGTH": int(os.getenv("AI_INSIGHT_MAX_MESSAGE_LENGTH", 10000)),
+            "RATE_LIMIT_PER_MINUTE": int(
+                os.getenv("AI_INSIGHT_RATE_LIMIT_PER_MINUTE", 30)
+            ),
+            "MAX_MESSAGE_LENGTH": int(
+                os.getenv("AI_INSIGHT_MAX_MESSAGE_LENGTH", 10000)
+            ),
         },
     }
-

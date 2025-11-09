@@ -118,5 +118,3 @@ for i in {1..24}; do
   sleep 0.02
 done
 printf "\n\n"
-
-
