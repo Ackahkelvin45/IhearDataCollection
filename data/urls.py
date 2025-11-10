@@ -20,6 +20,7 @@ urlpatterns = [
     ),
     path("dataset-create/", views.noise_dataset_create, name="noise_dataset_create"),
     path("export/", views.export_noise_datasets, name="export_noise_datasets"),
+    path("api/export-data/", views.ExportDataAPIView.as_view(), name="api_export_data"),
     path("load-classes/", views.load_classes, name="ajax_load_classes"),
     path("load-subclasses/", views.load_subclasses, name="ajax_load_subclasses"),
     path("load-communities/", views.load_communities, name="load_communities"),
