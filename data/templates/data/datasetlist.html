@@ -517,16 +517,15 @@
 </style>
 
 <script>
-  // Export helpers - using API approach
+  // Optimized export - fetch in larger batches
   async function fetchAllExportData() {
     const apiUrl = "{% url 'data:api_export_data' %}";
     const params = new URLSearchParams(window.location.search);
-    params.set('page_size', '1000'); // Fetch 1000 records per page
-
+    
     let allData = [];
-    let page = 1;
-    let hasMore = true;
-
+    let offset = 0;
+    const batchSize = 2000; // Larger batches for faster fetching
+    
     // Show loading indicator
     Swal.fire({
       title: 'Preparing Export',
@@ -536,44 +535,78 @@
         Swal.showLoading();
       }
     });
-
+    
     try {
-      while (hasMore) {
-        params.set('page', page.toString());
-        const response = await fetch(`${apiUrl}?${params.toString()}`, {
-          method: 'GET',
-          headers: {
-            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value ||
-                          document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '',
-          },
-          credentials: 'include'
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const data = await response.json();
-        allData = allData.concat(data.results);
-
-        // Update progress
-        const total = data.count;
-        const fetched = allData.length;
-        const percentage = Math.min(Math.round((fetched / total) * 100), 100);
-
-        Swal.update({
-          html: `Fetching data... ${fetched} of ${total} records (${percentage}%)`
-        });
-
-        hasMore = !!data.next;
-        page++;
-
-        // Small delay to prevent overwhelming the server
-        if (hasMore) {
-          await new Promise(resolve => setTimeout(resolve, 100));
+      // First request to get total count
+      params.set('batch_size', batchSize.toString());
+      params.set('offset', '0');
+      
+      const firstResponse = await fetch(`${apiUrl}?${params.toString()}`, {
+        method: 'GET',
+        headers: {
+          'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || 
+                        document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '',
+        },
+        credentials: 'include'
+      });
+      
+      if (!firstResponse.ok) {
+        throw new Error(`HTTP error! status: ${firstResponse.status}`);
+      }
+      
+      const firstData = await firstResponse.json();
+      const total = firstData.total;
+      allData = firstData.results;
+      
+      // Update progress
+      const percentage = Math.min(Math.round((allData.length / total) * 100), 100);
+      Swal.update({
+        html: `Fetching data... ${allData.length} of ${total} records (${percentage}%)`
+      });
+      
+      // Fetch remaining batches in parallel (3 at a time)
+      if (firstData.has_more) {
+        offset = batchSize;
+        const parallelBatches = 3; // Fetch 3 batches simultaneously
+        
+        while (offset < total) {
+          const promises = [];
+          
+          // Create up to 3 parallel requests
+          for (let i = 0; i < parallelBatches && offset < total; i++) {
+            params.set('offset', offset.toString());
+            const url = `${apiUrl}?${params.toString()}`;
+            
+            promises.push(
+              fetch(url, {
+                method: 'GET',
+                headers: {
+                  'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || 
+                                document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '',
+                },
+                credentials: 'include'
+              }).then(r => r.json())
+            );
+            
+            offset += batchSize;
+          }
+          
+          // Wait for all parallel requests to complete
+          const results = await Promise.all(promises);
+          
+          // Add all results
+          for (const result of results) {
+            allData = allData.concat(result.results);
+          }
+          
+          // Update progress
+          const percentage = Math.min(Math.round((allData.length / total) * 100), 100);
+          Swal.update({
+            html: `Fetching data... ${allData.length} of ${total} records (${percentage}%)`
+          });
         }
       }
-
+      
       return allData;
     } catch (error) {
       console.error('Error fetching export data:', error);
@@ -672,49 +705,153 @@
     return stringValue;
   }
 
-  function exportToExcel() {
-    // Use server-side export for Excel (more reliable, no CDN dependency, faster)
-    const base = "{% url 'data:export_noise_datasets' %}";
-    const params = new URLSearchParams(window.location.search);
-    params.set('format', 'xlsx');
-    window.location.href = `${base}?${params.toString()}`;
-  }
-
-  async function handleExport(format) {
-    // Excel uses server-side export (no need to fetch data)
-    if (format === 'xlsx') {
-      exportToExcel();
+  function exportToExcel(data) {
+    if (!data || data.length === 0) {
+      Swal.fire('Error', 'No data to export', 'error');
       return;
     }
-
-    // CSV uses client-side export (fetch data first)
-    if (format === 'csv') {
-      try {
-        const data = await fetchAllExportData();
-
-        Swal.update({
-          html: 'Generating file...'
-        });
-
-        // Small delay to show progress
-        await new Promise(resolve => setTimeout(resolve, 300));
-
-        exportToCSV(data);
-        Swal.fire({
-          icon: 'success',
-          title: 'Export Complete',
-          text: `Successfully exported ${data.length} records`,
-          timer: 2000,
-          showConfirmButton: false
-        });
-      } catch (error) {
-        console.error('Export error:', error);
-        Swal.fire({
-          icon: 'error',
-          title: 'Export Failed',
-          text: error.message || 'An error occurred during export',
-        });
+    
+    // Define column headers
+    const headers = [
+      'Noise ID', 'Name', 'Dataset Type', 'Collector', 'Description', 'Recording Device',
+      'Recording Date', 'Created At', 'Updated At', 'Region', 'Community', 'Category',
+      'Class', 'Subclass', 'Time Of Day', 'Microphone Type', 'Audio File', 'Audio Size (bytes)',
+      'Audio Duration (s)', 'Sample Rate', 'Num Samples', 'RMS Energy', 'Zero Crossing Rate',
+      'Spectral Centroid', 'Spectral Bandwidth', 'Spectral Rolloff', 'Spectral Flatness',
+      'Harmonic Ratio', 'Percussive Ratio', 'Mean dB', 'Max dB', 'Min dB', 'Std dB',
+      'Peak Count', 'Peak Interval Mean', 'Dominant Frequency (Hz)', 'Frequency Range', 'Event Count'
+    ];
+    
+    // Convert data to XML format (Excel 2003 XML format - works without external libraries)
+    let xml = '<?xml version="1.0"?>\n';
+    xml += '<?mso-application progid="Excel.Sheet"?>\n';
+    xml += '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"\n';
+    xml += ' xmlns:o="urn:schemas-microsoft-com:office:office"\n';
+    xml += ' xmlns:x="urn:schemas-microsoft-com:office:excel"\n';
+    xml += ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"\n';
+    xml += ' xmlns:html="http://www.w3.org/TR/REC-html40">\n';
+    xml += '<Worksheet ss:Name="Noise Datasets">\n';
+    xml += '<Table>\n';
+    
+    // Add header row
+    xml += '<Row>\n';
+    for (const header of headers) {
+      xml += `<Cell><Data ss:Type="String">${escapeXml(header)}</Data></Cell>\n`;
+    }
+    xml += '</Row>\n';
+    
+    // Add data rows
+    for (const row of data) {
+      xml += '<Row>\n';
+      const values = [
+        row.noise_id || '',
+        row.name || '',
+        row.dataset_type || '',
+        row.collector || '',
+        row.description || '',
+        row.recording_device || '',
+        row.recording_date || '',
+        row.created_at || '',
+        row.updated_at || '',
+        row.region || '',
+        row.community || '',
+        row.category || '',
+        row.class || '',
+        row.subclass || '',
+        row.time_of_day || '',
+        row.microphone_type || '',
+        row.audio_file || '',
+        row.audio_size || '',
+        row.audio_duration || '',
+        row.sample_rate || '',
+        row.num_samples || '',
+        row.rms_energy || '',
+        row.zero_crossing_rate || '',
+        row.spectral_centroid || '',
+        row.spectral_bandwidth || '',
+        row.spectral_rolloff || '',
+        row.spectral_flatness || '',
+        row.harmonic_ratio || '',
+        row.percussive_ratio || '',
+        row.mean_db || '',
+        row.max_db || '',
+        row.min_db || '',
+        row.std_db || '',
+        row.peak_count || '',
+        row.peak_interval_mean || '',
+        row.dominant_frequency || '',
+        row.frequency_range || '',
+        row.event_count || ''
+      ];
+      
+      for (const value of values) {
+        const strValue = String(value || '');
+        // Determine if it's a number
+        const isNumber = !isNaN(strValue) && strValue !== '' && !isNaN(parseFloat(strValue));
+        const type = isNumber ? 'Number' : 'String';
+        xml += `<Cell><Data ss:Type="${type}">${escapeXml(strValue)}</Data></Cell>\n`;
       }
+      xml += '</Row>\n';
+    }
+    
+    xml += '</Table>\n';
+    xml += '</Worksheet>\n';
+    xml += '</Workbook>';
+    
+    // Create and download file
+    const blob = new Blob([xml], { type: 'application/vnd.ms-excel' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'noise_datasets.xls'; // .xls extension for Excel XML format
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+  
+  function escapeXml(text) {
+    if (text === null || text === undefined) return '';
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+  
+  async function handleExport(format) {
+    // Both CSV and Excel now use client-side export via API
+    try {
+      const data = await fetchAllExportData();
+      
+      Swal.update({
+        html: 'Generating file...'
+      });
+      
+      // Small delay to show progress
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      if (format === 'csv') {
+        exportToCSV(data);
+      } else if (format === 'xlsx') {
+        exportToExcel(data);
+      }
+      
+      Swal.fire({
+        icon: 'success',
+        title: 'Export Complete',
+        text: `Successfully exported ${data.length} records`,
+        timer: 2000,
+        showConfirmButton: false
+      });
+    } catch (error) {
+      console.error('Export error:', error);
+      Swal.fire({
+        icon: 'error',
+        title: 'Export Failed',
+        text: error.message || 'An error occurred during export',
+      });
     }
   }
 

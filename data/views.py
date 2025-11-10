@@ -14,10 +14,9 @@ import hashlib
 from django.views.generic import DeleteView, ListView
 from django.urls import reverse_lazy
 from django.contrib import messages
-from .models import NoiseDataset
+from .models import NoiseDataset, AudioFeature, NoiseAnalysis
 from datetime import timedelta
 from django.db.models import Q
-from .models import AudioFeature
 from .models import BulkAudioUpload
 from .tasks import process_bulk_upload
 import logging
@@ -523,8 +522,18 @@ class ExportDataAPIView(APIView):
 
     def get(self, request):
         queryset = _filtered_noise_queryset(request)
+        
+        # Get total count first
+        total_count = queryset.count()
+        
+        # Get batch parameters
+        batch_size = int(request.GET.get("batch_size", 2000))  # Increased from 1000
+        offset = int(request.GET.get("offset", 0))
+        
+        # Limit batch size to prevent memory issues
+        batch_size = min(batch_size, 5000)
 
-        # Preload related to minimize queries
+        # Preload related to minimize queries with only() for efficiency
         queryset = queryset.select_related(
             "category",
             "class_name",
@@ -535,23 +544,36 @@ class ExportDataAPIView(APIView):
             "dataset_type",
             "microphone_type",
             "time_of_day",
+        ).only(
+            'id', 'noise_id', 'name', 'description', 'recording_device', 
+            'recording_date', 'created_at', 'updated_at', 'audio',
+            'category__name', 'class_name__name', 'subclass__name',
+            'region__name', 'community__name', 'collector__username',
+            'dataset_type__name', 'microphone_type__name', 'time_of_day__name'
         )
-
-        # Get pagination parameters
-        page_size = int(request.GET.get("page_size", 1000))
-        page = int(request.GET.get("page", 1))
-
-        # Paginate
-        paginator = PageNumberPagination()
-        paginator.page_size = min(page_size, 1000)  # Max 1000 per page
-        paginated_queryset = paginator.paginate_queryset(queryset, request)
+        
+        # Get batch of records
+        batch = queryset[offset:offset + batch_size]
+        
+        # Prefetch audio features and noise analysis for the batch (efficient bulk lookup)
+        dataset_ids = [obj.id for obj in batch]
+        audio_features = {af.noise_dataset_id: af for af in AudioFeature.objects.filter(noise_dataset_id__in=dataset_ids).only(
+            'noise_dataset_id', 'duration', 'sample_rate', 'num_samples', 'rms_energy',
+            'zero_crossing_rate', 'spectral_centroid', 'spectral_bandwidth',
+            'spectral_rolloff', 'spectral_flatness', 'harmonic_ratio', 'percussive_ratio'
+        )}
+        noise_analyses = {na.noise_dataset_id: na for na in NoiseAnalysis.objects.filter(noise_dataset_id__in=dataset_ids).only(
+            'noise_dataset_id', 'mean_db', 'max_db', 'min_db', 'std_db',
+            'peak_count', 'peak_interval_mean', 'dominant_frequency',
+            'frequency_range', 'event_count'
+        )}
 
         # Build export-ready rows directly from queryset
         export_data = []
-        for obj in paginated_queryset:
-            # Get related objects
-            af = getattr(obj, "audio_features", None)
-            na = getattr(obj, "noise_analysis", None)
+        for obj in batch:
+            # Get cached related objects
+            af = audio_features.get(obj.id)
+            na = noise_analyses.get(obj.id)
 
             # Get audio file info
             try:
@@ -653,16 +675,13 @@ class ExportDataAPIView(APIView):
             }
             export_data.append(row)
 
-        return Response(
-            {
-                "results": export_data,
-                "count": paginator.page.paginator.count,
-                "next": paginator.get_next_link(),
-                "previous": paginator.get_previous_link(),
-                "page": page,
-                "page_size": page_size,
-            }
-        )
+        return Response({
+            "results": export_data,
+            "total": total_count,
+            "offset": offset,
+            "batch_size": batch_size,
+            "has_more": (offset + batch_size) < total_count,
+        })
 
 
 @login_required
