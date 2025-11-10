@@ -521,159 +521,163 @@ class ExportDataAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        queryset = _filtered_noise_queryset(request)
+        import time
+        from django.db import connection
         
-        # Get total count first
-        total_count = queryset.count()
+        start_time = time.time()
         
-        # Get batch parameters
-        batch_size = int(request.GET.get("batch_size", 2000))  # Increased from 1000
+        # Get batch parameters first
+        batch_size = int(request.GET.get("batch_size", 500))
         offset = int(request.GET.get("offset", 0))
+        batch_size = min(batch_size, 1000)
         
-        # Limit batch size to prevent memory issues
-        batch_size = min(batch_size, 5000)
+        # Build WHERE clause based on filters
+        where_clauses = []
+        params = []
+        
+        # Apply search filter
+        search_query = request.GET.get("search", "").strip()
+        if search_query:
+            where_clauses.append("(nd.name ILIKE %s OR nd.noise_id ILIKE %s OR nd.description ILIKE %s)")
+            search_pattern = f"%{search_query}%"
+            params.extend([search_pattern, search_pattern, search_pattern])
+        
+        # Apply other filters from request
+        if request.GET.get("category"):
+            where_clauses.append("nd.category_id = %s")
+            params.append(request.GET.get("category"))
+        if request.GET.get("region"):
+            where_clauses.append("nd.region_id = %s")
+            params.append(request.GET.get("region"))
+        if request.GET.get("community"):
+            where_clauses.append("nd.community_id = %s")
+            params.append(request.GET.get("community"))
+        if request.GET.get("dataset_type"):
+            where_clauses.append("nd.dataset_type_id = %s")
+            params.append(request.GET.get("dataset_type"))
+        if request.GET.get("collector"):
+            where_clauses.append("nd.collector_id = %s")
+            params.append(request.GET.get("collector"))
+        
+        where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+        
+        # For first request, get total count
+        if offset == 0:
+            count_sql = f"""
+                SELECT COUNT(*) 
+                FROM data_noisedataset nd
+                WHERE {where_sql}
+            """
+            with connection.cursor() as cursor:
+                cursor.execute(count_sql, params)
+                total_count = cursor.fetchone()[0]
+        else:
+            total_count = int(request.GET.get("total", 0))
 
-        # Preload related to minimize queries with only() for efficiency
-        queryset = queryset.select_related(
-            "category",
-            "class_name",
-            "subclass",
-            "region",
-            "community",
-            "collector",
-            "dataset_type",
-            "microphone_type",
-            "time_of_day",
-        ).only(
-            'id', 'noise_id', 'name', 'description', 'recording_device', 
-            'recording_date', 'created_at', 'updated_at', 'audio',
-            'category__name', 'class_name__name', 'subclass__name',
-            'region__name', 'community__name', 'collector__username',
-            'dataset_type__name', 'microphone_type__name', 'time_of_day__name'
-        )
+        logger.info(f"Export API: offset={offset}, batch_size={batch_size}, total={total_count}")
         
-        # Get batch of records
-        batch = queryset[offset:offset + batch_size]
+        # Raw SQL query for maximum performance - join all tables in one query
+        sql = f"""
+            SELECT 
+                nd.id, nd.noise_id, nd.name, nd.description, nd.recording_device,
+                nd.recording_date, nd.created_at, nd.updated_at, nd.audio,
+                cat.name as category_name,
+                cls.name as class_name,
+                sub.name as subclass_name,
+                reg.name as region_name,
+                com.name as community_name,
+                usr.username as collector_username,
+                dt.name as dataset_type_name,
+                mt.name as microphone_type_name,
+                tod.name as time_of_day_name,
+                af.duration, af.sample_rate, af.num_samples, af.rms_energy,
+                af.zero_crossing_rate, af.spectral_centroid, af.spectral_bandwidth,
+                af.spectral_rolloff, af.spectral_flatness, af.harmonic_ratio, af.percussive_ratio,
+                na.mean_db, na.max_db, na.min_db, na.std_db,
+                na.peak_count, na.peak_interval_mean, na.dominant_frequency,
+                na.frequency_range, na.event_count
+            FROM data_noisedataset nd
+            LEFT JOIN core_category cat ON nd.category_id = cat.id
+            LEFT JOIN core_class cls ON nd.class_name_id = cls.id
+            LEFT JOIN core_subclass sub ON nd.subclass_id = sub.id
+            LEFT JOIN core_region reg ON nd.region_id = reg.id
+            LEFT JOIN core_community com ON nd.community_id = com.id
+            LEFT JOIN authentication_customuser usr ON nd.collector_id = usr.id
+            LEFT JOIN core_specific_mix_setting dt ON nd.dataset_type_id = dt.id
+            LEFT JOIN core_microphone_type mt ON nd.microphone_type_id = mt.id
+            LEFT JOIN core_time_of_day tod ON nd.time_of_day_id = tod.id
+            LEFT JOIN data_audiofeature af ON nd.id = af.noise_dataset_id
+            LEFT JOIN data_noiseanalysis na ON nd.id = na.noise_dataset_id
+            WHERE {where_sql}
+            ORDER BY nd.id
+            LIMIT %s OFFSET %s
+        """
         
-        # Prefetch audio features and noise analysis for the batch (efficient bulk lookup)
-        dataset_ids = [obj.id for obj in batch]
-        audio_features = {af.noise_dataset_id: af for af in AudioFeature.objects.filter(noise_dataset_id__in=dataset_ids).only(
-            'noise_dataset_id', 'duration', 'sample_rate', 'num_samples', 'rms_energy',
-            'zero_crossing_rate', 'spectral_centroid', 'spectral_bandwidth',
-            'spectral_rolloff', 'spectral_flatness', 'harmonic_ratio', 'percussive_ratio'
-        )}
-        noise_analyses = {na.noise_dataset_id: na for na in NoiseAnalysis.objects.filter(noise_dataset_id__in=dataset_ids).only(
-            'noise_dataset_id', 'mean_db', 'max_db', 'min_db', 'std_db',
-            'peak_count', 'peak_interval_mean', 'dominant_frequency',
-            'frequency_range', 'event_count'
-        )}
+        query_params = params + [batch_size, offset]
+        
+        with connection.cursor() as cursor:
+            cursor.execute(sql, query_params)
+            columns = [col[0] for col in cursor.description]
+            rows = cursor.fetchall()
+        
+        logger.info(f"Raw SQL query completed in {time.time() - start_time:.2f}s, fetched {len(rows)} rows")
 
-        # Build export-ready rows directly from queryset
+        # Build export-ready rows from raw SQL results (ultra-fast)
         export_data = []
-        for obj in batch:
-            # Get cached related objects
-            af = audio_features.get(obj.id)
-            na = noise_analyses.get(obj.id)
-
-            # Get audio file info
-            try:
-                audio_name = obj.audio.name if obj.audio else ""
-            except Exception:
-                audio_name = ""
-            try:
-                audio_size = obj.audio.size if obj.audio else None
-            except Exception:
-                audio_size = None
-
-            row = {
-                "noise_id": obj.noise_id or "",
-                "name": obj.name or "",
-                "dataset_type": (
-                    obj.dataset_type.get_name_display() if obj.dataset_type else ""
-                ),
-                "collector": obj.collector.username if obj.collector else "",
-                "description": obj.description or "",
-                "recording_device": obj.recording_device or "",
-                "recording_date": (
-                    obj.recording_date.isoformat() if obj.recording_date else ""
-                ),
-                "created_at": obj.created_at.isoformat() if obj.created_at else "",
-                "updated_at": obj.updated_at.isoformat() if obj.updated_at else "",
-                "region": obj.region.name if obj.region else "",
-                "community": obj.community.name if obj.community else "",
-                "category": obj.category.name if obj.category else "",
-                "class": obj.class_name.name if obj.class_name else "",
-                "subclass": obj.subclass.name if obj.subclass else "",
-                "time_of_day": obj.time_of_day.name if obj.time_of_day else "",
-                "microphone_type": (
-                    obj.microphone_type.name if obj.microphone_type else ""
-                ),
-                "audio_file": audio_name,
-                "audio_size": audio_size or "",
-                "audio_duration": af.duration if af and af.duration is not None else "",
-                "sample_rate": (
-                    af.sample_rate if af and af.sample_rate is not None else ""
-                ),
-                "num_samples": (
-                    af.num_samples if af and af.num_samples is not None else ""
-                ),
-                "rms_energy": af.rms_energy if af and af.rms_energy is not None else "",
-                "zero_crossing_rate": (
-                    af.zero_crossing_rate
-                    if af and af.zero_crossing_rate is not None
-                    else ""
-                ),
-                "spectral_centroid": (
-                    af.spectral_centroid
-                    if af and af.spectral_centroid is not None
-                    else ""
-                ),
-                "spectral_bandwidth": (
-                    af.spectral_bandwidth
-                    if af and af.spectral_bandwidth is not None
-                    else ""
-                ),
-                "spectral_rolloff": (
-                    af.spectral_rolloff
-                    if af and af.spectral_rolloff is not None
-                    else ""
-                ),
-                "spectral_flatness": (
-                    af.spectral_flatness
-                    if af and af.spectral_flatness is not None
-                    else ""
-                ),
-                "harmonic_ratio": (
-                    af.harmonic_ratio if af and af.harmonic_ratio is not None else ""
-                ),
-                "percussive_ratio": (
-                    af.percussive_ratio
-                    if af and af.percussive_ratio is not None
-                    else ""
-                ),
-                "mean_db": na.mean_db if na and na.mean_db is not None else "",
-                "max_db": na.max_db if na and na.max_db is not None else "",
-                "min_db": na.min_db if na and na.min_db is not None else "",
-                "std_db": na.std_db if na and na.std_db is not None else "",
-                "peak_count": na.peak_count if na and na.peak_count is not None else "",
-                "peak_interval_mean": (
-                    na.peak_interval_mean
-                    if na and na.peak_interval_mean is not None
-                    else ""
-                ),
-                "dominant_frequency": (
-                    na.dominant_frequency
-                    if na and na.dominant_frequency is not None
-                    else ""
-                ),
-                "frequency_range": (
-                    str(na.frequency_range) if na and na.frequency_range else ""
-                ),
-                "event_count": (
-                    na.event_count if na and na.event_count is not None else ""
-                ),
-            }
-            export_data.append(row)
+        col_map = {col: idx for idx, col in enumerate(columns)}
+        
+        for row in rows:
+            def safe_val(key, default=""):
+                val = row[col_map.get(key)]
+                if val is None:
+                    return default
+                # Handle datetime objects
+                if hasattr(val, 'isoformat'):
+                    return val.isoformat()
+                return val
+            
+            export_data.append({
+                "noise_id": safe_val('noise_id'),
+                "name": safe_val('name'),
+                "dataset_type": safe_val('dataset_type_name'),
+                "collector": safe_val('collector_username'),
+                "description": safe_val('description'),
+                "recording_device": safe_val('recording_device'),
+                "recording_date": safe_val('recording_date'),
+                "created_at": safe_val('created_at'),
+                "updated_at": safe_val('updated_at'),
+                "region": safe_val('region_name'),
+                "community": safe_val('community_name'),
+                "category": safe_val('category_name'),
+                "class": safe_val('class_name'),
+                "subclass": safe_val('subclass_name'),
+                "time_of_day": safe_val('time_of_day_name'),
+                "microphone_type": safe_val('microphone_type_name'),
+                "audio_file": safe_val('audio'),
+                "audio_size": "",
+                "audio_duration": safe_val('duration'),
+                "sample_rate": safe_val('sample_rate'),
+                "num_samples": safe_val('num_samples'),
+                "rms_energy": safe_val('rms_energy'),
+                "zero_crossing_rate": safe_val('zero_crossing_rate'),
+                "spectral_centroid": safe_val('spectral_centroid'),
+                "spectral_bandwidth": safe_val('spectral_bandwidth'),
+                "spectral_rolloff": safe_val('spectral_rolloff'),
+                "spectral_flatness": safe_val('spectral_flatness'),
+                "harmonic_ratio": safe_val('harmonic_ratio'),
+                "percussive_ratio": safe_val('percussive_ratio'),
+                "mean_db": safe_val('mean_db'),
+                "max_db": safe_val('max_db'),
+                "min_db": safe_val('min_db'),
+                "std_db": safe_val('std_db'),
+                "peak_count": safe_val('peak_count'),
+                "peak_interval_mean": safe_val('peak_interval_mean'),
+                "dominant_frequency": safe_val('dominant_frequency'),
+                "frequency_range": safe_val('frequency_range'),
+                "event_count": safe_val('event_count'),
+            })
+        
+        logger.info(f"Total API time: {time.time() - start_time:.2f}s for {len(export_data)} records")
 
         return Response({
             "results": export_data,

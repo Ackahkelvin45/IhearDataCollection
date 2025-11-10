@@ -524,7 +524,7 @@
     
     let allData = [];
     let offset = 0;
-    const batchSize = 2000; // Larger batches for faster fetching
+    const batchSize = 500; // Optimized batch size to prevent timeouts
     
     // Show loading indicator
     Swal.fire({
@@ -564,17 +564,19 @@
         html: `Fetching data... ${allData.length} of ${total} records (${percentage}%)`
       });
       
-      // Fetch remaining batches in parallel (3 at a time)
+      // Fetch remaining batches in parallel (5 at a time for faster overall speed)
       if (firstData.has_more) {
         offset = batchSize;
-        const parallelBatches = 3; // Fetch 3 batches simultaneously
+        const parallelBatches = 5; // Fetch 5 batches simultaneously
         
         while (offset < total) {
           const promises = [];
           
-          // Create up to 3 parallel requests
+          // Create up to parallelBatches parallel requests
           for (let i = 0; i < parallelBatches && offset < total; i++) {
-            params.set('offset', offset.toString());
+            const batchOffset = offset;
+            params.set('offset', batchOffset.toString());
+            params.set('total', total.toString()); // Pass total to avoid recalculating
             const url = `${apiUrl}?${params.toString()}`;
             
             promises.push(
@@ -585,7 +587,10 @@
                                 document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '',
                 },
                 credentials: 'include'
-              }).then(r => r.json())
+              }).then(r => {
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                return r.json();
+              })
             );
             
             offset += batchSize;
