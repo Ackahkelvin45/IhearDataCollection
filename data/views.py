@@ -522,6 +522,7 @@ class ExportDataAPIView(APIView):
 
     def get(self, request):
         import time
+        import math
         from django.db import connection
         
         start_time = time.time()
@@ -631,6 +632,10 @@ class ExportDataAPIView(APIView):
                 val = row[col_map.get(key)]
                 if val is None:
                     return default
+                # Handle NaN and Infinity values (not JSON compliant)
+                if isinstance(val, float):
+                    if math.isnan(val) or math.isinf(val):
+                        return default
                 # Handle datetime objects
                 if hasattr(val, 'isoformat'):
                     return val.isoformat()
