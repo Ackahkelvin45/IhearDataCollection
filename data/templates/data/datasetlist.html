@@ -522,11 +522,11 @@
     const apiUrl = "{% url 'data:api_export_data' %}";
     const params = new URLSearchParams(window.location.search);
     params.set('page_size', '1000'); // Fetch 1000 records per page
-    
+
     let allData = [];
     let page = 1;
     let hasMore = true;
-    
+
     // Show loading indicator
     Swal.fire({
       title: 'Preparing Export',
@@ -536,44 +536,44 @@
         Swal.showLoading();
       }
     });
-    
+
     try {
       while (hasMore) {
         params.set('page', page.toString());
         const response = await fetch(`${apiUrl}?${params.toString()}`, {
           method: 'GET',
           headers: {
-            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || 
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value ||
                           document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '',
           },
           credentials: 'include'
         });
-        
+
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
-        
+
         const data = await response.json();
         allData = allData.concat(data.results);
-        
+
         // Update progress
         const total = data.count;
         const fetched = allData.length;
         const percentage = Math.min(Math.round((fetched / total) * 100), 100);
-        
+
         Swal.update({
           html: `Fetching data... ${fetched} of ${total} records (${percentage}%)`
         });
-        
+
         hasMore = !!data.next;
         page++;
-        
+
         // Small delay to prevent overwhelming the server
         if (hasMore) {
           await new Promise(resolve => setTimeout(resolve, 100));
         }
       }
-      
+
       return allData;
     } catch (error) {
       console.error('Error fetching export data:', error);
@@ -585,13 +585,13 @@
       throw error;
     }
   }
-  
+
   function exportToCSV(data) {
     if (!data || data.length === 0) {
       Swal.fire('Error', 'No data to export', 'error');
       return;
     }
-    
+
     // Define column headers
     const headers = [
       'Noise ID', 'Name', 'Dataset Type', 'Collector', 'Description', 'Recording Device',
@@ -602,10 +602,10 @@
       'Harmonic Ratio', 'Percussive Ratio', 'Mean dB', 'Max dB', 'Min dB', 'Std dB',
       'Peak Count', 'Peak Interval Mean', 'Dominant Frequency (Hz)', 'Frequency Range', 'Event Count'
     ];
-    
+
     // Build CSV content
     const csvRows = [headers.join(',')];
-    
+
     for (const row of data) {
       const values = [
         escapeCSV(row.noise_id || ''),
@@ -649,7 +649,7 @@
       ];
       csvRows.push(values.join(','));
     }
-    
+
     // Create and download file
     const csvContent = csvRows.join('\n');
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' }); // BOM for Excel
@@ -662,7 +662,7 @@
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   }
-  
+
   function escapeCSV(value) {
     if (value === null || value === undefined) return '';
     const stringValue = String(value);
@@ -671,7 +671,7 @@
     }
     return stringValue;
   }
-  
+
   function exportToExcel() {
     // Use server-side export for Excel (more reliable, no CDN dependency, faster)
     const base = "{% url 'data:export_noise_datasets' %}";
@@ -679,26 +679,26 @@
     params.set('format', 'xlsx');
     window.location.href = `${base}?${params.toString()}`;
   }
-  
+
   async function handleExport(format) {
     // Excel uses server-side export (no need to fetch data)
     if (format === 'xlsx') {
       exportToExcel();
       return;
     }
-    
+
     // CSV uses client-side export (fetch data first)
     if (format === 'csv') {
       try {
         const data = await fetchAllExportData();
-        
+
         Swal.update({
           html: 'Generating file...'
         });
-        
+
         // Small delay to show progress
         await new Promise(resolve => setTimeout(resolve, 300));
-        
+
         exportToCSV(data);
         Swal.fire({
           icon: 'success',

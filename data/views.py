@@ -518,11 +518,12 @@ def _filtered_noise_queryset(request):
 
 class ExportDataAPIView(APIView):
     """API endpoint to fetch datasets for export with pagination"""
+
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request):
         queryset = _filtered_noise_queryset(request)
-        
+
         # Preload related to minimize queries
         queryset = queryset.select_related(
             "category",
@@ -535,23 +536,23 @@ class ExportDataAPIView(APIView):
             "microphone_type",
             "time_of_day",
         )
-        
+
         # Get pagination parameters
         page_size = int(request.GET.get("page_size", 1000))
         page = int(request.GET.get("page", 1))
-        
+
         # Paginate
         paginator = PageNumberPagination()
         paginator.page_size = min(page_size, 1000)  # Max 1000 per page
         paginated_queryset = paginator.paginate_queryset(queryset, request)
-        
+
         # Build export-ready rows directly from queryset
         export_data = []
         for obj in paginated_queryset:
             # Get related objects
             af = getattr(obj, "audio_features", None)
             na = getattr(obj, "noise_analysis", None)
-            
+
             # Get audio file info
             try:
                 audio_name = obj.audio.name if obj.audio else ""
@@ -561,15 +562,19 @@ class ExportDataAPIView(APIView):
                 audio_size = obj.audio.size if obj.audio else None
             except Exception:
                 audio_size = None
-            
+
             row = {
                 "noise_id": obj.noise_id or "",
                 "name": obj.name or "",
-                "dataset_type": obj.dataset_type.get_name_display() if obj.dataset_type else "",
+                "dataset_type": (
+                    obj.dataset_type.get_name_display() if obj.dataset_type else ""
+                ),
                 "collector": obj.collector.username if obj.collector else "",
                 "description": obj.description or "",
                 "recording_device": obj.recording_device or "",
-                "recording_date": obj.recording_date.isoformat() if obj.recording_date else "",
+                "recording_date": (
+                    obj.recording_date.isoformat() if obj.recording_date else ""
+                ),
                 "created_at": obj.created_at.isoformat() if obj.created_at else "",
                 "updated_at": obj.updated_at.isoformat() if obj.updated_at else "",
                 "region": obj.region.name if obj.region else "",
@@ -578,40 +583,86 @@ class ExportDataAPIView(APIView):
                 "class": obj.class_name.name if obj.class_name else "",
                 "subclass": obj.subclass.name if obj.subclass else "",
                 "time_of_day": obj.time_of_day.name if obj.time_of_day else "",
-                "microphone_type": obj.microphone_type.name if obj.microphone_type else "",
+                "microphone_type": (
+                    obj.microphone_type.name if obj.microphone_type else ""
+                ),
                 "audio_file": audio_name,
                 "audio_size": audio_size or "",
                 "audio_duration": af.duration if af and af.duration is not None else "",
-                "sample_rate": af.sample_rate if af and af.sample_rate is not None else "",
-                "num_samples": af.num_samples if af and af.num_samples is not None else "",
+                "sample_rate": (
+                    af.sample_rate if af and af.sample_rate is not None else ""
+                ),
+                "num_samples": (
+                    af.num_samples if af and af.num_samples is not None else ""
+                ),
                 "rms_energy": af.rms_energy if af and af.rms_energy is not None else "",
-                "zero_crossing_rate": af.zero_crossing_rate if af and af.zero_crossing_rate is not None else "",
-                "spectral_centroid": af.spectral_centroid if af and af.spectral_centroid is not None else "",
-                "spectral_bandwidth": af.spectral_bandwidth if af and af.spectral_bandwidth is not None else "",
-                "spectral_rolloff": af.spectral_rolloff if af and af.spectral_rolloff is not None else "",
-                "spectral_flatness": af.spectral_flatness if af and af.spectral_flatness is not None else "",
-                "harmonic_ratio": af.harmonic_ratio if af and af.harmonic_ratio is not None else "",
-                "percussive_ratio": af.percussive_ratio if af and af.percussive_ratio is not None else "",
+                "zero_crossing_rate": (
+                    af.zero_crossing_rate
+                    if af and af.zero_crossing_rate is not None
+                    else ""
+                ),
+                "spectral_centroid": (
+                    af.spectral_centroid
+                    if af and af.spectral_centroid is not None
+                    else ""
+                ),
+                "spectral_bandwidth": (
+                    af.spectral_bandwidth
+                    if af and af.spectral_bandwidth is not None
+                    else ""
+                ),
+                "spectral_rolloff": (
+                    af.spectral_rolloff
+                    if af and af.spectral_rolloff is not None
+                    else ""
+                ),
+                "spectral_flatness": (
+                    af.spectral_flatness
+                    if af and af.spectral_flatness is not None
+                    else ""
+                ),
+                "harmonic_ratio": (
+                    af.harmonic_ratio if af and af.harmonic_ratio is not None else ""
+                ),
+                "percussive_ratio": (
+                    af.percussive_ratio
+                    if af and af.percussive_ratio is not None
+                    else ""
+                ),
                 "mean_db": na.mean_db if na and na.mean_db is not None else "",
                 "max_db": na.max_db if na and na.max_db is not None else "",
                 "min_db": na.min_db if na and na.min_db is not None else "",
                 "std_db": na.std_db if na and na.std_db is not None else "",
                 "peak_count": na.peak_count if na and na.peak_count is not None else "",
-                "peak_interval_mean": na.peak_interval_mean if na and na.peak_interval_mean is not None else "",
-                "dominant_frequency": na.dominant_frequency if na and na.dominant_frequency is not None else "",
-                "frequency_range": str(na.frequency_range) if na and na.frequency_range else "",
-                "event_count": na.event_count if na and na.event_count is not None else "",
+                "peak_interval_mean": (
+                    na.peak_interval_mean
+                    if na and na.peak_interval_mean is not None
+                    else ""
+                ),
+                "dominant_frequency": (
+                    na.dominant_frequency
+                    if na and na.dominant_frequency is not None
+                    else ""
+                ),
+                "frequency_range": (
+                    str(na.frequency_range) if na and na.frequency_range else ""
+                ),
+                "event_count": (
+                    na.event_count if na and na.event_count is not None else ""
+                ),
             }
             export_data.append(row)
-        
-        return Response({
-            "results": export_data,
-            "count": paginator.page.paginator.count,
-            "next": paginator.get_next_link(),
-            "previous": paginator.get_previous_link(),
-            "page": page,
-            "page_size": page_size,
-        })
+
+        return Response(
+            {
+                "results": export_data,
+                "count": paginator.page.paginator.count,
+                "next": paginator.get_next_link(),
+                "previous": paginator.get_previous_link(),
+                "page": page,
+                "page_size": page_size,
+            }
+        )
 
 
 @login_required
@@ -775,7 +826,7 @@ def export_noise_datasets(request):
         output = BytesIO()
         wb = openpyxl.Workbook(write_only=True)
         ws = wb.create_sheet(title="Noise Datasets")
-        
+
         # Write header
         ws.append([c[0] for c in columns])
 
