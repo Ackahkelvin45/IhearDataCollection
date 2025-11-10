@@ -603,7 +603,7 @@ class ExportDataAPIView(APIView):
             LEFT JOIN core_region reg ON nd.region_id = reg.id
             LEFT JOIN core_community com ON nd.community_id = com.id
             LEFT JOIN authentication_customuser usr ON nd.collector_id = usr.id
-            LEFT JOIN core_specific_mix_setting dt ON nd.dataset_type_id = dt.id
+            LEFT JOIN data_dataset dt ON nd.dataset_type_id = dt.id
             LEFT JOIN core_microphone_type mt ON nd.microphone_type_id = mt.id
             LEFT JOIN core_time_of_day tod ON nd.time_of_day_id = tod.id
             LEFT JOIN data_audiofeature af ON nd.id = af.noise_dataset_id
