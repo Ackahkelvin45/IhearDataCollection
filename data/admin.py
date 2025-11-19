@@ -88,7 +88,7 @@ class NoiseDatasetAdmin(ModelAdmin):
     )
     list_editable = ("name",)
     list_select_related = ("collector", "category", "region", "community")
-    list_per_page = 25
+    list_per_page = 300
     actions = ["reprocess_audio_analysis"]
 
     fieldsets = (
