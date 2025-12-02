@@ -90,7 +90,6 @@ class SubClassAdmin(ModelAdmin):
                 return redirect("..")
 
             try:
-                # Use tempfile for better security
                 with tempfile.NamedTemporaryFile(
                     delete=False, suffix=".xlsx"
                 ) as tmp_file:
@@ -98,10 +97,8 @@ class SubClassAdmin(ModelAdmin):
                         tmp_file.write(chunk)
                     tmp_file_path = tmp_file.name
 
-                # Import the data
                 result = import_from_excel(tmp_file_path)
 
-                # Clean up temp file
                 os.unlink(tmp_file_path)
 
                 messages.success(
@@ -113,7 +110,6 @@ class SubClassAdmin(ModelAdmin):
                 )
 
             except Exception as e:
-                # Clean up temp file if it exists
                 if "tmp_file_path" in locals():
                     try:
                         os.unlink(tmp_file_path)
@@ -124,7 +120,7 @@ class SubClassAdmin(ModelAdmin):
 
             return redirect("..")
 
-        # GET request - show the form
+        
         print("Showing form for GET request")
         form = CsvImportForm()
         context = {

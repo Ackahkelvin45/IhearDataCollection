@@ -119,7 +119,6 @@ def process_audio_file(instance: NoiseDataset):
         raise
 
 
-# Removed old librosa-based functions - now using alternative processing
 
 
 def create_visualization_presets(instance):
@@ -245,7 +244,7 @@ def generate_noise_id(user):
 def safe_process_audio_file(instance: NoiseDataset):
     """Safe audio processing function with Numba JIT already disabled at module level"""
     try:
-        # Call the original processing function directly since Numba is already disabled
+        # process audio
         process_audio_file(instance)
         return True
 
@@ -254,7 +253,7 @@ def safe_process_audio_file(instance: NoiseDataset):
             f"Error in audio processing for {instance.noise_id}: {processing_error}"
         )
         
-        # Provide specific guidance for common issues
+        # error loggin 
         error_str = str(processing_error)
         if "Could not load audio file" in error_str:
             if ".m4a" in error_str:
@@ -265,5 +264,4 @@ def safe_process_audio_file(instance: NoiseDataset):
             else:
                 logger.error("Audio file loading failed. Check if the file is corrupted or in an unsupported format.")
         
-        # Don't raise the error, just log it to prevent task failure
         return False

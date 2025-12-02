@@ -15,7 +15,7 @@ from django.utils.dateparse import parse_datetime
 from django.conf import settings
 from celery import group
 from django.db.models import Q
-
+from celery.result import AsyncResult
 logger = logging.getLogger(__name__)
 
 
@@ -29,8 +29,7 @@ def process_audio_task(noise_dataset_id):
                 f"Audio processing failed for NoiseDataset {noise_dataset_id}"
             )
     except NoiseDataset.DoesNotExist:
-        # Log and skip if instance was deleted
-        import logging
+        
 
         logging.warning(f"NoiseDataset with ID {noise_dataset_id} not found.")
 
@@ -39,7 +38,7 @@ def process_audio_task(noise_dataset_id):
 def check_task_revocation(task_id):
     """Check if a task has been revoked - separate from main processing to avoid Numba issues"""
     try:
-        from celery.result import AsyncResult
+      
 
         result = AsyncResult(task_id)
         return result.revoked()

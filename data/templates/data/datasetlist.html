@@ -517,7 +517,7 @@
 </style>
 
 <script>
-  // Optimized export - fetch in larger batches
+
   async function fetchAllExportData() {
     const apiUrl = "{% url 'data:api_export_data' %}";
     const params = new URLSearchParams(window.location.search);
@@ -564,7 +564,7 @@
         html: `Fetching data... ${allData.length} of ${total} records (${percentage}%)`
       });
       
-      // Fetch remaining batches in parallel (5 at a time for faster overall speed)
+      // Fetch remaining batches in parallel 
       if (firstData.has_more) {
         offset = batchSize;
         const parallelBatches = 5; // Fetch 5 batches simultaneously

@@ -222,7 +222,6 @@ EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL")
 
-# Temporarily add this before your email settings to debug
 
 # Authentication settings
 LOGIN_URL = "/auth/login/"  # URL to redirect to for login
@@ -230,7 +229,6 @@ LOGIN_REDIRECT_URL = "/"  # Where to redirect after login
 LOGOUT_REDIRECT_URL = "/auth/login/"
 
 
-# At the top of your settings.py file, add this import
 
 
 # Alternative approach without lambda (simpler):

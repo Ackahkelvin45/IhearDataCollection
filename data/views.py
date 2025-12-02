@@ -14,7 +14,7 @@ import hashlib
 from django.views.generic import DeleteView, ListView
 from django.urls import reverse_lazy
 from django.contrib import messages
-from .models import NoiseDataset, AudioFeature, NoiseAnalysis
+from .models import NoiseDataset, AudioFeature
 from datetime import timedelta
 from django.db.models import Q
 from .models import BulkAudioUpload
@@ -28,13 +28,14 @@ from plotly.utils import PlotlyJSONEncoder
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.pagination import PageNumberPagination
-from .serializers import NoiseDatasetSerializer
 import math
 import csv
 from io import BytesIO, StringIO
 from django.http import HttpResponse, StreamingHttpResponse
 from django.utils.encoding import smart_str
+import time
+import math
+from django.db import connection
 
 try:
     import openpyxl
@@ -45,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 
 class RenamedFile:
-    """Wrapper class to rename an uploaded file without changing its content"""
+    """class to rename an uploaded file without changing its content"""
 
     def __init__(self, file, new_name):
         self.file = file
@@ -66,7 +67,7 @@ def view_dashboard(request):
 
 def clean_json(obj):
     """
-    Recursively clean NaN / Infinity / None values from dicts & lists for JSON compliance.
+    Recursively clean  empty / None values from dicts & lists for JSON compliance.
     """
     if isinstance(obj, dict):
         return {k: clean_json(v) for k, v in obj.items()}
@@ -329,7 +330,7 @@ class DashboardView(APIView):
                 },
             }
 
-            # Clean NaN / Infinity before sending response
+            # Clean empty values before sending response
             return Response(clean_json(response_data))
 
         except Exception as e:
@@ -365,7 +366,7 @@ class NoiseDatasetListView(ListView, LoginRequiredMixin):
     template_name = "data/datasetlist.html"
     context_object_name = "datasets"
     ordering = ["-created_at"]
-    paginate_by = 200  # default, can be overridden by query param
+    paginate_by = 200  
 
     def get_paginate_by(self, queryset):
         try:
@@ -521,9 +522,7 @@ class ExportDataAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        import time
-        import math
-        from django.db import connection
+   
         
         start_time = time.time()
         
@@ -623,7 +622,7 @@ class ExportDataAPIView(APIView):
         
         logger.info(f"Raw SQL query completed in {time.time() - start_time:.2f}s, fetched {len(rows)} rows")
 
-        # Build export-ready rows from raw SQL results (ultra-fast)
+       
         export_data = []
         col_map = {col: idx for idx, col in enumerate(columns)}
         
@@ -632,11 +631,10 @@ class ExportDataAPIView(APIView):
                 val = row[col_map.get(key)]
                 if val is None:
                     return default
-                # Handle NaN and Infinity values (not JSON compliant)
+            
                 if isinstance(val, float):
                     if math.isnan(val) or math.isinf(val):
                         return default
-                # Handle datetime objects
                 if hasattr(val, 'isoformat'):
                     return val.isoformat()
                 return val
@@ -693,242 +691,6 @@ class ExportDataAPIView(APIView):
         })
 
 
-@login_required
-def export_noise_datasets(request):
-    fmt = (request.GET.get("format") or "csv").lower()
-    queryset = _filtered_noise_queryset(request)
-
-    # Check total count before processing
-    total_count = queryset.count()
-    MAX_EXPORT_LIMIT = 50000  # Maximum records to export in one go
-
-    if total_count > MAX_EXPORT_LIMIT:
-        return HttpResponse(
-            f"Export limit exceeded. You are trying to export {total_count} records, "
-            f"but the maximum allowed is {MAX_EXPORT_LIMIT}. Please use filters to reduce the dataset size.",
-            status=400,
-            content_type="text/plain",
-        )
-
-    # Preload related to minimize queries - use iterator() for memory efficiency
-    queryset = queryset.select_related(
-        "category",
-        "class_name",
-        "subclass",
-        "region",
-        "community",
-        "collector",
-        "dataset_type",
-        "microphone_type",
-        "time_of_day",
-        "audio_features",
-        "noise_analysis",
-    )
-
-    # Define full set of columns
-    columns = [
-        ("Noise ID", None),
-        ("Name", None),
-        ("Dataset Type", None),
-        ("Collector", None),
-        ("Description", None),
-        ("Recording Device", None),
-        ("Recording Date", None),
-        ("Created At", None),
-        ("Updated At", None),
-        ("Region", None),
-        ("Community", None),
-        ("Category", None),
-        ("Class", None),
-        ("Subclass", None),
-        ("Time Of Day", None),
-        ("Microphone Type", None),
-        ("Audio File", None),
-        ("Audio Size (bytes)", None),
-        ("Audio Duration (s)", None),
-        ("Sample Rate", None),
-        ("Num Samples", None),
-        ("RMS Energy", None),
-        ("Zero Crossing Rate", None),
-        ("Spectral Centroid", None),
-        ("Spectral Bandwidth", None),
-        ("Spectral Rolloff", None),
-        ("Spectral Flatness", None),
-        ("Harmonic Ratio", None),
-        ("Percussive Ratio", None),
-        ("Mean dB", None),
-        ("Max dB", None),
-        ("Min dB", None),
-        ("Std dB", None),
-        ("Peak Count", None),
-        ("Peak Interval Mean", None),
-        ("Dominant Frequency (Hz)", None),
-        ("Frequency Range", None),
-        ("Event Count", None),
-    ]
-
-    def build_row(obj):
-        af = getattr(obj, "audio_features", None)
-        na = getattr(obj, "noise_analysis", None)
-        try:
-            audio_name = obj.audio.name if obj.audio else ""
-        except Exception:
-            audio_name = ""
-        try:
-            audio_size = obj.audio.size if obj.audio else None
-        except Exception:
-            audio_size = None
-        return [
-            smart_str(getattr(obj, "noise_id", "")),
-            smart_str(getattr(obj, "name", "")),
-            smart_str(
-                getattr(
-                    getattr(obj, "dataset_type", None),
-                    "get_name_display",
-                    lambda: getattr(getattr(obj, "dataset_type", None), "name", ""),
-                )()
-            ),
-            smart_str(getattr(getattr(obj, "collector", None), "username", "")),
-            smart_str(getattr(obj, "description", "")),
-            smart_str(getattr(obj, "recording_device", "")),
-            smart_str(
-                obj.recording_date.isoformat()
-                if getattr(obj, "recording_date", None)
-                else ""
-            ),
-            smart_str(
-                obj.created_at.isoformat() if getattr(obj, "created_at", None) else ""
-            ),
-            smart_str(
-                obj.updated_at.isoformat() if getattr(obj, "updated_at", None) else ""
-            ),
-            smart_str(getattr(getattr(obj, "region", None), "name", "")),
-            smart_str(getattr(getattr(obj, "community", None), "name", "")),
-            smart_str(getattr(getattr(obj, "category", None), "name", "")),
-            smart_str(getattr(getattr(obj, "class_name", None), "name", "")),
-            smart_str(getattr(getattr(obj, "subclass", None), "name", "")),
-            smart_str(getattr(getattr(obj, "time_of_day", None), "name", "")),
-            smart_str(getattr(getattr(obj, "microphone_type", None), "name", "")),
-            smart_str(audio_name),
-            audio_size if audio_size is not None else "",
-            af.duration if af and af.duration is not None else "",
-            af.sample_rate if af and af.sample_rate is not None else "",
-            af.num_samples if af and af.num_samples is not None else "",
-            af.rms_energy if af and af.rms_energy is not None else "",
-            af.zero_crossing_rate if af and af.zero_crossing_rate is not None else "",
-            af.spectral_centroid if af and af.spectral_centroid is not None else "",
-            af.spectral_bandwidth if af and af.spectral_bandwidth is not None else "",
-            af.spectral_rolloff if af and af.spectral_rolloff is not None else "",
-            af.spectral_flatness if af and af.spectral_flatness is not None else "",
-            af.harmonic_ratio if af and af.harmonic_ratio is not None else "",
-            af.percussive_ratio if af and af.percussive_ratio is not None else "",
-            na.mean_db if na and na.mean_db is not None else "",
-            na.max_db if na and na.max_db is not None else "",
-            na.min_db if na and na.min_db is not None else "",
-            na.std_db if na and na.std_db is not None else "",
-            na.peak_count if na and na.peak_count is not None else "",
-            na.peak_interval_mean if na and na.peak_interval_mean is not None else "",
-            na.dominant_frequency if na and na.dominant_frequency is not None else "",
-            smart_str(na.frequency_range) if na and na.frequency_range else "",
-            na.event_count if na and na.event_count is not None else "",
-        ]
-
-    if fmt == "xlsx":
-        if openpyxl is None:
-            return HttpResponse(
-                "Excel export requires openpyxl. Please install it.", status=500
-            )
-
-        # For XLSX, use write-only mode for better memory efficiency with large datasets
-        # Increased limit to 50,000 to match CSV limit - Excel can handle much more
-        MAX_XLSX_LIMIT = 50000
-        if total_count > MAX_XLSX_LIMIT:
-            return HttpResponse(
-                f"Excel export limit exceeded. You are trying to export {total_count} records, "
-                f"but Excel export maximum is {MAX_XLSX_LIMIT}. Please use CSV export or apply filters to reduce the dataset size.",
-                status=400,
-                content_type="text/plain",
-            )
-
-        # Use write-only workbook for better memory efficiency with large datasets
-        output = BytesIO()
-        wb = openpyxl.Workbook(write_only=True)
-        ws = wb.create_sheet(title="Noise Datasets")
-
-        # Write header
-        ws.append([c[0] for c in columns])
-
-        # Process in chunks to avoid memory issues
-        CHUNK_SIZE = 1000
-        offset = 0
-        processed = 0
-
-        while processed < total_count:
-            chunk = queryset[offset : offset + CHUNK_SIZE]
-            for obj in chunk:
-                try:
-                    ws.append(build_row(obj))
-                except Exception as e:
-                    logger.error(f"Error building row for dataset {obj.id}: {e}")
-                    # Continue with next row
-                    continue
-            offset += CHUNK_SIZE
-            processed += len(chunk)
-            # Clear memory
-            del chunk
-
-        # Save the workbook to the output stream
-        wb.save(output)
-        output.seek(0)
-        response = HttpResponse(
-            output.getvalue(),
-            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-        response["Content-Disposition"] = 'attachment; filename="noise_datasets.xlsx"'
-        return response
-
-    # CSV: Use streaming response for large datasets
-    def csv_generator():
-        # Create a buffer for CSV writing
-        buffer = StringIO()
-        writer = csv.writer(buffer)
-
-        # Write header first
-        writer.writerow([c[0] for c in columns])
-        header_data = buffer.getvalue()
-        buffer.seek(0)
-        buffer.truncate(0)
-        yield header_data
-
-        # Process queryset in chunks using iterator() for memory efficiency
-        CHUNK_SIZE = 500
-        offset = 0
-        processed = 0
-
-        while processed < total_count:
-            chunk = queryset[offset : offset + CHUNK_SIZE]
-            for obj in chunk:
-                try:
-                    row = build_row(obj)
-                    writer.writerow(row)
-                    row_data = buffer.getvalue()
-                    buffer.seek(0)
-                    buffer.truncate(0)
-                    yield row_data
-                except Exception as e:
-                    logger.error(f"Error building row for dataset {obj.id}: {e}")
-                    # Continue with next row
-                    continue
-            offset += CHUNK_SIZE
-            processed += len(chunk)
-            # Clear memory
-            del chunk
-
-        buffer.close()
-
-    response = StreamingHttpResponse(csv_generator(), content_type="text/csv")
-    response["Content-Disposition"] = 'attachment; filename="noise_datasets.csv"'
-    return response
 
 
 @login_required
@@ -1095,7 +857,7 @@ def upload_chunk(request):
                     {"status": "error", "error": "Missing file data"}, status=400
                 )
 
-            # Create user-specific upload directory
+            # Create upload directory
             upload_dir = os.path.join(
                 settings.SHARED_UPLOADS_DIR, f"user_{request.user.id}"
             )
@@ -1111,12 +873,10 @@ def upload_chunk(request):
                 for piece in chunk.chunks():
                     f.write(piece)
 
-            # Check if all chunks received
             received_chunks = len(
                 [name for name in os.listdir(temp_dir) if name.endswith(".part")]
             )
             if received_chunks == total_chunks:
-                # Reassemble file with unique prefix to avoid collisions
                 safe_uid = "".join(
                     c for c in file_uid if c.isalnum() or c in ("-", "_")
                 )
@@ -1169,7 +929,6 @@ def cancel_upload(request, bulk_upload_id):
             bulk_upload.status = "cancelled"
             bulk_upload.save()
 
-            # Clean up files
             upload_dir = os.path.join(
                 settings.SHARED_UPLOADS_DIR, f"user_{request.user.id}"
             )
@@ -1201,23 +960,19 @@ def noise_dataset_edit(request, pk):
             try:
                 updated_dataset = form.save(commit=False)
 
-                # Handle audio file update
                 if "audio" in request.FILES:
                     audio_file = request.FILES["audio"]
 
-                    # Generate hash of the new audio file for duplicate checking
                     hash_md5 = hashlib.md5()
                     for chunk in audio_file.chunks():
                         hash_md5.update(chunk)
                     new_audio_hash = hash_md5.hexdigest()
 
-                    # Check against existing records (excluding current record)
                     duplicates = NoiseDataset.objects.filter(
                         collector=request.user
                     ).exclude(pk=pk)
                     for dataset in duplicates:
                         if dataset.audio:
-                            # Reset file pointer after reading chunks for hash
                             audio_file.seek(0)
 
                             # Compare hashes
@@ -1228,7 +983,6 @@ def noise_dataset_edit(request, pk):
                                 )
                                 return redirect("data:noise_dataset_edit", pk=pk)
 
-                    # Reset file pointer again before processing
                     audio_file.seek(0)
 
                     # Get file extension
@@ -1243,8 +997,7 @@ def noise_dataset_edit(request, pk):
                     # Replace the file in the form data
                     request.FILES["audio"] = renamed_file
 
-                    # Calculate duration
-
+                    
                 # Update dataset name based on new values
                 updated_dataset.name = generate_dataset_name(updated_dataset)
                 updated_dataset.save()
@@ -1296,11 +1049,9 @@ def show_pages(request):
 def noise_detail(request, dataset_id):
     dataset = get_object_or_404(NoiseDataset, pk=dataset_id)
 
-    # Get related data
     audio_features = getattr(dataset, "audio_features", None)
     noise_analysis = getattr(dataset, "noise_analysis", None)
 
-    # Precompute safe audio fields to avoid storage errors in templates
     safe_audio_url = None
     safe_audio_size = None
     safe_audio_ext = None
@@ -1308,7 +1059,6 @@ def noise_detail(request, dataset_id):
 
     try:
         if dataset.audio:
-            # Check url
             try:
                 safe_audio_url = dataset.audio.url
                 audio_exists = True
@@ -1350,12 +1100,11 @@ def noise_detail(request, dataset_id):
         safe_audio_ext = None
         audio_exists = False
 
-    # Prepare visualization data (plots are now fetched via API for faster load)
+    # Prepare visualization data
     context = {
         "noise_dataset": dataset,
         "audio_features": audio_features,
         "noise_analysis": noise_analysis,
-        # Safe audio fields for template
         "audio_url": safe_audio_url,
         "audio_exists": audio_exists,
         "audio_size": safe_audio_size,
@@ -1466,7 +1215,6 @@ def create_spectrogram_plot(spectrogram_data):
 
 
 def create_mfcc_plot(mfccs):
-    # Debug: Print the input to see what we're working with
     print(f"Raw MFCCs data type: {type(mfccs)}")
     if hasattr(mfccs, "shape"):
         print(f"MFCCs shape: {mfccs.shape}")
@@ -1484,7 +1232,6 @@ def create_mfcc_plot(mfccs):
     # Validate the array
     if mfccs.size == 0:
         print("Warning: Empty MFCC data received")
-        # Return empty figure with message
         fig = go.Figure()
         fig.update_layout(
             title="MFCC Coefficients (No Data)",
@@ -1493,7 +1240,6 @@ def create_mfcc_plot(mfccs):
         )
         return fig
 
-    # Ensure 2D array
     if len(mfccs.shape) == 1:
         mfccs = np.expand_dims(mfccs, axis=0)
 

@@ -1,21 +1,8 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
-
-# from django.core.mail import send_mail
-# from django.conf import settings
 import random
 import string
 
-# from django.dispatch import receiver
-# from django.db.models.signals import post_save
-
-# import threading
-# from django.core.mail import EmailMessage
-# from django.template.loader import render_to_string
-# from django.utils.timezone import now
-# from django.core.mail import get_connection, EmailMultiAlternatives
-# from socket import gaierror
-# from smtplib import SMTPException, SMTPServerDisconnected
 import logging
 
 logger = logging.getLogger(__name__)
