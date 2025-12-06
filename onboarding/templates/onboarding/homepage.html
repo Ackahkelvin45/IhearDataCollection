@@ -1,0 +1,157 @@
+<!--
+
+=========================================================
+* Argon Dashboard 2 Tailwind - v1.0.1
+=========================================================
+
+* Product Page: https://www.creative-tim.com/product/argon-dashboard-tailwind
+* Copyright 2022 Creative Tim (https://www.creative-tim.com)
+
+* Coded by www.creative-tim.com
+
+=========================================================
+
+* The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+-->
+{% load static %}
+
+{% load static tailwind_tags %}
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+       {% tailwind_css %}
+
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="apple-touch-icon" sizes="76x76" href="{% static 'assets/img/apple-icon.png' %} " />
+    <link rel="icon" type="image/png" href="{% static 'assets/img/favicon.png' %}" />
+    <title>I hear Dataset</title>
+    <!--     Fonts and icons     -->
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,600,700" rel="stylesheet" />
+    <!-- Font Awesome Icons -->
+    <script src="https://kit.fontawesome.com/42d5adcbca.js" crossorigin="anonymous"></script>
+    <!-- Nucleo Icons -->
+    <link href="{% static 'assets/css/nucleo-icons.css' %}" rel="stylesheet" />
+    <link href=" {% static 'assets/css/nucleo-svg.css' %}" rel="stylesheet" />
+    <!-- Main Styling -->
+    <link href=" {% static 'assets/css/argon-dashboard-tailwind.css' %}" rel="stylesheet" />
+
+    <style>
+      /* Custom colors */
+
+    .bg-primary { background-color: #005450; }
+      .bg-secondary { background-color: #00d553; }
+      .text-primary { color: #005450; }
+      .text-secondary { color: #00d553; }
+      .border-primary { border-color: #005450; }
+      .border-secondary { border-color: #00d553; }
+      .focus\:border-primary:focus { border-color: #005450; }
+      .focus\:border-secondary:focus { border-color: #00d553; }
+      .bg-gradient-primary { background: linear-gradient(135deg, #005450 0%, #00d553 100%); }
+    </style>
+  </head>
+
+  <body class="m-0 font-sans antialiased font-normal bg-white text-start text-base leading-default text-slate-500">
+    <div class="container sticky top-0 z-sticky">
+        <div class="flex flex-wrap -mx-3">
+          <div class="w-full max-w-full px-3 flex-0">
+            <!-- Navbar -->
+            <nav class="absolute top-0 left-0 right-0 z-30 flex flex-wrap items-center px-4 py-2 m-6 mb-0 shadow-sm rounded-xl bg-white/80 backdrop-blur-2xl backdrop-saturate-200 lg:flex-nowrap lg:justify-start">
+              <div class="flex items-center justify-between w-full p-0 px-6 mx-auto flex-wrap-inherit">
+                <a class="py-1.75 text-sm mr-4 ml-4 whitespace-nowrap font-bold text-slate-700 lg:ml-0" href="https://demos.creative-tim.com/argon-dashboard-tailwind/pages/dashboard.html" target="_blank"> Argon Dashboard 2 </a>
+                <button navbar-trigger class="px-3 py-1 ml-2 leading-none transition-all ease-in-out bg-transparent border border-transparent border-solid rounded-lg shadow-none cursor-pointer text-lg lg:hidden" type="button" aria-controls="navigation" aria-expanded="false" aria-label="Toggle navigation">
+                  <span class="inline-block mt-2 align-middle bg-center bg-no-repeat bg-cover w-6 h-6 bg-none">
+                    <span bar1 class="w-5.5 rounded-xs relative my-0 mx-auto block h-px bg-gray-600 transition-all duration-300"></span>
+                    <span bar2 class="w-5.5 rounded-xs mt-1.75 relative my-0 mx-auto block h-px bg-gray-600 transition-all duration-300"></span>
+                    <span bar3 class="w-5.5 rounded-xs mt-1.75 relative my-0 mx-auto block h-px bg-gray-600 transition-all duration-300"></span>
+                  </span>
+                </button>
+                <div navbar-menu class="items-center flex-grow transition-all duration-500 lg-max:overflow-hidden ease lg-max:max-h-0 basis-full lg:flex lg:basis-auto">
+                  <ul class="flex flex-col pl-0 mx-auto mb-0 list-none lg:flex-row xl:ml-auto">
+                    <li>
+                      <a class="flex items-center px-4 py-2 mr-2 font-normal transition-all ease-in-out lg-max:opacity-0 duration-250 text-sm text-slate-700 lg:px-2" aria-current="page" href="../pages/dashboard.html">
+                        <i class="mr-1 fa fa-chart-pie opacity-60"></i>
+                        Dashboard
+                      </a>
+                    </li>
+                    <li>
+                      <a class="block px-4 py-2 mr-2 font-normal transition-all ease-in-out lg-max:opacity-0 duration-250 text-sm text-slate-700 lg:px-2" href="../pages/profile.html">
+                        <i class="mr-1 fa fa-user opacity-60"></i>
+                        Profile
+                      </a>
+                    </li>
+                    <li>
+                      <a class="block px-4 py-2 mr-2 font-normal transition-all ease-in-out lg-max:opacity-0 duration-250 text-sm text-slate-700 lg:px-2" href="../pages/sign-up.html">
+                        <i class="mr-1 fas fa-user-circle opacity-60"></i>
+                        Sign Up
+                      </a>
+                    </li>
+                    <li>
+                      <a class="block px-4 py-2 mr-2 font-normal transition-all ease-in-out lg-max:opacity-0 duration-250 text-sm text-slate-700 lg:px-2" href="../pages/sign-in.html">
+                        <i class="mr-1 fas fa-key opacity-60"></i>
+                        Sign In
+                      </a>
+                    </li>
+                  </ul>
+                  <!-- online builder btn  -->
+                  <!-- <li class="flex items-center">
+                    <a
+                      class="leading-pro ease-in text-blue-500 border-blue-500 text-xs tracking-tight-rem bg-150 bg-x-25 rounded-3.5xl hover:border-blue-500 hover:-translate-y-px hover:text-blue-500 active:hover:border-blue-500 active:hover:-translate-y-px active:hover:text-blue-500 active:opacity-85 active:shadow-xs active:bg-blue-500 active:border-blue-500 mr-2 mb-0 inline-block cursor-pointer border border-solid bg-transparent py-2 px-8 text-center align-middle font-bold uppercase shadow-none transition-all hover:bg-transparent hover:opacity-75 hover:shadow-none active:scale-100 active:text-white active:hover:bg-transparent active:hover:opacity-75 active:hover:shadow-none"
+                      target="_blank"
+                      href="https://www.creative-tim.com/builder/soft-ui?ref=navbar-dashboard&amp;_ga=2.76518741.1192788655.1647724933-1242940210.1644448053"
+                      >Online Builder</a
+                    >
+                  </li> -->
+                  <ul class="hidden pl-0 mb-0 list-none lg:block lg:flex-row">
+                    <li>
+                      <a href="https://www.creative-tim.com/product/argon-dashboard-tailwind" target="_blank" class="inline-block px-8 py-2 mb-0 mr-1 font-bold leading-normal text-center text-white align-middle transition-all ease-in bg-blue-500 border-0 rounded-lg shadow-md cursor-pointer hover:-translate-y-px hover:shadow-xs active:opacity-85 text-xs tracking-tight-rem">Free Download</a>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </nav>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+
+        <svg   class="absolute  h-full w-full" style="top: -250; right: -250; z-index: -1;height: 1000px; width: 1000px" id="sw-js-blob-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">              
+                  <defs>                         <linearGradient id="sw-gradient" x1="0" x2="1" y1="1" y2="0">                            <stop id="stop1" stop-color="rgba(0, 213, 83, 0.26)" offset="0%"></stop>                            <stop id="stop2" stop-color="rgba(0, 213, 83, 0.34)" offset="100%"></stop>                        </linearGradient>                    </defs>                <path fill="url(#sw-gradient)" d="M27.9,-27.7C35.5,-20.2,40.8,-10.1,40,-0.8C39.3,8.6,32.5,17.2,24.9,24.6C17.2,31.9,8.6,38,0.5,37.5C-7.6,37,-15.2,29.9,-20.4,22.5C-25.5,15.2,-28.3,7.6,-30.1,-1.8C-31.9,-11.2,-32.7,-22.4,-27.5,-29.8C-22.4,-37.3,-11.2,-41,-0.5,-40.5C10.1,-39.9,20.2,-35.1,27.9,-27.7Z" width="100%" height="100%" transform="translate(50 50)" stroke-width="0" style="transition: 0.3s;" stroke="url(#sw-gradient)"></path>              </svg>
+
+ 
+    <main class="mt-0 transition-all duration-200 ease-in-out">
+      <section>
+        <div class="relative flex items-center min-h-screen p-0 overflow-hidden bg-center bg-cover">
+          <div  style="width: 100%; padding-left: 50px; padding-right: 50px;" class=" z-1">
+
+            <div class="flex w-full flex-row items-center justify-between">
+
+                <div class="flex flex-col items-center justify-center">
+                    <h2 class="text-4xl font-bold text-center">Welcome to the I hear Platform </h2>
+                    <p class=" text-center">Your sounds empower accessible hearing. Help us build the future of hearing technology by contributing sound samples.
+
+                    </p>
+                    <a href="{% url 'onboarding:homepage' %}"  class="inline-block px-16 py-3.5 mt-6 mb-0 font-bold leading-normal text-center text-white align-middle transition-all bg-primary border-0 rounded-lg cursor-pointer hover:-translate-y-px active:opacity-85 hover:shadow-xs text-sm ease-in tracking-tight-rem shadow-md bg-150 bg-x-25 hover:bg-secondary">Next <i class="fa-solid fa-arrow-right"></i></a>
+                </div>
+
+                <div class="w-full flex justify-end items-center">
+                    <img src="{% static 'assets/img/voice.png' %}" alt="Logo" style="width: 700px; height: 700px;">
+                </div>
+
+            </div>
+         
+          </div>
+        </div>
+      </section>
+    </main>
+
+  </body>
+  <!-- plugin for scrollbar  -->
+  <script src=" {% static 'assets/js/plugins/perfect-scrollbar.min.js' %} " async></script>
+  <!-- main script file  -->
+  <script src="{% static 'assets/js/argon-dashboard-tailwind.js' %}" async></script>
+</html>

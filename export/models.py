@@ -22,7 +22,7 @@ class ExportHistory(models.Model):
     audio_structure_template = models.TextField(blank=True, help_text="Audio subfolder template")
 
     # Export results
-    download_url = models.URLField(blank=True, help_text="URL to download the ZIP file")
+    download_url = models.TextField(blank=True, help_text="URL to download the ZIP file")
     file_size = models.BigIntegerField(null=True, help_text="Size of the ZIP file in bytes")
     total_files = models.IntegerField(default=0, help_text="Total number of audio files exported")
 
