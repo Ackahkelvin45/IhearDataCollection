@@ -34,6 +34,14 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
     import math
     from django.db import connection
 
+    # Track temporary files and directories for cleanup
+    root_export_dir = None
+    zip_path = None
+    export_base_dir = None
+    use_s3 = False
+    temp_export_base = False  # Track if export_base_dir is a temp directory
+    s3_upload_successful = False  # Track if S3 upload was successful
+    
     try:
         # Get export history record
         export_history = ExportHistory.objects.get(id=export_history_id)
@@ -42,9 +50,23 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
 
         user = export_history.user
 
-        # Create export directory
-        export_base_dir = os.path.join(settings.MEDIA_ROOT, 'exports', f'user_{user.id}')
+        # Create export directory - use temp directory if S3 is enabled, otherwise use MEDIA_ROOT
+        use_s3 = hasattr(settings, 'USE_S3') and settings.USE_S3
+        if use_s3:
+            # Use temp directory when S3 is enabled since we'll upload and delete
+            import tempfile
+            temp_dir = tempfile.gettempdir()
+            export_base_dir = os.path.join(temp_dir, 'exports', f'user_{user.id}')
+            temp_export_base = True
+        else:
+            # Use MEDIA_ROOT for local storage
+            media_root = os.path.abspath(settings.MEDIA_ROOT) if settings.MEDIA_ROOT else os.path.abspath('media')
+            export_base_dir = os.path.join(media_root, 'exports', f'user_{user.id}')
+            temp_export_base = False
+        
+        export_base_dir = os.path.abspath(export_base_dir)  # Ensure absolute path
         os.makedirs(export_base_dir, exist_ok=True)
+        logger.info(f"Export base directory: {export_base_dir} (S3 enabled: {use_s3}, temp: {temp_export_base}, MEDIA_ROOT: {getattr(settings, 'MEDIA_ROOT', 'N/A')})")
 
         # Build folder structure from JSON
         excel_path = folder_structure.get('excel_path', '')
@@ -53,6 +75,7 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
 
         # Create root export directory
         root_export_dir = os.path.join(export_base_dir, f'temp_{export_name}')
+        root_export_dir = os.path.abspath(root_export_dir)  # Track absolute path
         os.makedirs(root_export_dir, exist_ok=True)
 
         # Create Excel directory structure
@@ -269,8 +292,10 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
         excel_file_path = os.path.join(excel_dir, f'{export_name}.xlsx')
         wb.save(excel_file_path)
 
-        # Create ZIP file
+        # Create ZIP file - ensure absolute path
         zip_path = os.path.join(export_base_dir, f'{export_name}.zip')
+        zip_path = os.path.abspath(zip_path)  # Ensure absolute path
+        logger.info(f"Creating ZIP file at: {zip_path}")
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for root, dirs, files in os.walk(root_export_dir):
                 for file in files:
@@ -278,10 +303,8 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
                     arcname = os.path.relpath(file_path, root_export_dir)
                     zipf.write(file_path, arcname)
 
-        # Clean up temporary directory
-        shutil.rmtree(root_export_dir)
-
         # Verify ZIP file exists before marking as completed
+        # Note: Cleanup of root_export_dir and zip_path will happen in finally block
         if not os.path.exists(zip_path):
             error_msg = f"ZIP file was not created at expected path: {zip_path}"
             logger.error(error_msg)
@@ -295,8 +318,49 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
         file_size = os.path.getsize(zip_path)
         logger.info(f"Export ZIP file created successfully: {zip_path} ({file_size} bytes)")
 
-        # Create download URL (point to download endpoint)
+        # Upload to S3 if S3 is enabled, otherwise keep local
+        from django.core.files.storage import default_storage
+        from django.core.files import File
+        
+        s3_path = None
         download_url = f"/export/download/{export_history.id}/"
+        
+        # Check if S3 is enabled
+        if hasattr(settings, 'USE_S3') and settings.USE_S3:
+            try:
+                # Upload to S3 - path should be relative to the storage location (media/)
+                s3_relative_path = f'exports/user_{user.id}/{export_name}.zip'
+                logger.info(f"Uploading export ZIP to S3: {s3_relative_path}")
+                
+                with open(zip_path, 'rb') as zip_file:
+                    # Use Django's default storage to upload
+                    # The storage backend will prepend the 'media' location
+                    s3_path = default_storage.save(s3_relative_path, File(zip_file, name=export_name + '.zip'))
+                    logger.info(f"Successfully uploaded to S3: {s3_path}")
+                    s3_upload_successful = True
+                
+                # Get the S3 URL - the storage backend should provide the full URL
+                try:
+                    s3_url = default_storage.url(s3_path)
+                    download_url = s3_url
+                    logger.info(f"S3 URL for export: {s3_url}")
+                except Exception as url_error:
+                    logger.warning(f"Could not get S3 URL from storage: {str(url_error)}")
+                    # Fallback: construct URL manually
+                    if hasattr(settings, 'MEDIA_URL'):
+                        # MEDIA_URL already includes the bucket and media path
+                        download_url = f"{settings.MEDIA_URL.rstrip('/')}/{s3_relative_path}"
+                        logger.info(f"Constructed S3 URL manually: {download_url}")
+                    else:
+                        download_url = f"/export/download/{export_history.id}/"
+                        logger.warning("Could not construct S3 URL, falling back to local download")
+                    
+            except Exception as e:
+                logger.error(f"Failed to upload export to S3: {str(e)}", exc_info=True)
+                # Continue with local file if S3 upload fails
+                logger.warning("Falling back to local file storage")
+                s3_path = None
+                s3_upload_successful = False
 
         # Update export history
         export_history.status = 'completed'
@@ -306,7 +370,7 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
         export_history.completed_at = timezone.now()
         export_history.save()
         
-        logger.info(f"Export {export_history.id} marked as completed. File: {zip_path}, Size: {file_size} bytes")
+        logger.info(f"Export {export_history.id} marked as completed. File: {zip_path if not s3_path else s3_path}, Size: {file_size} bytes")
 
         return {
             'download_url': download_url,
@@ -329,6 +393,46 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
             pass
 
         raise
+    
+    finally:
+        # Clean up all temporary files and directories
+        logger.info("Starting cleanup of temporary files and directories...")
+        
+        # Clean up root export directory (temporary folder with Excel and audio files)
+        if root_export_dir and os.path.exists(root_export_dir):
+            try:
+                shutil.rmtree(root_export_dir)
+                logger.info(f"Cleaned up temporary export directory: {root_export_dir}")
+            except Exception as e:
+                logger.error(f"Failed to remove temporary export directory {root_export_dir}: {str(e)}")
+        
+        # Clean up ZIP file if S3 upload was successful or if using temp directory
+        if zip_path and os.path.exists(zip_path):
+            # Delete ZIP file if:
+            # 1. S3 upload was successful (file is now in S3)
+            # 2. Using temp directory (file should be cleaned up)
+            if s3_upload_successful or temp_export_base:
+                try:
+                    os.remove(zip_path)
+                    logger.info(f"Cleaned up temporary ZIP file: {zip_path}")
+                except Exception as e:
+                    logger.error(f"Failed to remove temporary ZIP file {zip_path}: {str(e)}")
+            else:
+                logger.info(f"Keeping ZIP file for local storage: {zip_path}")
+        
+        # Clean up export_base_dir if it's a temp directory and is now empty
+        if export_base_dir and temp_export_base and os.path.exists(export_base_dir):
+            try:
+                # Check if directory is empty
+                if not os.listdir(export_base_dir):
+                    os.rmdir(export_base_dir)
+                    logger.info(f"Cleaned up empty temporary export base directory: {export_base_dir}")
+                else:
+                    logger.debug(f"Export base directory not empty, keeping: {export_base_dir}")
+            except Exception as e:
+                logger.warning(f"Could not remove export base directory {export_base_dir}: {str(e)}")
+        
+        logger.info("Cleanup of temporary files and directories completed")
 
 
 @shared_task

@@ -92,9 +92,11 @@ def export_progress(request, task_id):
         try:
             export_record = ExportHistory.objects.get(task_id=task_id, user=request.user)
             if export_record.status == 'completed':
+                # Use the download_url from the record (could be S3 URL or local path)
+                download_url = export_record.download_url or f"/export/download/{export_record.id}/"
                 return JsonResponse({
                     'status': 'completed',
-                    'download_url': f"/export/download/{export_record.id}/",
+                    'download_url': download_url,
                     'file_size': export_record.file_size,
                     'total_files': export_record.total_files
                 })
@@ -207,78 +209,94 @@ def download_export(request, export_id):
             messages.error(request, error_msg)
             return redirect('export:export_history')
 
+        # Check if download_url is an S3 URL (starts with http:// or https://)
+        is_s3_url = export_record.download_url and (
+            export_record.download_url.startswith('http://') or 
+            export_record.download_url.startswith('https://')
+        )
+        
         # For API requests, return the download URL
         if request.headers.get('Accept') == 'application/json' or request.GET.get('format') == 'json':
             return JsonResponse({
                 'status': 'success',
-                'download_url': f"/export/download/{export_record.id}/",
+                'download_url': export_record.download_url or f"/export/download/{export_record.id}/",
                 'file_size': export_record.file_size_mb
             })
 
-        # For direct browser requests, serve the file
-        file_path = os.path.join(settings.MEDIA_ROOT, 'exports', f'user_{request.user.id}', f'{export_record.export_name}.zip')
+        # If S3 URL, redirect to it
+        if is_s3_url:
+            logger.info(f"Redirecting to S3 URL: {export_record.download_url}")
+            return redirect(export_record.download_url)
+
+        # For direct browser requests, serve the file from local storage
+        # Ensure we use absolute path
+        media_root = os.path.abspath(settings.MEDIA_ROOT) if settings.MEDIA_ROOT else os.path.abspath('media')
         
-        # Log the path being checked for debugging
-        logger.info(f"Attempting to download export {export_id}: checking path {file_path}")
-        logger.info(f"MEDIA_ROOT: {settings.MEDIA_ROOT}")
+        # Build list of possible file locations to check
+        possible_paths = [
+            # Primary location
+            os.path.join(media_root, 'exports', f'user_{request.user.id}', f'{export_record.export_name}.zip'),
+            # Alternative locations (Docker, relative paths, etc.)
+            os.path.join(os.path.abspath('.'), 'media', 'exports', f'user_{request.user.id}', f'{export_record.export_name}.zip'),
+            os.path.join(os.path.abspath('.'), 'exports', f'user_{request.user.id}', f'{export_record.export_name}.zip'),
+            os.path.join('/app', 'media', 'exports', f'user_{request.user.id}', f'{export_record.export_name}.zip'),
+            os.path.join('/app', 'exports', f'user_{request.user.id}', f'{export_record.export_name}.zip'),
+            # Also try without user directory (in case of misconfiguration)
+            os.path.join(media_root, 'exports', f'{export_record.export_name}.zip'),
+        ]
         
-        # Check if directory exists
-        export_dir = os.path.join(settings.MEDIA_ROOT, 'exports', f'user_{request.user.id}')
-        files_in_dir = []
+        # Convert all to absolute paths
+        possible_paths = [os.path.abspath(p) for p in possible_paths]
         
-        if not os.path.exists(export_dir):
-            error_msg = f'Export directory not found. Please contact support.'
-            logger.error(f"Export directory does not exist: {export_dir}")
+        # Log the paths being checked
+        logger.info(f"Attempting to download export {export_id}: export_name={export_record.export_name}")
+        logger.info(f"MEDIA_ROOT: {settings.MEDIA_ROOT} (absolute: {media_root})")
+        logger.info(f"Checking {len(possible_paths)} possible file locations...")
+        
+        # Try to find the file
+        file_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                file_path = path
+                logger.info(f"Found export file at: {file_path}")
+                break
+            else:
+                logger.debug(f"File not found at: {path}")
+        
+        if not file_path:
+            # File not found anywhere - list what we checked
+            error_msg = f'Export file "{export_record.export_name}.zip" not found. The file may have been deleted or the export may have failed.'
+            logger.error(f"Export file not found after checking {len(possible_paths)} locations")
+            logger.error(f"Checked paths: {possible_paths}")
+            
+            # Try to list files in the primary export directory for debugging
+            primary_dir = os.path.join(media_root, 'exports', f'user_{request.user.id}')
+            if os.path.exists(primary_dir):
+                try:
+                    files_in_dir = os.listdir(primary_dir)
+                    logger.error(f"Files in primary export directory ({primary_dir}): {files_in_dir}")
+                except Exception as e:
+                    logger.error(f"Error listing files in primary directory: {str(e)}")
+            
+            # Update export status to failed if it was marked as completed but file doesn't exist
+            if export_record.status == 'completed':
+                export_record.status = 'failed'
+                export_record.error_message = 'File not found on server'
+                export_record.save()
+                logger.warning(f"Updated export {export_id} status to 'failed' because file was not found")
+            
             if request.headers.get('Accept') == 'application/json':
-                return JsonResponse({'status': 'error', 'error': error_msg}, status=404)
+                return JsonResponse({
+                    'status': 'error', 
+                    'error': error_msg,
+                    'debug_info': {
+                        'export_name': export_record.export_name,
+                        'user_id': request.user.id,
+                        'checked_paths': possible_paths[:3]  # Only return first 3 for brevity
+                    }
+                }, status=404)
             messages.error(request, error_msg)
             return redirect('export:export_history')
-        else:
-            # List files in directory for debugging
-            try:
-                files_in_dir = os.listdir(export_dir)
-                logger.info(f"Files in export directory ({export_dir}): {files_in_dir}")
-            except Exception as e:
-                logger.error(f"Error listing files in export directory: {str(e)}")
-
-        if not os.path.exists(file_path):
-            logger.error(f"Export file not found at path: {file_path}")
-            logger.error(f"Available files in directory: {files_in_dir}")
-            
-            # Try alternative paths (in case export_name was modified)
-            alternative_paths = [
-                os.path.join(export_dir, f'{export_record.export_name}.zip'),
-                os.path.join(settings.MEDIA_ROOT, 'exports', f'{export_record.export_name}.zip'),
-            ]
-            for alt_path in alternative_paths:
-                if os.path.exists(alt_path):
-                    logger.info(f"Found file at alternative path: {alt_path}")
-                    file_path = alt_path
-                    break
-            else:
-                # File not found anywhere
-                error_msg = f'Export file "{export_record.export_name}.zip" not found. The file may have been deleted or the export may have failed.'
-                logger.error(f"Export file not found. Expected: {file_path}, Available files: {files_in_dir}")
-                
-                # Update export status to failed if it was marked as completed but file doesn't exist
-                if export_record.status == 'completed':
-                    export_record.status = 'failed'
-                    export_record.error_message = 'File not found on server'
-                    export_record.save()
-                    logger.warning(f"Updated export {export_id} status to 'failed' because file was not found")
-                
-                if request.headers.get('Accept') == 'application/json':
-                    return JsonResponse({
-                        'status': 'error', 
-                        'error': error_msg,
-                        'debug_info': {
-                            'export_name': export_record.export_name,
-                            'user_id': request.user.id,
-                            'files_in_dir': files_in_dir
-                        }
-                    }, status=404)
-                messages.error(request, error_msg)
-                return redirect('export:export_history')
 
         # Verify file is readable
         if not os.access(file_path, os.R_OK):
