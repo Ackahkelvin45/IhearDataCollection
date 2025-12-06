@@ -189,14 +189,23 @@ class ExportHistoryView(LoginRequiredMixin, ListView):
 def download_export(request, export_id):
     """Serve the export file for download"""
     from django.http import HttpResponse, Http404
+    from django.shortcuts import redirect
+    from django.contrib import messages
     import os
     
     try:
         export_record = ExportHistory.objects.get(id=export_id, user=request.user)
+        
+        # Log the attempt
+        logger.info(f"Download request for export {export_id}: status={export_record.status}, export_name={export_record.export_name}, user={request.user.id}")
+        
         if export_record.status != 'completed':
+            error_msg = f'Export "{export_record.export_name}" is not ready yet. Status: {export_record.status}'
+            logger.warning(error_msg)
             if request.headers.get('Accept') == 'application/json':
-                return JsonResponse({'status': 'error', 'error': 'Export not ready'}, status=404)
-            raise Http404('Export not ready')
+                return JsonResponse({'status': 'error', 'error': error_msg}, status=404)
+            messages.error(request, error_msg)
+            return redirect('export:export_history')
 
         # For API requests, return the download URL
         if request.headers.get('Accept') == 'application/json' or request.GET.get('format') == 'json':
@@ -211,7 +220,6 @@ def download_export(request, export_id):
         
         # Log the path being checked for debugging
         logger.info(f"Attempting to download export {export_id}: checking path {file_path}")
-        logger.info(f"Export name: {export_record.export_name}, User ID: {request.user.id}")
         logger.info(f"MEDIA_ROOT: {settings.MEDIA_ROOT}")
         
         # Check if directory exists
@@ -219,20 +227,24 @@ def download_export(request, export_id):
         files_in_dir = []
         
         if not os.path.exists(export_dir):
+            error_msg = f'Export directory not found. Please contact support.'
             logger.error(f"Export directory does not exist: {export_dir}")
             if request.headers.get('Accept') == 'application/json':
-                return JsonResponse({'status': 'error', 'error': 'Export directory not found'}, status=404)
-            raise Http404('Export directory not found')
+                return JsonResponse({'status': 'error', 'error': error_msg}, status=404)
+            messages.error(request, error_msg)
+            return redirect('export:export_history')
         else:
             # List files in directory for debugging
             try:
                 files_in_dir = os.listdir(export_dir)
-                logger.info(f"Files in export directory: {files_in_dir}")
+                logger.info(f"Files in export directory ({export_dir}): {files_in_dir}")
             except Exception as e:
                 logger.error(f"Error listing files in export directory: {str(e)}")
 
         if not os.path.exists(file_path):
             logger.error(f"Export file not found at path: {file_path}")
+            logger.error(f"Available files in directory: {files_in_dir}")
+            
             # Try alternative paths (in case export_name was modified)
             alternative_paths = [
                 os.path.join(export_dir, f'{export_record.export_name}.zip'),
@@ -244,33 +256,67 @@ def download_export(request, export_id):
                     file_path = alt_path
                     break
             else:
+                # File not found anywhere
+                error_msg = f'Export file "{export_record.export_name}.zip" not found. The file may have been deleted or the export may have failed.'
+                logger.error(f"Export file not found. Expected: {file_path}, Available files: {files_in_dir}")
+                
+                # Update export status to failed if it was marked as completed but file doesn't exist
+                if export_record.status == 'completed':
+                    export_record.status = 'failed'
+                    export_record.error_message = 'File not found on server'
+                    export_record.save()
+                    logger.warning(f"Updated export {export_id} status to 'failed' because file was not found")
+                
                 if request.headers.get('Accept') == 'application/json':
                     return JsonResponse({
                         'status': 'error', 
-                        'error': f'File not found. Expected: {file_path}',
+                        'error': error_msg,
                         'debug_info': {
                             'export_name': export_record.export_name,
                             'user_id': request.user.id,
                             'files_in_dir': files_in_dir
                         }
                     }, status=404)
-                raise Http404(f'Export file not found: {export_record.export_name}.zip')
+                messages.error(request, error_msg)
+                return redirect('export:export_history')
+
+        # Verify file is readable
+        if not os.access(file_path, os.R_OK):
+            error_msg = f'Export file exists but cannot be read. Please contact support.'
+            logger.error(f"Export file exists but is not readable: {file_path}")
+            if request.headers.get('Accept') == 'application/json':
+                return JsonResponse({'status': 'error', 'error': error_msg}, status=403)
+            messages.error(request, error_msg)
+            return redirect('export:export_history')
 
         # Serve the file
-        with open(file_path, 'rb') as f:
-            response = HttpResponse(f.read(), content_type='application/zip')
-            response['Content-Disposition'] = f'attachment; filename="{export_record.export_name}.zip"'
-            response['Content-Length'] = os.path.getsize(file_path)
-            logger.info(f"Successfully serving file: {file_path} ({os.path.getsize(file_path)} bytes)")
-            return response
+        try:
+            with open(file_path, 'rb') as f:
+                file_content = f.read()
+                response = HttpResponse(file_content, content_type='application/zip')
+                response['Content-Disposition'] = f'attachment; filename="{export_record.export_name}.zip"'
+                response['Content-Length'] = len(file_content)
+                logger.info(f"Successfully serving file: {file_path} ({len(file_content)} bytes)")
+                return response
+        except IOError as e:
+            error_msg = f'Error reading export file: {str(e)}'
+            logger.error(f"IOError reading file {file_path}: {str(e)}", exc_info=True)
+            if request.headers.get('Accept') == 'application/json':
+                return JsonResponse({'status': 'error', 'error': error_msg}, status=500)
+            messages.error(request, error_msg)
+            return redirect('export:export_history')
 
     except ExportHistory.DoesNotExist:
+        error_msg = f'Export with ID {export_id} not found or you do not have permission to access it.'
         logger.error(f"ExportHistory not found for export_id: {export_id}, user: {request.user.id}")
         if request.headers.get('Accept') == 'application/json':
-            return JsonResponse({'status': 'error', 'error': 'Export not found'}, status=404)
-        raise Http404('Export not found')
+            return JsonResponse({'status': 'error', 'error': error_msg}, status=404)
+        messages.error(request, error_msg)
+        return redirect('export:export_history')
     except Exception as e:
+        error_msg = f'An unexpected error occurred while downloading the export: {str(e)}'
         logger.error(f"Error downloading export {export_id}: {str(e)}", exc_info=True)
         if request.headers.get('Accept') == 'application/json':
-            return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
-        raise Http404('Error downloading export')
+            return JsonResponse({'status': 'error', 'error': error_msg}, status=500)
+        messages.error(request, error_msg)
+        return redirect('export:export_history')

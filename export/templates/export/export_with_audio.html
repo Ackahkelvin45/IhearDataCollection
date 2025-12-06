@@ -175,19 +175,19 @@
   .highlight-demo {
     animation: highlightPulse 1.5s ease-in-out infinite;
     box-shadow: 0 0 20px rgba(168, 85, 247, 0.6) !important;
+
     border-color: #a855f7 !important;
   }
-
   @keyframes highlightPulse {
-    0%, 100% {
-      transform: scale(1);
-      box-shadow: 0 0 20px rgba(168, 85, 247, 0.6);
-    }
-    50% {
-      transform: scale(1.05);
-      box-shadow: 0 0 30px rgba(168, 85, 247, 0.9);
-    }
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 4px rgba(168, 85, 247, 0.4);
   }
+  50% {
+    transform: scale(1.02);
+    box-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
+  }
+}
 
   .template-section {
     background: #eff6ff;

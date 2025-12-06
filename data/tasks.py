@@ -281,8 +281,19 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
         # Clean up temporary directory
         shutil.rmtree(root_export_dir)
 
+        # Verify ZIP file exists before marking as completed
+        if not os.path.exists(zip_path):
+            error_msg = f"ZIP file was not created at expected path: {zip_path}"
+            logger.error(error_msg)
+            export_history.status = 'failed'
+            export_history.error_message = error_msg
+            export_history.completed_at = timezone.now()
+            export_history.save()
+            raise Exception(error_msg)
+
         # Calculate file size
         file_size = os.path.getsize(zip_path)
+        logger.info(f"Export ZIP file created successfully: {zip_path} ({file_size} bytes)")
 
         # Create download URL (point to download endpoint)
         download_url = f"/export/download/{export_history.id}/"
@@ -294,6 +305,8 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
         export_history.total_files = total
         export_history.completed_at = timezone.now()
         export_history.save()
+        
+        logger.info(f"Export {export_history.id} marked as completed. File: {zip_path}, Size: {file_size} bytes")
 
         return {
             'download_url': download_url,
