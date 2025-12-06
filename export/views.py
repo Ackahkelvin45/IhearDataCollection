@@ -73,10 +73,6 @@ def export_with_audio_view(request):
             logger.error(f"Export initiation failed: {str(e)}", exc_info=True)
             return JsonResponse({'status': 'error', 'error': str(e)}, status=500)
 
-    # GET request - return configuration form
-
-    # Only show categories that have at least one dataset
-    # Prefetch the dataset count to avoid N+1 queries
     categories_with_data = Category.objects.filter(
         noisedataset__isnull=False
     ).distinct().order_by('name').prefetch_related('noisedataset_set')
@@ -91,6 +87,25 @@ def export_with_audio_view(request):
 def export_progress(request, task_id):
     """Check export progress"""
     try:
+        # First check if we have a completed export in the database
+        try:
+            export_record = ExportHistory.objects.get(task_id=task_id, user=request.user)
+            if export_record.status == 'completed':
+                return JsonResponse({
+                    'status': 'completed',
+                    'download_url': f"/export/download/{export_record.id}/",
+                    'file_size': export_record.file_size,
+                    'total_files': export_record.total_files
+                })
+            elif export_record.status == 'failed':
+                return JsonResponse({
+                    'status': 'failed',
+                    'error': export_record.error_message or 'Export failed'
+                }, status=500)
+        except ExportHistory.DoesNotExist:
+            pass  # Continue with Celery task check
+
+        # Fallback to Celery task status
         task = AsyncResult(task_id)
 
         if task.ready():
@@ -174,14 +189,32 @@ def download_export(request, export_id):
     """Serve the export file for download"""
     try:
         export_record = ExportHistory.objects.get(id=export_id, user=request.user)
-        if export_record.status != 'completed' or not export_record.download_url:
+        if export_record.status != 'completed':
             return JsonResponse({'status': 'error', 'error': 'Export not ready'}, status=404)
 
-        # Return the download URL
-        return JsonResponse({
-            'status': 'success',
-            'download_url': export_record.download_url,
-            'file_size': export_record.file_size_mb
-        })
+        # For API requests, return the download URL
+        if request.headers.get('Accept') == 'application/json' or request.GET.get('format') == 'json':
+            return JsonResponse({
+                'status': 'success',
+                'download_url': f"/export/download/{export_record.id}/file/",
+                'file_size': export_record.file_size_mb
+            })
+
+        # For direct browser requests, serve the file
+        from django.http import HttpResponse
+        import os
+        from django.conf import settings
+
+        file_path = os.path.join(settings.MEDIA_ROOT, 'exports', f'user_{request.user.id}', f'{export_record.export_name}.zip')
+
+        if not os.path.exists(file_path):
+            return JsonResponse({'status': 'error', 'error': 'File not found'}, status=404)
+
+        with open(file_path, 'rb') as f:
+            response = HttpResponse(f.read(), content_type='application/zip')
+            response['Content-Disposition'] = f'attachment; filename="{export_record.export_name}.zip"'
+            response['Content-Length'] = os.path.getsize(file_path)
+            return response
+
     except ExportHistory.DoesNotExist:
         return JsonResponse({'status': 'error', 'error': 'Export not found'}, status=404)

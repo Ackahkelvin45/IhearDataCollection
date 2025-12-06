@@ -284,8 +284,8 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
         # Calculate file size
         file_size = os.path.getsize(zip_path)
 
-        # Create download URL
-        download_url = f"/media/exports/user_{user.id}/{export_name}.zip"
+        # Create download URL (point to download endpoint)
+        download_url = f"/export/download/{export_history.id}/"
 
         # Update export history
         export_history.status = 'completed'
