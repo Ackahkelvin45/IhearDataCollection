@@ -67,7 +67,7 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
         queryset = NoiseDataset.objects.select_related(
             'category', 'region', 'community', 'class_name', 'subclass',
             'collector', 'dataset_type', 'microphone_type', 'time_of_day'
-        ).prefetch_related('audiofeature_set', 'noiseanalysis_set')
+        )
 
         # Apply category filter
         if category_ids:
@@ -200,9 +200,10 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
                 except Exception as e:
                     logger.error(f"Error downloading audio for {dataset.noise_id}: {e}")
 
-            # Get audio features and analysis
-            audio_feature = dataset.audiofeature_set.first()
-            noise_analysis = dataset.noiseanalysis_set.first()
+            # Get audio features and analysis (handle missing OneToOne relationships)
+            from .models import AudioFeature, NoiseAnalysis
+            audio_feature = AudioFeature.objects.filter(noise_dataset=dataset).first()
+            noise_analysis = NoiseAnalysis.objects.filter(noise_dataset=dataset).first()
 
             # Add row to Excel with ALL metadata
             row = [
