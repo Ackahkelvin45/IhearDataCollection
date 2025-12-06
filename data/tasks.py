@@ -21,7 +21,9 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, time_limit=3600 * 6, soft_time_limit=3600 * 5)
-def export_with_audio_task(self, export_history_id, folder_structure, category_ids, export_name, filters=None):
+def export_with_audio_task(
+    self, export_history_id, folder_structure, category_ids, export_name, filters=None
+):
     """Celery task to create export with audio files"""
     from export.models import ExportHistory
     from authentication.models import CustomUser
@@ -41,40 +43,47 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
     use_s3 = False
     temp_export_base = False  # Track if export_base_dir is a temp directory
     s3_upload_successful = False  # Track if S3 upload was successful
-    
+
     try:
         # Get export history record
         export_history = ExportHistory.objects.get(id=export_history_id)
-        export_history.status = 'processing'
+        export_history.status = "processing"
         export_history.save()
 
         user = export_history.user
 
         # Create export directory - use temp directory if S3 is enabled, otherwise use MEDIA_ROOT
-        use_s3 = hasattr(settings, 'USE_S3') and settings.USE_S3
+        use_s3 = hasattr(settings, "USE_S3") and settings.USE_S3
         if use_s3:
             # Use temp directory when S3 is enabled since we'll upload and delete
             import tempfile
+
             temp_dir = tempfile.gettempdir()
-            export_base_dir = os.path.join(temp_dir, 'exports', f'user_{user.id}')
+            export_base_dir = os.path.join(temp_dir, "exports", f"user_{user.id}")
             temp_export_base = True
         else:
             # Use MEDIA_ROOT for local storage
-            media_root = os.path.abspath(settings.MEDIA_ROOT) if settings.MEDIA_ROOT else os.path.abspath('media')
-            export_base_dir = os.path.join(media_root, 'exports', f'user_{user.id}')
+            media_root = (
+                os.path.abspath(settings.MEDIA_ROOT)
+                if settings.MEDIA_ROOT
+                else os.path.abspath("media")
+            )
+            export_base_dir = os.path.join(media_root, "exports", f"user_{user.id}")
             temp_export_base = False
-        
+
         export_base_dir = os.path.abspath(export_base_dir)  # Ensure absolute path
         os.makedirs(export_base_dir, exist_ok=True)
-        logger.info(f"Export base directory: {export_base_dir} (S3 enabled: {use_s3}, temp: {temp_export_base}, MEDIA_ROOT: {getattr(settings, 'MEDIA_ROOT', 'N/A')})")
+        logger.info(
+            f"Export base directory: {export_base_dir} (S3 enabled: {use_s3}, temp: {temp_export_base}, MEDIA_ROOT: {getattr(settings, 'MEDIA_ROOT', 'N/A')})"
+        )
 
         # Build folder structure from JSON
-        excel_path = folder_structure.get('excel_path', '')
-        audio_path = folder_structure.get('audio_path', '')
-        audio_structure_template = export_history.audio_structure_template or ''
+        excel_path = folder_structure.get("excel_path", "")
+        audio_path = folder_structure.get("audio_path", "")
+        audio_structure_template = export_history.audio_structure_template or ""
 
         # Create root export directory
-        root_export_dir = os.path.join(export_base_dir, f'temp_{export_name}')
+        root_export_dir = os.path.join(export_base_dir, f"temp_{export_name}")
         root_export_dir = os.path.abspath(root_export_dir)  # Track absolute path
         os.makedirs(root_export_dir, exist_ok=True)
 
@@ -88,8 +97,15 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
 
         # Build queryset
         queryset = NoiseDataset.objects.select_related(
-            'category', 'region', 'community', 'class_name', 'subclass',
-            'collector', 'dataset_type', 'microphone_type', 'time_of_day'
+            "category",
+            "region",
+            "community",
+            "class_name",
+            "subclass",
+            "collector",
+            "dataset_type",
+            "microphone_type",
+            "time_of_day",
         )
 
         # Apply category filter
@@ -98,23 +114,25 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
 
         # Apply other filters (similar to _filtered_noise_queryset)
         if filters:
-            if filters.get('search'):
+            if filters.get("search"):
                 queryset = queryset.filter(
-                    Q(name__icontains=filters['search']) |
-                    Q(noise_id__icontains=filters['search']) |
-                    Q(description__icontains=filters['search'])
+                    Q(name__icontains=filters["search"])
+                    | Q(noise_id__icontains=filters["search"])
+                    | Q(description__icontains=filters["search"])
                 )
-            if filters.get('region'):
-                queryset = queryset.filter(region_id=filters['region'])
-            if filters.get('community'):
-                queryset = queryset.filter(community_id=filters['community'])
-            if filters.get('dataset_type'):
-                queryset = queryset.filter(dataset_type_id=filters['dataset_type'])
-            if filters.get('collector'):
-                queryset = queryset.filter(collector_id=filters['collector'])
+            if filters.get("region"):
+                queryset = queryset.filter(region_id=filters["region"])
+            if filters.get("community"):
+                queryset = queryset.filter(community_id=filters["community"])
+            if filters.get("dataset_type"):
+                queryset = queryset.filter(dataset_type_id=filters["dataset_type"])
+            if filters.get("collector"):
+                queryset = queryset.filter(collector_id=filters["collector"])
 
         total = queryset.count()
-        self.update_state(state='PROGRESS', meta={'progress': 0, 'current': 0, 'total': total})
+        self.update_state(
+            state="PROGRESS", meta={"progress": 0, "current": 0, "total": total}
+        )
 
         # Create Excel workbook
         wb = Workbook()
@@ -123,19 +141,48 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
 
         # ALL metadata columns
         headers = [
-            'Noise ID', 'Name', 'Category', 'Class', 'Subclass', 'Region', 'Community',
-            'Collector', 'Recording Device', 'Recording Date', 'Time of Day',
-            'Microphone Type', 'Description', 'Dataset Type',
-            'Audio File Path', 'Audio File Link',
-            'Duration (s)', 'Sample Rate', 'Num Samples', 'RMS Energy',
-            'Zero Crossing Rate', 'Spectral Centroid', 'Spectral Bandwidth',
-            'Spectral Rolloff', 'Spectral Flatness', 'Harmonic Ratio', 'Percussive Ratio',
-            'Mean dB', 'Max dB', 'Min dB', 'Std dB',
-            'Peak Count', 'Peak Interval Mean', 'Dominant Frequency (Hz)', 'Frequency Range', 'Event Count'
+            "Noise ID",
+            "Name",
+            "Category",
+            "Class",
+            "Subclass",
+            "Region",
+            "Community",
+            "Collector",
+            "Recording Device",
+            "Recording Date",
+            "Time of Day",
+            "Microphone Type",
+            "Description",
+            "Dataset Type",
+            "Audio File Path",
+            "Audio File Link",
+            "Duration (s)",
+            "Sample Rate",
+            "Num Samples",
+            "RMS Energy",
+            "Zero Crossing Rate",
+            "Spectral Centroid",
+            "Spectral Bandwidth",
+            "Spectral Rolloff",
+            "Spectral Flatness",
+            "Harmonic Ratio",
+            "Percussive Ratio",
+            "Mean dB",
+            "Max dB",
+            "Min dB",
+            "Std dB",
+            "Peak Count",
+            "Peak Interval Mean",
+            "Dominant Frequency (Hz)",
+            "Frequency Range",
+            "Event Count",
         ]
 
         # Style headers
-        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_fill = PatternFill(
+            start_color="366092", end_color="366092", fill_type="solid"
+        )
         header_font = Font(bold=True, color="FFFFFF")
 
         for col_num, header in enumerate(headers, 1):
@@ -143,28 +190,59 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
             cell.value = header
             cell.fill = header_fill
             cell.font = header_font
-            cell.alignment = Alignment(horizontal='center', vertical='center')
+            cell.alignment = Alignment(horizontal="center", vertical="center")
 
         # Helper function to build audio subfolder path
         def build_audio_subfolder(dataset, template):
             if not template:
-                return ''
+                return ""
 
             path = template
-            path = path.replace('{category}', dataset.category.name if dataset.category else 'uncategorized')
-            path = path.replace('{class}', dataset.class_name.name if dataset.class_name else 'unclassified')
-            path = path.replace('{subclass}', dataset.subclass.name if dataset.subclass else 'unclassified')
-            path = path.replace('{region}', dataset.region.name if dataset.region else 'unknown')
-            path = path.replace('{community}', dataset.community.name if dataset.community else 'unknown')
-            path = path.replace('{collector}', dataset.collector.username if dataset.collector else 'unknown')
-            path = path.replace('{time_of_day}', dataset.time_of_day.name if dataset.time_of_day else 'unknown')
-            path = path.replace('{recording_date}', dataset.recording_date.strftime('%Y-%m-%d') if dataset.recording_date else 'unknown')
-            path = path.replace('{noise_id}', dataset.noise_id or 'unknown')
-            path = path.replace('{dataset_type}', dataset.dataset_type.name if dataset.dataset_type else 'unknown')
+            path = path.replace(
+                "{category}",
+                dataset.category.name if dataset.category else "uncategorized",
+            )
+            path = path.replace(
+                "{class}",
+                dataset.class_name.name if dataset.class_name else "unclassified",
+            )
+            path = path.replace(
+                "{subclass}",
+                dataset.subclass.name if dataset.subclass else "unclassified",
+            )
+            path = path.replace(
+                "{region}", dataset.region.name if dataset.region else "unknown"
+            )
+            path = path.replace(
+                "{community}",
+                dataset.community.name if dataset.community else "unknown",
+            )
+            path = path.replace(
+                "{collector}",
+                dataset.collector.username if dataset.collector else "unknown",
+            )
+            path = path.replace(
+                "{time_of_day}",
+                dataset.time_of_day.name if dataset.time_of_day else "unknown",
+            )
+            path = path.replace(
+                "{recording_date}",
+                (
+                    dataset.recording_date.strftime("%Y-%m-%d")
+                    if dataset.recording_date
+                    else "unknown"
+                ),
+            )
+            path = path.replace("{noise_id}", dataset.noise_id or "unknown")
+            path = path.replace(
+                "{dataset_type}",
+                dataset.dataset_type.name if dataset.dataset_type else "unknown",
+            )
 
             import re
-            path = re.sub(r'[<>:"|?*]', '_', path)
-            path = path.replace('\\', '/').strip('/')
+
+            path = re.sub(r'[<>:"|?*]', "_", path)
+            path = path.replace("\\", "/").strip("/")
 
             return path
 
@@ -182,33 +260,66 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
 
             os.makedirs(audio_subdir, exist_ok=True)
 
-            # Download audio file from S3 (READ-ONLY)
+            # Download audio file from S3 or local storage (READ-ONLY)
             audio_filename = None
             audio_relative_path = None
             if dataset.audio:
                 try:
-                    source_path = dataset.audio.path if hasattr(dataset.audio, 'path') else None
-                    if not source_path and hasattr(dataset.audio, 'url'):
-                        source_path = dataset.audio.name
+                    # Check if S3 is enabled
+                    use_s3_for_audio = hasattr(settings, "USE_S3") and settings.USE_S3
 
-                    if source_path:
-                        original_filename = os.path.basename(dataset.audio.name)
-                        file_ext = os.path.splitext(original_filename)[1] or '.mp3'
+                    # Get the relative path (name) - this works for both S3 and local storage
+                    audio_name = dataset.audio.name
+
+                    if audio_name:
+                        original_filename = os.path.basename(audio_name)
+                        file_ext = os.path.splitext(original_filename)[1] or ".mp3"
                         audio_filename = f"{dataset.noise_id}{file_ext}"
                         dest_path = os.path.join(audio_subdir, audio_filename)
 
-                        # Download from S3 using storage.open() (READ-ONLY)
+                        # Download from storage (S3 or local) using storage.open() (READ-ONLY)
                         try:
-                            with dataset.audio.storage.open(dataset.audio.name, 'rb') as source_file:
-                                with open(dest_path, 'wb') as dest_file:
+                            # Use storage.open() which works for both S3 and local storage
+                            with dataset.audio.storage.open(
+                                audio_name, "rb"
+                            ) as source_file:
+                                with open(dest_path, "wb") as dest_file:
                                     shutil.copyfileobj(source_file, dest_file)
-                        except Exception as s3_error:
-                            logger.error(f"S3 download failed for {dataset.noise_id}: {s3_error}")
-                            # Fallback: try direct file copy if local
-                            if os.path.exists(source_path):
-                                shutil.copy2(source_path, dest_path)
+                            logger.debug(
+                                f"Successfully downloaded audio for {dataset.noise_id}"
+                            )
+                        except Exception as storage_error:
+                            logger.error(
+                                f"Storage download failed for {dataset.noise_id}: {storage_error}"
+                            )
+
+                            # Fallback: try direct file copy if local storage (not S3)
+                            if not use_s3_for_audio:
+                                try:
+                                    # Only try .path if not using S3
+                                    if hasattr(dataset.audio, "path"):
+                                        source_path = dataset.audio.path
+                                        if os.path.exists(source_path):
+                                            shutil.copy2(source_path, dest_path)
+                                            logger.debug(
+                                                f"Fallback: copied audio from local path for {dataset.noise_id}"
+                                            )
+                                        else:
+                                            logger.warning(
+                                                f"Local audio file not found at {source_path} for {dataset.noise_id}"
+                                            )
+                                    else:
+                                        logger.warning(
+                                            f"Could not get local path for audio file {dataset.noise_id}"
+                                        )
+                                except Exception as fallback_error:
+                                    logger.error(
+                                        f"Fallback copy also failed for {dataset.noise_id}: {fallback_error}"
+                                    )
                             else:
-                                logger.warning(f"Could not download audio for {dataset.noise_id}")
+                                logger.error(
+                                    f"Could not download audio from S3 for {dataset.noise_id}"
+                                )
 
                         # Calculate relative path from Excel location to audio file
                         if audio_filename:
@@ -216,56 +327,78 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
                             audio_file_normalized = os.path.normpath(dest_path)
 
                             try:
-                                audio_relative_path = os.path.relpath(audio_file_normalized, excel_dir_normalized).replace('\\', '/')
+                                audio_relative_path = os.path.relpath(
+                                    audio_file_normalized, excel_dir_normalized
+                                ).replace("\\", "/")
                             except ValueError:
                                 # If paths are on different drives, use absolute path from root
-                                audio_relative_path = os.path.join(audio_path, subfolder, audio_filename).replace('\\', '/') if subfolder else os.path.join(audio_path, audio_filename).replace('\\', '/')
+                                audio_relative_path = (
+                                    os.path.join(
+                                        audio_path, subfolder, audio_filename
+                                    ).replace("\\", "/")
+                                    if subfolder
+                                    else os.path.join(
+                                        audio_path, audio_filename
+                                    ).replace("\\", "/")
+                                )
                 except Exception as e:
-                    logger.error(f"Error downloading audio for {dataset.noise_id}: {e}")
+                    logger.error(
+                        f"Error downloading audio for {dataset.noise_id}: {e}",
+                        exc_info=True,
+                    )
 
             # Get audio features and analysis (handle missing OneToOne relationships)
             from .models import AudioFeature, NoiseAnalysis
+
             audio_feature = AudioFeature.objects.filter(noise_dataset=dataset).first()
             noise_analysis = NoiseAnalysis.objects.filter(noise_dataset=dataset).first()
 
             # Add row to Excel with ALL metadata
             row = [
-                dataset.noise_id or '',
-                dataset.name or '',
-                dataset.category.name if dataset.category else '',
-                dataset.class_name.name if dataset.class_name else '',
-                dataset.subclass.name if dataset.subclass else '',
-                dataset.region.name if dataset.region else '',
-                dataset.community.name if dataset.community else '',
-                dataset.collector.username if dataset.collector else '',
-                dataset.recording_device or '',
-                dataset.recording_date.strftime('%Y-%m-%d %H:%M:%S') if dataset.recording_date else '',
-                dataset.time_of_day.name if dataset.time_of_day else '',
-                dataset.microphone_type.name if dataset.microphone_type else '',
-                dataset.description or '',
-                dataset.dataset_type.name if dataset.dataset_type else '',
-                audio_relative_path or '',
-                f'=HYPERLINK("{audio_relative_path}", "Open Audio")' if audio_relative_path else '',
-                audio_feature.duration if audio_feature else '',
-                audio_feature.sample_rate if audio_feature else '',
-                audio_feature.num_samples if audio_feature else '',
-                audio_feature.rms_energy if audio_feature else '',
-                audio_feature.zero_crossing_rate if audio_feature else '',
-                audio_feature.spectral_centroid if audio_feature else '',
-                audio_feature.spectral_bandwidth if audio_feature else '',
-                audio_feature.spectral_rolloff if audio_feature else '',
-                audio_feature.spectral_flatness if audio_feature else '',
-                audio_feature.harmonic_ratio if audio_feature else '',
-                audio_feature.percussive_ratio if audio_feature else '',
-                noise_analysis.mean_db if noise_analysis else '',
-                noise_analysis.max_db if noise_analysis else '',
-                noise_analysis.min_db if noise_analysis else '',
-                noise_analysis.std_db if noise_analysis else '',
-                noise_analysis.peak_count if noise_analysis else '',
-                noise_analysis.peak_interval_mean if noise_analysis else '',
-                noise_analysis.dominant_frequency if noise_analysis else '',
-                noise_analysis.frequency_range if noise_analysis else '',
-                noise_analysis.event_count if noise_analysis else '',
+                dataset.noise_id or "",
+                dataset.name or "",
+                dataset.category.name if dataset.category else "",
+                dataset.class_name.name if dataset.class_name else "",
+                dataset.subclass.name if dataset.subclass else "",
+                dataset.region.name if dataset.region else "",
+                dataset.community.name if dataset.community else "",
+                dataset.collector.username if dataset.collector else "",
+                dataset.recording_device or "",
+                (
+                    dataset.recording_date.strftime("%Y-%m-%d %H:%M:%S")
+                    if dataset.recording_date
+                    else ""
+                ),
+                dataset.time_of_day.name if dataset.time_of_day else "",
+                dataset.microphone_type.name if dataset.microphone_type else "",
+                dataset.description or "",
+                dataset.dataset_type.name if dataset.dataset_type else "",
+                audio_relative_path or "",
+                (
+                    f'=HYPERLINK("{audio_relative_path}", "Open Audio")'
+                    if audio_relative_path
+                    else ""
+                ),
+                audio_feature.duration if audio_feature else "",
+                audio_feature.sample_rate if audio_feature else "",
+                audio_feature.num_samples if audio_feature else "",
+                audio_feature.rms_energy if audio_feature else "",
+                audio_feature.zero_crossing_rate if audio_feature else "",
+                audio_feature.spectral_centroid if audio_feature else "",
+                audio_feature.spectral_bandwidth if audio_feature else "",
+                audio_feature.spectral_rolloff if audio_feature else "",
+                audio_feature.spectral_flatness if audio_feature else "",
+                audio_feature.harmonic_ratio if audio_feature else "",
+                audio_feature.percussive_ratio if audio_feature else "",
+                noise_analysis.mean_db if noise_analysis else "",
+                noise_analysis.max_db if noise_analysis else "",
+                noise_analysis.min_db if noise_analysis else "",
+                noise_analysis.std_db if noise_analysis else "",
+                noise_analysis.peak_count if noise_analysis else "",
+                noise_analysis.peak_interval_mean if noise_analysis else "",
+                noise_analysis.dominant_frequency if noise_analysis else "",
+                noise_analysis.frequency_range if noise_analysis else "",
+                noise_analysis.event_count if noise_analysis else "",
             ]
 
             ws.append(row)
@@ -273,30 +406,31 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
             # Update progress every 10 records
             if processed % 10 == 0:
                 progress = int((processed / total) * 100)
-                self.update_state(state='PROGRESS', meta={
-                    'progress': progress,
-                    'current': processed,
-                    'total': total
-                })
+                self.update_state(
+                    state="PROGRESS",
+                    meta={"progress": progress, "current": processed, "total": total},
+                )
 
         # Auto-adjust column widths
         for col_num, header in enumerate(headers, 1):
             column_letter = get_column_letter(col_num)
             max_length = len(header)
-            for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=col_num, max_col=col_num):
+            for row in ws.iter_rows(
+                min_row=2, max_row=ws.max_row, min_col=col_num, max_col=col_num
+            ):
                 if row[0].value:
                     max_length = max(max_length, len(str(row[0].value)))
             ws.column_dimensions[column_letter].width = min(max_length + 2, 50)
 
         # Save Excel file
-        excel_file_path = os.path.join(excel_dir, f'{export_name}.xlsx')
+        excel_file_path = os.path.join(excel_dir, f"{export_name}.xlsx")
         wb.save(excel_file_path)
 
         # Create ZIP file - ensure absolute path
-        zip_path = os.path.join(export_base_dir, f'{export_name}.zip')
+        zip_path = os.path.join(export_base_dir, f"{export_name}.zip")
         zip_path = os.path.abspath(zip_path)  # Ensure absolute path
         logger.info(f"Creating ZIP file at: {zip_path}")
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
             for root, dirs, files in os.walk(root_export_dir):
                 for file in files:
                     file_path = os.path.join(root, file)
@@ -308,7 +442,7 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
         if not os.path.exists(zip_path):
             error_msg = f"ZIP file was not created at expected path: {zip_path}"
             logger.error(error_msg)
-            export_history.status = 'failed'
+            export_history.status = "failed"
             export_history.error_message = error_msg
             export_history.completed_at = timezone.now()
             export_history.save()
@@ -316,45 +450,89 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
 
         # Calculate file size
         file_size = os.path.getsize(zip_path)
-        logger.info(f"Export ZIP file created successfully: {zip_path} ({file_size} bytes)")
+        logger.info(
+            f"Export ZIP file created successfully: {zip_path} ({file_size} bytes)"
+        )
 
         # Upload to S3 if S3 is enabled, otherwise keep local
         from django.core.files.storage import default_storage
         from django.core.files import File
-        
+
         s3_path = None
         download_url = f"/export/download/{export_history.id}/"
-        
+
         # Check if S3 is enabled
-        if hasattr(settings, 'USE_S3') and settings.USE_S3:
+        if hasattr(settings, "USE_S3") and settings.USE_S3:
             try:
+                # Log S3 configuration
+                logger.info(f"S3 Configuration:")
+                logger.info(f"  - USE_S3: {settings.USE_S3}")
+                logger.info(
+                    f"  - AWS_STORAGE_BUCKET_NAME: {getattr(settings, 'AWS_STORAGE_BUCKET_NAME', 'N/A')}"
+                )
+                logger.info(
+                    f"  - AWS_S3_ENDPOINT_URL: {getattr(settings, 'AWS_S3_ENDPOINT_URL', 'N/A')}"
+                )
+                logger.info(f"  - MEDIA_URL: {getattr(settings, 'MEDIA_URL', 'N/A')}")
+
                 # Upload to S3 - path should be relative to the storage location (media/)
-                s3_relative_path = f'exports/user_{user.id}/{export_name}.zip'
-                logger.info(f"Uploading export ZIP to S3: {s3_relative_path}")
-                
-                with open(zip_path, 'rb') as zip_file:
+                # The storage backend has location="media", so this will be stored at:
+                # media/exports/user_{user.id}/{export_name}.zip in S3
+                s3_relative_path = f"exports/user_{user.id}/{export_name}.zip"
+                logger.info(f"Uploading export ZIP to S3")
+                logger.info(f"  - S3 relative path: {s3_relative_path}")
+                logger.info(f"  - Full S3 path will be: media/{s3_relative_path}")
+                logger.info(f"  - ZIP file size: {file_size} bytes")
+                logger.info(f"  - ZIP file path: {zip_path}")
+
+                # Verify file exists before upload
+                if not os.path.exists(zip_path):
+                    raise Exception(f"ZIP file does not exist at {zip_path}")
+
+                with open(zip_path, "rb") as zip_file:
                     # Use Django's default storage to upload
                     # The storage backend will prepend the 'media' location
-                    s3_path = default_storage.save(s3_relative_path, File(zip_file, name=export_name + '.zip'))
-                    logger.info(f"Successfully uploaded to S3: {s3_path}")
+                    s3_path = default_storage.save(
+                        s3_relative_path, File(zip_file, name=export_name + ".zip")
+                    )
+                    logger.info(f"Successfully uploaded to S3. Storage path: {s3_path}")
                     s3_upload_successful = True
-                
+
                 # Get the S3 URL - the storage backend should provide the full URL
                 try:
                     s3_url = default_storage.url(s3_path)
                     download_url = s3_url
                     logger.info(f"S3 URL for export: {s3_url}")
                 except Exception as url_error:
-                    logger.warning(f"Could not get S3 URL from storage: {str(url_error)}")
+                    logger.warning(
+                        f"Could not get S3 URL from storage: {str(url_error)}",
+                        exc_info=True,
+                    )
                     # Fallback: construct URL manually
-                    if hasattr(settings, 'MEDIA_URL'):
+                    if hasattr(settings, "MEDIA_URL"):
                         # MEDIA_URL already includes the bucket and media path
-                        download_url = f"{settings.MEDIA_URL.rstrip('/')}/{s3_relative_path}"
+                        # Full path in S3 will be: media/exports/user_{user.id}/{export_name}.zip
+                        download_url = (
+                            f"{settings.MEDIA_URL.rstrip('/')}/{s3_relative_path}"
+                        )
                         logger.info(f"Constructed S3 URL manually: {download_url}")
                     else:
                         download_url = f"/export/download/{export_history.id}/"
-                        logger.warning("Could not construct S3 URL, falling back to local download")
-                    
+                        logger.warning(
+                            "Could not construct S3 URL, falling back to local download"
+                        )
+
+                # Verify the file exists in S3
+                try:
+                    if default_storage.exists(s3_path):
+                        logger.info(f"Verified file exists in S3: {s3_path}")
+                    else:
+                        logger.error(
+                            f"File does not exist in S3 after upload: {s3_path}"
+                        )
+                except Exception as verify_error:
+                    logger.warning(f"Could not verify file in S3: {str(verify_error)}")
+
             except Exception as e:
                 logger.error(f"Failed to upload export to S3: {str(e)}", exc_info=True)
                 # Continue with local file if S3 upload fails
@@ -363,20 +541,22 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
                 s3_upload_successful = False
 
         # Update export history
-        export_history.status = 'completed'
+        export_history.status = "completed"
         export_history.download_url = download_url
         export_history.file_size = file_size
         export_history.total_files = total
         export_history.completed_at = timezone.now()
         export_history.save()
-        
-        logger.info(f"Export {export_history.id} marked as completed. File: {zip_path if not s3_path else s3_path}, Size: {file_size} bytes")
+
+        logger.info(
+            f"Export {export_history.id} marked as completed. File: {zip_path if not s3_path else s3_path}, Size: {file_size} bytes"
+        )
 
         return {
-            'download_url': download_url,
-            'file_size': file_size,
-            'total_files': total,
-            'export_name': export_name
+            "download_url": download_url,
+            "file_size": file_size,
+            "total_files": total,
+            "export_name": export_name,
         }
 
     except Exception as e:
@@ -385,7 +565,7 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
         # Update export history with error
         try:
             export_history = ExportHistory.objects.get(id=export_history_id)
-            export_history.status = 'failed'
+            export_history.status = "failed"
             export_history.error_message = str(e)
             export_history.completed_at = timezone.now()
             export_history.save()
@@ -393,19 +573,21 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
             pass
 
         raise
-    
+
     finally:
         # Clean up all temporary files and directories
         logger.info("Starting cleanup of temporary files and directories...")
-        
+
         # Clean up root export directory (temporary folder with Excel and audio files)
         if root_export_dir and os.path.exists(root_export_dir):
             try:
                 shutil.rmtree(root_export_dir)
                 logger.info(f"Cleaned up temporary export directory: {root_export_dir}")
             except Exception as e:
-                logger.error(f"Failed to remove temporary export directory {root_export_dir}: {str(e)}")
-        
+                logger.error(
+                    f"Failed to remove temporary export directory {root_export_dir}: {str(e)}"
+                )
+
         # Clean up ZIP file if S3 upload was successful or if using temp directory
         if zip_path and os.path.exists(zip_path):
             # Delete ZIP file if:
@@ -416,22 +598,30 @@ def export_with_audio_task(self, export_history_id, folder_structure, category_i
                     os.remove(zip_path)
                     logger.info(f"Cleaned up temporary ZIP file: {zip_path}")
                 except Exception as e:
-                    logger.error(f"Failed to remove temporary ZIP file {zip_path}: {str(e)}")
+                    logger.error(
+                        f"Failed to remove temporary ZIP file {zip_path}: {str(e)}"
+                    )
             else:
                 logger.info(f"Keeping ZIP file for local storage: {zip_path}")
-        
+
         # Clean up export_base_dir if it's a temp directory and is now empty
         if export_base_dir and temp_export_base and os.path.exists(export_base_dir):
             try:
                 # Check if directory is empty
                 if not os.listdir(export_base_dir):
                     os.rmdir(export_base_dir)
-                    logger.info(f"Cleaned up empty temporary export base directory: {export_base_dir}")
+                    logger.info(
+                        f"Cleaned up empty temporary export base directory: {export_base_dir}"
+                    )
                 else:
-                    logger.debug(f"Export base directory not empty, keeping: {export_base_dir}")
+                    logger.debug(
+                        f"Export base directory not empty, keeping: {export_base_dir}"
+                    )
             except Exception as e:
-                logger.warning(f"Could not remove export base directory {export_base_dir}: {str(e)}")
-        
+                logger.warning(
+                    f"Could not remove export base directory {export_base_dir}: {str(e)}"
+                )
+
         logger.info("Cleanup of temporary files and directories completed")
 
 
