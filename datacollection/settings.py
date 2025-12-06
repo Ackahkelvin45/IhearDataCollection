@@ -76,12 +76,13 @@ INSTALLED_APPS = [
     "authentication",
     "data_insights",
     "approval",
+    "export",
     "datacollection",
     "django_celery_results",
     "reports",
     "rest_framework",
     "drf_spectacular",
-    "django_filters",
+    "django_filters"
 ]
 TAILWIND_APP_NAME = "theme"
 
@@ -227,8 +228,6 @@ DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL")
 LOGIN_URL = "/auth/login/"  # URL to redirect to for login
 LOGIN_REDIRECT_URL = "/"  # Where to redirect after login
 LOGOUT_REDIRECT_URL = "/auth/login/"
-
-
 
 
 # Alternative approach without lambda (simpler):

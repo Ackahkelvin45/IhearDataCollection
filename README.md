@@ -188,7 +188,7 @@ datacollection/
    # On Ubuntu/Debian
    sudo apt-get update
    sudo apt-get install -y postgresql postgresql-contrib redis-server ffmpeg
-   
+
    # On macOS
    brew install postgresql redis ffmpeg
    ```

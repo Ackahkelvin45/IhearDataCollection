@@ -120,7 +120,6 @@ class SubClassAdmin(ModelAdmin):
 
             return redirect("..")
 
-        
         print("Showing form for GET request")
         form = CsvImportForm()
         context = {

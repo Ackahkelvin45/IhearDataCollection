@@ -1,0 +1,1956 @@
+{% extends 'datacollection/layout.html' %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<!-- jsTree CSS included below -->
+
+<style>
+  .export-container {
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 2rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    animation: slideIn 0.5s ease-out;
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .export-card {
+    background: white;
+    border-radius: 15px;
+    padding: 2rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    animation: fadeInUp 0.6s ease-out;
+  }
+
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .export-card h3 {
+    color: #667eea;
+    margin-bottom: 1rem;
+    font-size: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .form-group {
+    margin-bottom: 1.5rem;
+  }
+
+  .form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    color: #374151;
+  }
+
+  .form-group input {
+    width: 100%;
+    padding: 0.75rem;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+  }
+
+  .form-group input:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  }
+
+  /* jsTree Custom Styling */
+  .jstree-container-custom {
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+    position: relative;
+  }
+
+  .jstree-container-custom::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    border-radius: 8px 8px 0 0;
+  }
+
+  .jstree-container-custom .jstree-container-ul {
+    padding: 0.5rem;
+  }
+
+  .jstree-container-custom .jstree-node {
+    margin: 2px 0;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+  }
+
+  .jstree-container-custom .jstree-node:hover {
+    background: rgba(102, 126, 234, 0.05);
+  }
+
+  .jstree-container-custom .jstree-anchor {
+    padding: 8px 12px;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+    font-size: 14px;
+  }
+
+  .jstree-container-custom .jstree-anchor:hover {
+    background: rgba(102, 126, 234, 0.1);
+    color: #667eea;
+  }
+
+  .jstree-container-custom .jstree-clicked {
+    background: rgba(102, 126, 234, 0.15) !important;
+    color: #667eea !important;
+    font-weight: 600;
+  }
+
+  .jstree-container .jstree-node {
+    margin: 5px 0;
+  }
+
+  .jstree-container .jstree-anchor {
+    padding: 5px 8px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+  }
+
+  .jstree-container .jstree-anchor:hover {
+    background: #e5e7eb;
+  }
+
+  .jstree-container .jstree-clicked {
+    background: #667eea !important;
+    color: white !important;
+  }
+
+  /* Enhanced jsTree node styling */
+  .jstree-container-custom .jstree-node.jstree-leaf > .jstree-anchor {
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(5px);
+  }
+
+  /* Excel folder marker */
+  .jstree-container-custom .jstree-node.excel-folder > .jstree-anchor {
+    background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
+    border-left: 4px solid #10b981;
+    box-shadow: 0 2px 4px rgba(16, 185, 129, 0.1);
+    font-weight: 600;
+  }
+
+  .jstree-container-custom .jstree-node.excel-folder > .jstree-anchor::after {
+    content: " 📊";
+    font-size: 1rem;
+    margin-left: 0.5rem;
+  }
+
+  /* Audio folder marker */
+  .jstree-container-custom .jstree-node.audio-folder > .jstree-anchor {
+    background: linear-gradient(135deg, #fffbeb 0%, #fefce8 100%);
+    border-left: 4px solid #f59e0b;
+    box-shadow: 0 2px 4px rgba(245, 158, 11, 0.1);
+    font-weight: 600;
+  }
+
+  .jstree-container-custom .jstree-node.audio-folder > .jstree-anchor::after {
+    content: " 🎵";
+    font-size: 1rem;
+    margin-left: 0.5rem;
+  }
+
+  /* Both markers */
+  .jstree-container-custom .jstree-node.excel-folder.audio-folder > .jstree-anchor {
+    background: linear-gradient(135deg, #ecfdf5 0%, #fffbeb 100%);
+    border-left: 4px solid #10b981;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.15);
+  }
+
+  .jstree-container-custom .jstree-node.excel-folder.audio-folder > .jstree-anchor::after {
+    content: " 📊🎵";
+    font-size: 1rem;
+    margin-left: 0.5rem;
+  }
+
+  /* Context menu styling */
+  .jstree-contextmenu {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    padding: 4px 0;
+  }
+
+  .jstree-contextmenu .jstree-contextmenu-item {
+    padding: 8px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .jstree-contextmenu .jstree-contextmenu-item:hover {
+    background: #f3f4f6;
+    color: #667eea;
+  }
+
+  .jstree-contextmenu .jstree-contextmenu-item > i {
+    margin-right: 8px;
+    width: 16px;
+    text-align: center;
+  }
+
+  .export-container .tree-toolbar {
+    display: flex !important;
+    gap: 0.5rem !important;
+    margin-bottom: 1rem !important;
+    flex-wrap: wrap !important;
+    background-color: #059669 !important;
+  }
+
+  .export-container .tree-btn {
+    padding: 0.5rem 1rem !important;
+    border-right: 1px solid #1e293b !important;
+    border-radius: 8px !important;
+    cursor: pointer !important;
+    font-weight: 600 !important;
+    font-size: 0.875rem !important;
+    transition: all 0.3s ease !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+  }
+
+  .export-container .tree-btn:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  }
+
+  .export-container .btn-add {
+    background: #10b981 !important;
+    color: white !important;
+  }
+
+  .export-container .btn-add:hover {
+    background: #059669 !important;
+  }
+
+  .export-container .btn-delete {
+    background: #ef4444 !important;
+    color: white !important;
+  }
+
+  .export-container .btn-delete:hover {
+    background: #dc2626 !important;
+  }
+
+  .export-container .btn-rename {
+    background: #3b82f6 !important;
+    color: white !important;
+  }
+
+  .export-container .btn-rename:hover {
+    background: #2563eb !important;
+  }
+
+  .export-container .btn-mark-excel {
+    background: #10b981 !important;
+    color: white !important;
+  }
+
+  .export-container .btn-mark-excel:hover {
+    background: #059669 !important;
+  }
+
+  .export-container .btn-mark-audio {
+    background: #f59e0b !important;
+    color: white !important;
+  }
+
+  .export-container .btn-mark-audio:hover {
+    background: #d97706 !important;
+  }
+
+  .export-container .btn-clear {
+    background: #6b7280 !important;
+    color: white !important;
+  }
+
+  .export-container .btn-clear:hover {
+    background: #4b5563 !important;
+  }
+
+  /* Demo highlight animation for toolbar buttons */
+  .highlight-demo {
+    animation: highlightPulse 1.5s ease-in-out infinite;
+    box-shadow: 0 0 20px rgba(168, 85, 247, 0.6) !important;
+    border-color: #a855f7 !important;
+  }
+
+  @keyframes highlightPulse {
+    0%, 100% {
+      transform: scale(1);
+      box-shadow: 0 0 20px rgba(168, 85, 247, 0.6);
+    }
+    50% {
+      transform: scale(1.05);
+      box-shadow: 0 0 30px rgba(168, 85, 247, 0.9);
+    }
+  }
+
+  .template-section {
+    background: #eff6ff;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+  }
+
+  .template-btn {
+    padding: 0.5rem 1rem;
+    margin: 0.25rem;
+    background: white;
+    border: 2px solid #667eea;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.875rem;
+  }
+
+  .template-btn:hover {
+    background: #667eea;
+    color: white;
+  }
+
+  .structure-preview {
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-top: 1rem;
+    max-height: 400px;
+    overflow-y: auto;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+
+  .structure-preview .empty-state {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: #6b7280;
+  }
+
+  .structure-preview .empty-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    opacity: 0.6;
+  }
+
+  .structure-preview .empty-text {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: #374151;
+  }
+
+  .structure-preview .empty-hint {
+    font-size: 0.9rem;
+    color: #6b7280;
+  }
+
+  .structure-preview .folder-structure {
+    margin-bottom: 1.5rem;
+  }
+
+  .structure-preview .folder-node {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-radius: 6px;
+    transition: background-color 0.2s ease;
+    margin-bottom: 2px;
+  }
+
+  .structure-preview .folder-node:hover {
+    background: rgba(102, 126, 234, 0.05);
+  }
+
+  .structure-preview .folder-icon {
+    margin-right: 0.75rem;
+    font-size: 1.1rem;
+    opacity: 0.8;
+  }
+
+  .structure-preview .excel-folder-icon {
+    color: #10b981;
+    font-weight: bold;
+  }
+
+  .structure-preview .audio-folder-icon {
+    color: #f59e0b;
+    font-weight: bold;
+  }
+
+  .structure-preview .folder-name {
+    flex: 1;
+    font-weight: 500;
+    color: #374151;
+    font-size: 0.95rem;
+  }
+
+  .structure-preview .location-badge {
+    padding: 0.2rem 0.6rem;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .structure-preview .excel-badge {
+    background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
+    color: #059669;
+    border: 1px solid #10b981;
+  }
+
+  .structure-preview .audio-badge {
+    background: linear-gradient(135deg, #fffbeb 0%, #fefce8 100%);
+    color: #d97706;
+    border: 1px solid #f59e0b;
+  }
+
+  .structure-preview .export-summary {
+    border-top: 2px solid #e5e7eb;
+    padding-top: 1rem;
+    margin-top: 1rem;
+  }
+
+  .structure-preview .summary-item {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    background: white;
+    border: 1px solid #e5e7eb;
+  }
+
+  .structure-preview .excel-summary {
+    border-left: 4px solid #10b981;
+    background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+  }
+
+  .structure-preview .audio-summary {
+    border-left: 4px solid #f59e0b;
+    background: linear-gradient(135deg, #fefce8 0%, #fffbeb 100%);
+  }
+
+  .structure-preview .warning-summary {
+    border-left: 4px solid #ef4444;
+    background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+    color: #dc2626;
+  }
+
+  .category-selector {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 2px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 1rem;
+    margin-top: 1rem;
+  }
+
+  .category-item {
+    padding: 0.75rem;
+    margin: 0.5rem 0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .category-item:hover {
+    background: #f3f4f6;
+  }
+
+  .category-item input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+  }
+
+  .category-item label {
+    cursor: pointer;
+    flex: 1;
+    font-weight: 500;
+  }
+
+  .select-all-btn {
+    padding: 0.5rem 1rem;
+    background: #667eea;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-bottom: 1rem;
+    transition: all 0.3s ease;
+  }
+
+  .select-all-btn:hover {
+    background: #5568d3;
+    transform: scale(1.05);
+  }
+
+  .export-btn {
+    width: 100%;
+    padding: 1rem 2rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 2rem;
+  }
+
+  .export-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+  }
+
+  .export-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* SweetAlert2 Custom Button Styling */
+  .swal2-confirm.swal2-styled {
+    background-color: #ef4444 !important;
+    border: none !important;
+    border-radius: 0.375rem !important;
+    padding: 0.5rem 1rem !important;
+    font-weight: 500 !important;
+    margin-right: 0.5rem !important;
+    margin-left: 0.5rem !important;
+    transition: all 0.2s ease !important;
+  }
+
+  .swal2-confirm.swal2-styled:hover {
+    background-color: #dc2626 !important;
+  }
+
+  .swal2-cancel.swal2-styled {
+    background-color: #e5e7eb !important;
+    color: #374151 !important;
+    border: none !important;
+    border-radius: 0.375rem !important;
+    padding: 0.5rem 1rem !important;
+    font-weight: 500 !important;
+    transition: all 0.2s ease !important;
+  }
+
+  .swal2-cancel.swal2-styled:hover {
+    background-color: #d1d5db !important;
+  }
+
+  .swal2-success .swal2-confirm.swal2-styled {
+    background-color: #10b981 !important;
+  }
+
+  .swal2-success .swal2-confirm.swal2-styled:hover {
+    background-color: #059669 !important;
+  }
+
+  /* SweetAlert2 Styling - Exact copy from datasetlist.html */
+  .swal2-popup {
+    background: #ffffff;
+    border-radius: 0.5rem;
+    font-family: inherit;
+  }
+
+  .dark .swal2-popup {
+    background: #1e293b;
+    color: #ffffff;
+  }
+
+  .swal2-title {
+    color: inherit;
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+
+  .swal2-html-container {
+    color: inherit;
+  }
+
+  .swal2-confirm {
+    background-color: #ef4444 !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 0.375rem !important;
+    padding: 0.5rem 1rem !important;
+    font-weight: 500 !important;
+    margin-right: 0.5rem !important;
+    margin-left: 0.5rem !important;
+  }
+
+  .swal2-confirm:hover {
+    background-color: #dc2626 !important;
+  }
+  .swal2-actions{
+   width: 100%;
+   display: flex;
+   justify-content: end ;
+   gap: 5;
+   padding-right: 10px;
+  }
+
+  .swal2-cancel {
+    background-color: #e5e7eb !important;
+    color: #374151 !important;
+    border: none !important;
+    border-radius: 0.375rem !important;
+    padding: 0.5rem 1rem !important;
+    font-weight: 500 !important;
+  }
+
+  .swal2-cancel:hover {
+    background-color: #d1d5db !important;
+  }
+
+  .swal2-icon.swal2-warning {
+    color: #ef4444 !important;
+    border-color: #ef4444 !important;
+  }
+
+  /* Custom styling for success dialog download button */
+  .swal2-success .swal2-confirm {
+    background-color: #10b981 !important;
+  }
+
+  .swal2-success .swal2-confirm:hover {
+    background-color: #059669 !important;
+  }
+
+  /* Dark mode support for SweetAlert */
+  .dark .swal2-popup {
+    background: #1e293b !important;
+    color: #ffffff !important;
+  }
+
+  .dark .swal2-title {
+    color: #ffffff !important;
+  }
+
+  .dark .swal2-content {
+    color: #e2e8f0 !important;
+  }
+
+  /* Responsive design for mobile */
+  @media (max-width: 480px) {
+    .custom-swal-buttons {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .custom-btn {
+      width: 100%;
+      min-width: auto;
+    }
+  }
+
+  .progress-container {
+    display: none !important;
+    margin-top: 2rem !important;
+    padding: 1.5rem !important;
+    background: #f9fafb !important;
+    border-radius: 10px !important;
+    border: 2px solid #e5e7eb !important;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+  }
+
+  .progress-container.active {
+    display: block !important;
+    animation: fadeIn 0.3s ease !important;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .progress-bar {
+    width: 100%;
+    height: 30px;
+    background: #e5e7eb;
+    border-radius: 15px;
+    overflow: hidden;
+    margin: 1rem 0;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    transition: width 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 600;
+    font-size: 0.875rem;
+  }
+
+  .spinner {
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #667eea;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    animation: spin 1s linear infinite;
+    display: inline-block;
+    margin-right: 1rem;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+  <nav>
+    <!-- breadcrumb -->
+    <ol style="margin-bottom: 30px;" class="flex flex-wrap pt-1 mr-12 bg-transparent rounded-lg sm:mr-16">
+      <li class="text-sm leading-normal">
+        <a class="text-white opacity-50" href="javascript:;">home</a>
+      </li>
+      <li class="text-sm pl-2 capitalize leading-normal text-white before:float-left before:pr-2 before:text-white before:content-['/']" aria-current="page">export with audio</li>
+    </ol>
+  </nav>
+
+  <!-- row 1 -->
+  <div class="flex flex-wrap -mx-3">
+    <!-- card1 -->
+    <div class="w-full px-6 py-6 mx-auto">
+      <!-- table 1 -->
+      <div class="w-full max-w-full ">
+        <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+
+          {% if messages %}
+            <div class="m-4 top-4 right-4 z-50 w-ful">
+              {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} mb-4 flex items-center justify-between p-4 bg-white dark:bg-slate-800 rounded-lg shadow-lg border-l-4 {% if message.tags == 'error' %}border-red-500{% elif message.tags == 'success' %}border-green-500{% else %}border-blue-500{% endif %}">
+                  <div class="flex items-center">
+                    {% if message.tags == 'success' %}
+                      <svg class="w-5 h-5 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                    {% elif message.tags == 'error' %}
+                      <svg class="w-5 h-5 text-red-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                      </svg>
+                    {% else %}
+                      <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                      </svg>
+                    {% endif %}
+                    <span class="text-sm font-medium">{{ message }}</span>
+                  </div>
+                  <button class="close-btn ml-4 text-slate-400 hover:text-slate-500">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                  </button>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+
+          <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-0">
+            <div class="flex items-center justify-between">
+              <h6>Export Audio Datasets with Metadata</h6>
+              <a href="{% url 'export:export_history' %}" class="inline-block bg-secondary px-8 py-2 font-bold leading-normal text-center text-white align-middle transition-all ease-in bg-primary border-0 rounded-lg shadow-md cursor-pointer  tracking-tight-rem hover:shadow-xs hover:-translate-y-px active:opacity-85">view export history</a>
+            </div>
+          </div>
+
+          <div class="flex-auto p-6">
+
+    <form id="export-form">
+      {% csrf_token %}
+
+      <!-- Export Name -->
+      <div class="form-group">
+        <label class="mb-2 text-sm">Export File Name (Excel filename)</label>
+        <input
+          type="text"
+          name="export_name"
+          placeholder="my_audio_export"
+          value="audio_export_{{ now|date:'Ymd_His' }}"
+          required
+          class="focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
+        >
+      </div>
+
+      <!-- Visual Folder Builder with jsTree -->
+      <div class="form-group mt-6">
+        <label class="mb-4  font-bold text-slate-700 dark:text-white/80">Folder Structure Builder</label>
+
+        <div  class="template-section">
+          <label style="font-size: 16px;">Quick Folder Structure Templates:</label>
+          <button type="button" 
+          class="filter-btn  mr-2  inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-primary align-middle transition-all ease-in bg-transparent border border-primary border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-50 hover:border-blue-600 tracking-tight-rem" 
+          onclick="loadTemplate('siblings')">Siblings (Same Level)</button>
+          <button type="button"  class="filter-btn  mr-2  inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-primary align-middle transition-all ease-in bg-transparent border border-primary border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-50 hover:border-blue-600 tracking-tight-rem"  onclick="loadTemplate('nested')">Nested (Audio in Excel folder)</button>
+          <button type="button" class="filter-btn  mr-2  inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-primary align-middle transition-all ease-in bg-transparent border border-primary border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-50 hover:border-blue-600 tracking-tight-rem"  onclick="loadTemplate('separate')">Separate (Different Parents)</button>
+          <button type="button" class="filter-btn  mr-2  inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-primary align-middle transition-all ease-in bg-transparent border border-primary border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-50 hover:border-blue-600 tracking-tight-rem" onclick="loadTemplate('flat')">Flat (Root Level)</button>
+        </div>
+
+        <div style=" padding-top: 10px;padding-bottom: 10px;background-color: #f2f2f2; margin-top: 20px; margin-bottom: 10px; display: flex; justify-content: center;align-items: center;padding-right: 10px; padding-left: 10px;gap: 10px;" class="tree-toolbar">
+          <button style="border-right: 1px solid #1e293b; padding-right: 10px;font-size: 14px;" type="button" class="tree-btn btn-add" onclick="addFolder()">
+            <i class="fas fa-plus"></i> Add Folder
+          </button>
+          <button style="border-right: 1px solid #1e293b; padding-right: 10px;padding-left: 10px;font-size: 14px;" type="button" class="tree-btn btn-add" onclick="addChildFolder()">
+            <i class="fas fa-folder-plus"></i> Add Child
+          </button>
+          <button style="border-right: 1px solid #1e293b; padding-right: 10px;padding-left: 10px;font-size: 14px;" type="button" class="tree-btn btn-rename" onclick="renameFolder()">
+            <i class="fas fa-edit"></i> Rename
+          </button>
+          <button type="button" tyle="border-right: 1px solid #1e293b; padding-right: 10px;padding-left: 10px;font-size: 14px;" class="tree-btn btn-delete" onclick="deleteFolder()">
+            <i class="fas fa-trash"></i> Delete
+          </button>
+          <button style="border-right: 1px solid #1e293b; padding-right: 10px;padding-left: 10px;font-size: 14px;"  type="button" class="tree-btn btn-mark-excel" onclick="markAsExcel()">
+            <i class="fas fa-file-excel"></i> Mark as Excel
+          </button>
+          <button style="border-right: 1px solid #1e293b; padding-right: 10px;padding-left: 10px;font-size: 14px;"  type="button" class="tree-btn btn-mark-audio" onclick="markAsAudio()">
+            <i class="fas fa-music"></i> Mark as Audio
+          </button>
+          <button style=" padding-right: 10px;padding-left: 10px;font-size: 14px;"  type="button" class="tree-btn btn-clear" onclick="clearStructure()">
+            <i class="fas fa-trash-alt"></i> Clear All
+          </button>
+        </div>
+
+        <!-- Folder Tree Container with improved styling -->
+        <div class="relative">
+          <div class="jstree-container-custom border  rounded-lg overflow-hidden">
+            <div id="folder-tree" class="min-h-[300px] p-4"></div>
+          </div>
+          <!-- Legend and Controls -->
+          <div class="mt-4 flex items-center justify-between bg-gray-50 rounded-lg p-3 border border-gray-200">
+            <div class="flex items-center space-x-4 " style="display: flex;flex-direction: column;gap: 10px;">
+              <div class="flex items-center text-sm text-gray-600">
+                <span class="inline-block w-3 h-3 bg-green-500 rounded-full mr-2 shadow-sm"></span>
+                <span id="excel-location" class="font-medium">Excel Location: Not set</span>
+              </div>
+              <div class="flex items-center text-sm text-gray-600">
+                <span class="inline-block w-3 h-3 bg-orange-500 rounded-full mr-2 shadow-sm"></span>
+                <span id="audio-location" class="font-medium"> Audio Location: Not set</span>
+              </div>
+            </div>
+            <!-- Demo button to create demo folders and show interaction methods -->
+            <button type="button" style="border: 1px solid #1e293b; padding: 10px;border-radius: 5px; font-size: 14px; cursor: pointer; transition: all 0.3s ease;" id="demo-btn"
+                    class="inline-flex items-center px-3 py-1.5 text-xs font-medium bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-md border border-purple-200 transition-all duration-200 hover:shadow-sm"
+                    title="Create demo folders and demonstrate all jsTree interaction methods step-by-step">
+              <i class="fas fa-play mr-2"></i>
+              Demo Tutorial
+            </button>
+          </div>
+        </div>
+
+        <div style="margin-top: 20px;margin-bottom: 10px;" class="structure-preview">
+          <div class="font-bold text-lg" style="color: #6b7280;  margin-bottom: 0.5rem;"> Structure Preview</div>
+          <div id="preview-content">No structure defined yet</div>
+        </div>
+      </div>
+
+
+
+      <!-- Category Selection -->
+      <div class="form-group">
+        <label class="mb-2 font-bold text-base">Select Categories to Export</label>
+   
+        <div class="category-selector">
+          <div class="category-item">
+            <input type="checkbox" name="categories" value="all" id="cat_all" checked>
+            <label for="cat_all"><strong>All Categories</strong></label>
+          </div>
+          {% for category in categories %}
+          <div class="category-item">
+            <input type="checkbox" name="categories" value="{{ category.id }}" id="cat_{{ category.id }}" class="category-checkbox">
+            <label for="cat_{{ category.id }}">{{ category.name }}</label>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Progress Container -->
+      <div class="progress-container" id="progress-container" style="display: none;">
+        <div style="display: flex; align-items: center; margin-bottom: 1rem;">
+          <div class="spinner"></div>
+          <strong>Exporting...</strong>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progress-fill" style="width: 0%">0%</div>
+        </div>
+        <div id="progress-text" style="text-align: center; color: #6b7280; font-size: 0.875rem;">
+          Preparing export...
+        </div>
+      </div>
+
+
+      <div class="flex justify-end">
+
+        <button type="submit"  class="inline-block px-8 py-2 font-bold leading-normal text-center text-white align-middle transition-all ease-in bg-primary border-0 rounded-lg shadow-md cursor-pointer text-sm  tracking-tight-rem hover:shadow-xs hover:-translate-y-px active:opacity-85"  id="export-btn">
+          <i class="fas fa-download"></i>
+          Start Export
+        </button>
+      </div>
+      <!-- Export Button -->
+      
+    </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    // Ensure progress container is hidden on page load
+    const progressContainer = document.getElementById('progress-container');
+    if (progressContainer) {
+      progressContainer.classList.remove('active');
+      progressContainer.style.display = 'none';
+    }
+
+    document.querySelectorAll('.close-btn').forEach(button => {
+      button.addEventListener('click', (e) => {
+        e.target.closest('.alert').remove();
+      });
+    });
+
+    setTimeout(() => {
+      document.querySelectorAll('.alert').forEach(alert => {
+        alert.remove();
+      });
+    }, 10000);
+  });
+</script>
+
+<script>
+  let folderStructure = {
+    excelPath: '',
+    audioPath: ''
+  };
+  let nodeIdCounter = 1;
+
+
+  function addFolder() {
+    const inst = $('#folder-tree').jstree(true);
+    const newNode = inst.create_node('#', {
+      id: String(nodeIdCounter++),
+      text: 'New Folder',
+      data: { isExcel: false, isAudio: false }
+    }, 'last');
+    inst.open_node(newNode);
+    inst.edit(newNode);
+  }
+
+  function addChildFolder() {
+    const inst = $('#folder-tree').jstree(true);
+    const selected = inst.get_selected();
+    if (selected.length === 0) {
+      Swal.fire('Please select a folder first', '', 'info');
+      return;
+    }
+    const parent = selected[0];
+    const newNode = inst.create_node(parent, {
+      id: String(nodeIdCounter++),
+      text: 'New Folder',
+      data: { isExcel: false, isAudio: false }
+    }, 'last');
+    inst.open_node(parent);
+    inst.edit(newNode);
+  }
+
+  function addFolderToNode(nodeId) {
+    const inst = $('#folder-tree').jstree(true);
+    const newNode = inst.create_node(nodeId, {
+      id: String(nodeIdCounter++),
+      text: 'New Folder',
+      data: { isExcel: false, isAudio: false }
+    }, 'last');
+    inst.open_node(nodeId);
+    inst.edit(newNode);
+  }
+
+  function renameFolder() {
+    const inst = $('#folder-tree').jstree(true);
+    const selected = inst.get_selected();
+    if (selected.length === 0) {
+      Swal.fire('Please select a folder to rename', '', 'info');
+      return;
+    }
+    inst.edit(selected[0]);
+  }
+
+  function renameNode(nodeId) {
+    const inst = $('#folder-tree').jstree(true);
+    inst.edit(nodeId);
+  }
+
+  function deleteFolder() {
+    const inst = $('#folder-tree').jstree(true);
+    const selected = inst.get_selected();
+    if (selected.length === 0) {
+      Swal.fire('Please select a folder to delete', '', 'info');
+      return;
+    }
+
+    Swal.fire({
+      title: 'Delete folder?',
+      text: 'This will delete the folder and all its children',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, delete',
+      cancelButtonText: 'Cancel'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        inst.delete_node(selected);
+        updatePreview();
+      }
+    });
+  }
+
+  function deleteNode(nodeId) {
+    const inst = $('#folder-tree').jstree(true);
+    Swal.fire({
+      title: 'Delete folder?',
+      text: 'This will delete the folder and all its children',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, delete',
+      cancelButtonText: 'Cancel'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        inst.delete_node(nodeId);
+        updatePreview();
+      }
+    });
+  }
+
+  function markAsExcel() {
+    const inst = $('#folder-tree').jstree(true);
+    const selected = inst.get_selected();
+    if (selected.length === 0) {
+      Swal.fire('Please select a folder first', '', 'info');
+      return;
+    }
+    markNodeAsExcel(selected[0]);
+  }
+
+  function markNodeAsExcel(nodeId) {
+    const inst = $('#folder-tree').jstree(true);
+    const node = inst.get_node(nodeId);
+
+    // Clear previous Excel markers
+    inst.get_json(null, {flat: true}).forEach(function(n) {
+      if (n.data && n.data.isExcel) {
+        const oldNode = inst.get_node(n.id);
+        oldNode.data.isExcel = false;
+        inst.set_icon(n.id, 'fa fa-folder');
+        inst.get_node(n.id, true).removeClass('excel-folder');
+      }
+    });
+
+    // Mark new Excel location
+    node.data.isExcel = true;
+    inst.set_icon(nodeId, 'fa fa-file-excel');
+    inst.get_node(nodeId, true).addClass('excel-folder');
+
+    // Update path
+    folderStructure.excelPath = getNodePath(nodeId);
+    updatePreview();
+  }
+
+  function markAsAudio() {
+    const inst = $('#folder-tree').jstree(true);
+    const selected = inst.get_selected();
+    if (selected.length === 0) {
+      Swal.fire('Please select a folder first', '', 'info');
+      return;
+    }
+    markNodeAsAudio(selected[0]);
+  }
+
+  function markNodeAsAudio(nodeId) {
+    const inst = $('#folder-tree').jstree(true);
+    const node = inst.get_node(nodeId);
+
+    // Clear previous Audio markers
+    inst.get_json(null, {flat: true}).forEach(function(n) {
+      if (n.data && n.data.isAudio) {
+        const oldNode = inst.get_node(n.id);
+        oldNode.data.isAudio = false;
+        if (!oldNode.data.isExcel) {
+          inst.set_icon(n.id, 'fa fa-folder');
+        }
+        inst.get_node(n.id, true).removeClass('audio-folder');
+      }
+    });
+
+    // Mark new Audio location
+    node.data.isAudio = true;
+    if (!node.data.isExcel) {
+      inst.set_icon(nodeId, 'fa fa-music');
+    }
+    inst.get_node(nodeId, true).addClass('audio-folder');
+
+    // Update path
+    folderStructure.audioPath = getNodePath(nodeId);
+    updatePreview();
+  }
+
+  function getNodePath(nodeId) {
+    const inst = $('#folder-tree').jstree(true);
+    const path = [];
+    let current = inst.get_node(nodeId);
+
+    while (current) {
+      path.unshift(current.text);
+      if (current.parent && current.parent !== '#') {
+        current = inst.get_node(current.parent);
+      } else {
+        break;
+      }
+    }
+
+    return path.join('/');
+  }
+
+  function clearStructure() {
+    Swal.fire({
+      title: 'Clear all folders?',
+      text: 'This will remove all folders and assignments',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, clear all',
+      cancelButtonText: 'Cancel'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        const inst = $('#folder-tree').jstree(true);
+        inst.destroy();
+        $('#folder-tree').jstree({
+          'core': {
+            'data': [],
+            'check_callback': true,
+            'themes': {
+              'name': 'default',
+              'dots': true,
+              'icons': true
+            }
+          },
+          'plugins': ['contextmenu', 'dnd', 'state', 'types'],
+          'contextmenu': {
+            'items': function(node) {
+              return {
+                'add': {
+                  'label': 'Add Folder',
+                  'action': function(data) {
+                    addFolderToNode(data.reference[0].id);
+                  }
+                },
+                'rename': {
+                  'label': 'Rename',
+                  'action': function(data) {
+                    renameNode(data.reference[0].id);
+                  }
+                },
+                'delete': {
+                  'label': 'Delete',
+                  'action': function(data) {
+                    deleteNode(data.reference[0].id);
+                  }
+                },
+                'mark_excel': {
+                  'label': 'Mark as Excel Location',
+                  'action': function(data) {
+                    markNodeAsExcel(data.reference[0].id);
+                  }
+                },
+                'mark_audio': {
+                  'label': 'Mark as Audio Location',
+                  'action': function(data) {
+                    markNodeAsAudio(data.reference[0].id);
+                  }
+                }
+              };
+            }
+          },
+          'types': {
+            'default': {
+              'icon': 'fa fa-folder'
+            }
+          }
+        });
+        folderStructure = { excelPath: '', audioPath: '' };
+        nodeIdCounter = 1;
+        updatePreview();
+      }
+    });
+  }
+
+  function loadTemplate(type) {
+    const inst = $('#folder-tree').jstree(true);
+    inst.destroy();
+
+    let data = [];
+    nodeIdCounter = 1;
+
+    switch(type) {
+      case 'siblings':
+        data = [
+          {
+            "id": "1",
+            "text": "export",
+            "data": { "isExcel": true, "isAudio": false },
+            "state": { "opened": true }
+          },
+          {
+            "id": "2",
+            "text": "audio_files",
+            "data": { "isExcel": false, "isAudio": true },
+            "state": { "opened": true }
+          }
+        ];
+        folderStructure.excelPath = 'export';
+        folderStructure.audioPath = 'audio_files';
+        nodeIdCounter = 3;
+        break;
+
+      case 'nested':
+        data = [
+          {
+            "id": "1",
+            "text": "export",
+            "data": { "isExcel": true, "isAudio": false },
+            "state": { "opened": true },
+            "children": [
+              {
+                "id": "2",
+                "text": "audio_files",
+                "data": { "isExcel": false, "isAudio": true }
+              }
+            ]
+          }
+        ];
+        folderStructure.excelPath = 'export';
+        folderStructure.audioPath = 'export/audio_files';
+        nodeIdCounter = 3;
+        break;
+
+      case 'separate':
+        data = [
+          {
+            "id": "1",
+            "text": "data",
+            "state": { "opened": true },
+            "children": [
+              {
+                "id": "2",
+                "text": "excel",
+                "data": { "isExcel": true, "isAudio": false }
+              }
+            ]
+          },
+          {
+            "id": "3",
+            "text": "media",
+            "state": { "opened": true },
+            "children": [
+              {
+                "id": "4",
+                "text": "audio",
+                "data": { "isExcel": false, "isAudio": true }
+              }
+            ]
+          }
+        ];
+        folderStructure.excelPath = 'data/excel';
+        folderStructure.audioPath = 'media/audio';
+        nodeIdCounter = 5;
+        break;
+
+      case 'flat':
+        data = [
+          {
+            "id": "1",
+            "text": "export",
+            "data": { "isExcel": true, "isAudio": true },
+            "state": { "opened": true }
+          }
+        ];
+        folderStructure.excelPath = 'export';
+        folderStructure.audioPath = 'export';
+        nodeIdCounter = 2;
+        break;
+    }
+
+    $('#folder-tree').jstree({
+      'core': {
+        'data': data,
+        'check_callback': true,
+        'themes': {
+          'name': 'default',
+          'dots': true,
+          'icons': true
+        }
+      },
+      'plugins': ['contextmenu', 'dnd', 'state', 'types'],
+      'contextmenu': {
+        'items': function(node) {
+          return {
+            'add': {
+              'label': 'Add Folder',
+              'action': function(data) {
+                addFolderToNode(data.reference[0].id);
+              }
+            },
+            'rename': {
+              'label': 'Rename',
+              'action': function(data) {
+                renameNode(data.reference[0].id);
+              }
+            },
+            'delete': {
+              'label': 'Delete',
+              'action': function(data) {
+                deleteNode(data.reference[0].id);
+              }
+            },
+            'mark_excel': {
+              'label': 'Mark as Excel Location',
+              'action': function(data) {
+                markNodeAsExcel(data.reference[0].id);
+              }
+            },
+            'mark_audio': {
+              'label': 'Mark as Audio Location',
+              'action': function(data) {
+                markNodeAsAudio(data.reference[0].id);
+              }
+            }
+          };
+        }
+      },
+      'types': {
+        'default': {
+          'icon': 'fa fa-folder'
+        }
+      }
+    });
+
+    // Apply visual markers
+    setTimeout(() => {
+      const inst = $('#folder-tree').jstree(true);
+      inst.get_json(null, {flat: true}).forEach(function(n) {
+        if (n.data) {
+          if (n.data.isExcel) {
+            inst.set_icon(n.id, 'fa fa-file-excel');
+            inst.get_node(n.id, true).addClass('excel-folder');
+          }
+          if (n.data.isAudio) {
+            if (!n.data.isExcel) {
+              inst.set_icon(n.id, 'fa fa-music');
+            }
+            inst.get_node(n.id, true).addClass('audio-folder');
+          }
+        }
+      });
+    }, 100);
+
+    updatePreview();
+  }
+
+  function updatePreview() {
+    const inst = $('#folder-tree').jstree(true);
+    const preview = document.getElementById('preview-content');
+    const excelLocationSpan = document.getElementById('excel-location');
+    const audioLocationSpan = document.getElementById('audio-location');
+
+    // Recalculate paths
+    inst.get_json(null, {flat: true}).forEach(function(n) {
+      if (n.data) {
+        if (n.data.isExcel) {
+          folderStructure.excelPath = getNodePath(n.id);
+        }
+        if (n.data.isAudio) {
+          folderStructure.audioPath = getNodePath(n.id);
+        }
+      }
+    });
+
+    // Update legend with folder names
+    if (folderStructure.excelPath) {
+      excelLocationSpan.textContent = `Excel: ${folderStructure.excelPath}`;
+      excelLocationSpan.style.color = '#059669';
+    } else {
+      excelLocationSpan.textContent = 'Excel Location: Not set';
+      excelLocationSpan.style.color = '#6b7280';
+    }
+
+    if (folderStructure.audioPath) {
+      audioLocationSpan.style.display = '';
+      audioLocationSpan.textContent = `Audio: ${folderStructure.audioPath}`;
+      audioLocationSpan.style.color = '#d97706';
+    } else {
+      audioLocationSpan.textContent = 'Audio Location: Not set';
+      audioLocationSpan.style.color = '#6b7280';
+    }
+
+    let previewHTML = '';
+
+    if (inst.get_json().length === 0) {
+      previewHTML = `
+        <div class="empty-state" style="margin-top: 10px;">
+          <div class="text-sm" >No folder structure defined yet</div>
+          <div class="text-sm" style="margin-bottom: 30px;">Use the toolbar above to create folders and organize your export structure</div>
+        </div>
+      `;
+    } else {
+      previewHTML += '<div class="folder-structure">';
+
+      const buildTreeHTML = (nodes, indent = 0) => {
+        nodes.forEach(node => {
+          const indentStyle = `margin-left: ${indent * 20}px;`;
+          let iconClass = 'folder-icon';
+          let nodeClass = 'folder-node';
+
+          if (node.data && node.data.isExcel) {
+            iconClass += ' excel-folder-icon';
+            nodeClass += ' excel-node';
+          }
+          if (node.data && node.data.isAudio) {
+            iconClass += ' audio-folder-icon';
+            nodeClass += ' audio-node';
+          }
+
+          previewHTML += `
+            <div class="${nodeClass}" style="${indentStyle}">
+              <span class="${iconClass}">📁</span>
+              <span class="folder-name">${node.text}</span>
+              ${node.data && node.data.isExcel ? '<span class="location-badge excel-badge">EXCEL</span>' : ''}
+              ${node.data && node.data.isAudio ? '<span class="location-badge audio-badge">AUDIO</span>' : ''}
+            </div>
+          `;
+
+          if (node.children && node.children.length > 0) {
+            const children = node.children.map(id => inst.get_node(id));
+            buildTreeHTML(children, indent + 1);
+          }
+        });
+      };
+
+      buildTreeHTML(inst.get_json());
+      previewHTML += '</div>';
+
+      // Add export summary
+      previewHTML += '<div class="export-summary">';
+      if (folderStructure.excelPath) {
+        previewHTML += `<div  style="margin-bottom: 10px;" class="summary-item excel-summary"><strong>Excel file:</strong> ${folderStructure.excelPath}/[filename].xlsx</div>`;
+      } else {
+        previewHTML += '<div style="margin-bottom: 10px;" class="summary-item warning-summary"><strong>Excel location:</strong> Not set</div>';
+      }
+
+      if (folderStructure.audioPath) {
+        previewHTML += `<div class="summary-item audio-summary"> <strong>Audio files:</strong> ${folderStructure.audioPath}/[files]</div>`;
+      } else {
+        previewHTML += '<div class="summary-item warning-summary"> <strong>Audio location:</strong> Not set</div>';
+      }
+      previewHTML += '</div>';
+    }
+
+    preview.innerHTML = previewHTML;
+  }
+
+  // Category selection
+  const allCheckbox = document.getElementById('cat_all');
+  const categoryCheckboxes = document.querySelectorAll('.category-checkbox');
+
+  allCheckbox.addEventListener('change', function() {
+    categoryCheckboxes.forEach(cb => cb.checked = this.checked);
+  });
+
+  categoryCheckboxes.forEach(cb => {
+    cb.addEventListener('change', function() {
+      if (!this.checked) {
+        allCheckbox.checked = false;
+      } else {
+        const allSelected = Array.from(categoryCheckboxes).every(c => c.checked);
+        allCheckbox.checked = allSelected;
+      }
+    });
+  });
+
+  function toggleAllCategories() {
+    const isAllChecked = allCheckbox.checked;
+    allCheckbox.checked = !isAllChecked;
+    categoryCheckboxes.forEach(cb => cb.checked = !isAllChecked);
+  }
+
+  // Form submission
+  document.getElementById('export-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    if (!folderStructure.excelPath || !folderStructure.audioPath) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Incomplete Structure',
+        text: 'Please mark both Excel and Audio folder locations'
+      });
+      return;
+    }
+
+    const formData = new FormData(this);
+    const exportBtn = document.getElementById('export-btn');
+    const progressContainer = document.getElementById('progress-container');
+
+    // Handle categories
+    if (allCheckbox.checked) {
+      formData.delete('categories');
+    } else {
+      formData.delete('categories');
+      const selectedCategories = Array.from(categoryCheckboxes)
+        .filter(cb => cb.checked)
+        .map(cb => cb.value);
+      selectedCategories.forEach(catId => {
+        formData.append('categories', catId);
+      });
+    }
+
+    // Add folder structure
+    const structureData = {
+      excel_path: folderStructure.excelPath,
+      audio_path: folderStructure.audioPath,
+      audio_structure_template: formData.get('audio_structure_template') || ''
+    };
+    formData.append('folder_structure', JSON.stringify(structureData));
+
+    exportBtn.disabled = true;
+    progressContainer.classList.add('active');
+
+    try {
+      const response = await fetch('{% url "export:export_with_audio" %}', {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'X-CSRFToken': formData.get('csrfmiddlewaretoken')
+        }
+      });
+
+      const data = await response.json();
+
+      if (data.status === 'success') {
+        pollExportProgress(data.task_id);
+      } else {
+        throw new Error(data.error || 'Export failed to start');
+      }
+    } catch (error) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Export Failed',
+        text: error.message
+      });
+      exportBtn.disabled = false;
+      progressContainer.classList.remove('active');
+    }
+  });
+
+  function pollExportProgress(taskId) {
+    const progressFill = document.getElementById('progress-fill');
+    const progressText = document.getElementById('progress-text');
+
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch(`/export/api/progress/${taskId}/`);
+        const data = await response.json();
+
+        if (data.status === 'processing') {
+          const progress = data.progress || 0;
+          progressFill.style.width = `${progress}%`;
+          progressFill.textContent = `${progress}%`;
+          progressText.textContent = `Processing ${data.current} of ${data.total} files...`;
+        } else if (data.status === 'completed') {
+          clearInterval(interval);
+          progressFill.style.width = '100%';
+          progressFill.textContent = '100%';
+          progressText.textContent = 'Export completed!';
+
+          Swal.fire({
+            icon: 'success',
+            title: 'Export Complete!',
+            html: `
+              <p>Successfully exported ${data.total_files} files</p>
+              <p>File size: ${(data.file_size / 1024 / 1024).toFixed(2)} MB</p>
+            `,
+            showCancelButton: true,
+            confirmButtonText: 'Download',
+            cancelButtonText: 'Close'
+          }).then((result) => {
+            if (result.isConfirmed) {
+              window.location.href = data.download_url;
+            }
+            document.getElementById('export-btn').disabled = false;
+            document.getElementById('progress-container').classList.remove('active');
+          });
+        } else if (data.status === 'failed') {
+          clearInterval(interval);
+          Swal.fire({
+            icon: 'error',
+            title: 'Export Failed',
+            text: data.error
+          });
+          document.getElementById('export-btn').disabled = false;
+          document.getElementById('progress-container').classList.remove('active');
+        }
+      } catch (error) {
+        clearInterval(interval);
+        console.error('Progress check failed:', error);
+      }
+    }, 2000);
+  }
+</script>
+
+<!-- 4 include the jQuery library -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.12.1/jquery.min.js"></script>
+<!-- 5 include the minified jstree source -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jstree/3.2.1/jstree.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jstree/3.2.1/themes/default/style.min.css" />
+
+<script>
+  // 6 create an instance when the DOM is ready (following jsTree documentation)
+  $(function () {
+    $('#folder-tree').jstree({
+      'core': {
+        'animation': 150,
+        'check_callback': true,
+        'themes': {
+          'stripes': true,
+          'dots': true,
+          'icons': true,
+          'name': 'default'
+        },
+        'data': []
+      },
+      'types': {
+        'excel': {
+          'icon': 'fa fa-file-excel',
+          'valid_children': ['audio', 'folder']
+        },
+        'audio': {
+          'icon': 'fa fa-music',
+          'valid_children': ['folder']
+        },
+        'folder': {
+          'icon': 'fa fa-folder',
+          'valid_children': ['folder', 'audio']
+        }
+      },
+      'plugins': [
+        'contextmenu', 'dnd', 'search',
+        'state', 'types', 'wholerow'
+      ],
+      'contextmenu': {
+        'items': function(node) {
+          var items = {
+            'add': {
+              'label': 'Add Folder',
+              'icon': 'fa fa-plus',
+              'action': function(data) {
+                addFolderToNode(data.reference[0].id);
+              }
+            },
+            'rename': {
+              'label': 'Rename',
+              'icon': 'fa fa-edit',
+              'action': function(data) {
+                renameNode(data.reference[0].id);
+              }
+            },
+            'delete': {
+              'label': 'Delete',
+              'icon': 'fa fa-trash',
+              'action': function(data) {
+                deleteNode(data.reference[0].id);
+              }
+            },
+            'mark_excel': {
+              'label': 'Mark as Excel Location',
+              'icon': 'fa fa-file-excel',
+              'action': function(data) {
+                markNodeAsExcel(data.reference[0].id);
+              }
+            },
+            'mark_audio': {
+              'label': 'Mark as Audio Location',
+              'icon': 'fa fa-music',
+              'action': function(data) {
+                markNodeAsAudio(data.reference[0].id);
+              }
+            }
+          };
+          return items;
+        }
+      }
+    });
+
+    // 7 bind to events triggered on the tree
+    $('#folder-tree').on("changed.jstree", function (e, data) {
+      console.log("Tree changed:", data.selected);
+      updatePreview();
+    });
+
+    $('#folder-tree').on('rename_node.jstree', function(e, data) {
+      updatePreview();
+    });
+
+    $('#folder-tree').on('create_node.jstree', function(e, data) {
+      updatePreview();
+    });
+
+    $('#folder-tree').on('delete_node.jstree', function(e, data) {
+      updatePreview();
+    });
+
+    $('#folder-tree').on('move_node.jstree', function(e, data) {
+      updatePreview();
+    });
+
+    // 8 interact with the tree - either way is OK
+    $('#demo-btn').on('click', function () {
+      const $btn = $(this);
+      const originalText = $btn.html();
+
+      // Visual feedback - show loading state
+      $btn.html('<i class="fas fa-spinner fa-spin mr-1.5"></i>Running Tutorial...');
+      $btn.prop('disabled', true);
+
+      const inst = $('#folder-tree').jstree(true);
+      const existingNodes = inst.get_json();
+
+      // If tree is empty, create demo nodes first
+      if (existingNodes.length === 0) {
+        console.log('Demo: Tree is empty, creating demo nodes...');
+
+        // Create demo nodes
+        const demoNode1 = inst.create_node('#', {
+          id: 'demo-1',
+          text: 'Demo Excel Folder',
+          data: { isExcel: true, isAudio: false }
+        }, 'last');
+        console.log('Demo: Created Excel demo node:', demoNode1);
+
+        const demoNode2 = inst.create_node('#', {
+          id: 'demo-2',
+          text: 'Demo Audio Folder',
+          data: { isExcel: false, isAudio: true }
+        }, 'last');
+        console.log('Demo: Created Audio demo node:', demoNode2);
+
+        // Apply visual styling
+        setTimeout(() => {
+          console.log('Demo: Applying visual styling to demo nodes...');
+          inst.set_icon('demo-1', 'fa fa-file-excel');
+          inst.get_node('demo-1', true).addClass('excel-folder');
+
+          inst.set_icon('demo-2', 'fa fa-music');
+          inst.get_node('demo-2', true).addClass('audio-folder');
+          console.log('Demo: Visual styling applied');
+
+          // Update preview to show the new folders
+          console.log('Demo: Updating preview...');
+          updatePreview();
+
+          // Now demonstrate selection
+          setTimeout(() => {
+            console.log('Demo: Starting selection demonstration...');
+            demonstrateSelection();
+          }, 500);
+        }, 200);
+      } else {
+        // Tree has nodes, demonstrate selection directly
+        // Update preview first to ensure legend shows current state
+        updatePreview();
+        setTimeout(() => {
+          demonstrateSelection();
+        }, 500);
+      }
+
+      function demonstrateSelection() {
+        console.log('Demo: Starting comprehensive jsTree demonstration...');
+
+        const inst = $('#folder-tree').jstree(true);
+        const allNodes = inst.get_json(null, {flat: true});
+
+        if (allNodes.length >= 2) {
+          let step = 0;
+          const totalSteps = 9;
+          let childNode = null; // Declare in outer scope for access across steps
+
+          function nextStep() {
+            step++;
+            console.log(`Demo: Step ${step}/${totalSteps}`);
+
+            switch(step) {
+              case 1:
+                // Step 1: Select first node using instance reference
+                console.log('Demo: Step 1 - Selecting Excel folder using instance reference');
+                inst.select_node(allNodes[0].id);
+                updatePreview();
+                setTimeout(nextStep, 1200);
+                break;
+
+              case 2:
+                // Step 2: Select second node using shorthand
+                console.log('Demo: Step 2 - Selecting Audio folder using shorthand method');
+                $('#folder-tree').jstree('select_node', allNodes[1].id);
+                updatePreview();
+                setTimeout(nextStep, 1200);
+                break;
+
+              case 3:
+                // Step 3: Demonstrate right-click context menu (simulate)
+                console.log('Demo: Step 3 - Showing context menu options');
+                // Highlight the toolbar buttons to show available actions
+                $('.tree-btn').addClass('highlight-demo');
+                setTimeout(() => {
+                  $('.tree-btn').removeClass('highlight-demo');
+                  nextStep();
+                }, 1800);
+                break;
+
+              case 4:
+                // Step 4: Create a child folder under Excel folder
+                console.log('Demo: Step 4 - Creating child folder under Excel folder');
+                childNode = inst.create_node(allNodes[0].id, {
+                  text: 'Reports',
+                  data: { isExcel: false, isAudio: false }
+                }, 'last');
+                inst.open_node(allNodes[0].id);
+                console.log('Demo: Created child folder:', childNode);
+                updatePreview();
+                setTimeout(nextStep, 1500);
+                break;
+
+              case 5:
+                // Step 5: Rename the child folder
+                console.log('Demo: Step 5 - Renaming child folder');
+                inst.select_node(childNode);
+                setTimeout(() => {
+                  inst.rename_node(childNode, 'Excel Reports');
+                  console.log('Demo: Renamed folder to "Excel Reports"');
+                  updatePreview();
+                  setTimeout(nextStep, 1200);
+                }, 500);
+                break;
+
+              case 6:
+                // Step 6: Demonstrate marking as locations
+                console.log('Demo: Step 6 - Demonstrating location marking');
+                // The folders should already be marked, but let's show the visual feedback
+                inst.select_node(allNodes[0].id); // Select Excel
+                setTimeout(() => {
+                  inst.select_node(allNodes[1].id); // Select Audio
+                  updatePreview();
+                  setTimeout(nextStep, 1200);
+                }, 1000);
+                break;
+
+              case 7:
+                // Step 7: Deselect all using global reference
+                console.log('Demo: Step 7 - Deselecting all using global reference');
+                $.jstree.reference('#folder-tree').deselect_all();
+                updatePreview();
+                setTimeout(nextStep, 1500);
+                break;
+
+              case 8:
+                // Step 8: Create a child folder under Audio folder
+                console.log('Demo: Step 8 - Creating child folder under Audio folder');
+                const audioChildNode = inst.create_node(allNodes[1].id, {
+                  text: 'audio folder',
+                  data: { isExcel: false, isAudio: false }
+                }, 'last');
+                inst.open_node(allNodes[1].id);
+                console.log('Demo: Created audio child folder:', audioChildNode);
+                updatePreview();
+                setTimeout(nextStep, 1500);
+                break;
+
+              case 9:
+                // Step 9: Final demonstration complete
+                console.log('Demo: Step 9 - Demonstration complete!');
+                console.log('Demo: All jsTree interaction methods demonstrated successfully!');
+
+                // Final update and restore button
+                setTimeout(() => {
+                  updatePreview();
+
+                  // Restore button state
+                  $btn.html(originalText);
+                  $btn.prop('disabled', false);
+                  console.log('Demo: Button restored, demonstration finished');
+                }, 300);
+                break;
+            }
+          }
+
+          // Start the demonstration
+          nextStep();
+
+        } else {
+          console.log('Demo: Not enough nodes for full demonstration');
+          // Fallback for when there aren't enough nodes
+          if (allNodes.length > 0) {
+            inst.select_node(allNodes[0].id);
+            setTimeout(() => {
+              $.jstree.reference('#folder-tree').deselect_all();
+              updatePreview();
+              $btn.html(originalText);
+              $btn.prop('disabled', false);
+            }, 1500);
+          }
+        }
+      }
+    });
+
+    // Initialize variables
+    nodeIdCounter = 1;
+    folderStructure.excelPath = '';
+    folderStructure.audioPath = '';
+
+    // Update preview for empty tree
+    updatePreview();
+  });
+</script>
+{% endblock %}

@@ -16,7 +16,305 @@ from django.conf import settings
 from celery import group
 from django.db.models import Q
 from celery.result import AsyncResult
+
 logger = logging.getLogger(__name__)
+
+
+@shared_task(bind=True, time_limit=3600 * 6, soft_time_limit=3600 * 5)
+def export_with_audio_task(self, export_history_id, folder_structure, category_ids, export_name, filters=None):
+    """Celery task to create export with audio files"""
+    from export.models import ExportHistory
+    from authentication.models import CustomUser
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    import zipfile
+    import shutil
+    import os
+    import math
+    from django.db import connection
+
+    try:
+        # Get export history record
+        export_history = ExportHistory.objects.get(id=export_history_id)
+        export_history.status = 'processing'
+        export_history.save()
+
+        user = export_history.user
+
+        # Create export directory
+        export_base_dir = os.path.join(settings.MEDIA_ROOT, 'exports', f'user_{user.id}')
+        os.makedirs(export_base_dir, exist_ok=True)
+
+        # Build folder structure from JSON
+        excel_path = folder_structure.get('excel_path', '')
+        audio_path = folder_structure.get('audio_path', '')
+        audio_structure_template = export_history.audio_structure_template or ''
+
+        # Create root export directory
+        root_export_dir = os.path.join(export_base_dir, f'temp_{export_name}')
+        os.makedirs(root_export_dir, exist_ok=True)
+
+        # Create Excel directory structure
+        excel_dir = os.path.join(root_export_dir, excel_path)
+        os.makedirs(excel_dir, exist_ok=True)
+
+        # Create audio directory structure
+        audio_base_dir = os.path.join(root_export_dir, audio_path)
+        os.makedirs(audio_base_dir, exist_ok=True)
+
+        # Build queryset
+        queryset = NoiseDataset.objects.select_related(
+            'category', 'region', 'community', 'class_name', 'subclass',
+            'collector', 'dataset_type', 'microphone_type', 'time_of_day'
+        ).prefetch_related('audiofeature_set', 'noiseanalysis_set')
+
+        # Apply category filter
+        if category_ids:
+            queryset = queryset.filter(category_id__in=category_ids)
+
+        # Apply other filters (similar to _filtered_noise_queryset)
+        if filters:
+            if filters.get('search'):
+                queryset = queryset.filter(
+                    Q(name__icontains=filters['search']) |
+                    Q(noise_id__icontains=filters['search']) |
+                    Q(description__icontains=filters['search'])
+                )
+            if filters.get('region'):
+                queryset = queryset.filter(region_id=filters['region'])
+            if filters.get('community'):
+                queryset = queryset.filter(community_id=filters['community'])
+            if filters.get('dataset_type'):
+                queryset = queryset.filter(dataset_type_id=filters['dataset_type'])
+            if filters.get('collector'):
+                queryset = queryset.filter(collector_id=filters['collector'])
+
+        total = queryset.count()
+        self.update_state(state='PROGRESS', meta={'progress': 0, 'current': 0, 'total': total})
+
+        # Create Excel workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Audio Datasets"
+
+        # ALL metadata columns
+        headers = [
+            'Noise ID', 'Name', 'Category', 'Class', 'Subclass', 'Region', 'Community',
+            'Collector', 'Recording Device', 'Recording Date', 'Time of Day',
+            'Microphone Type', 'Description', 'Dataset Type',
+            'Audio File Path', 'Audio File Link',
+            'Duration (s)', 'Sample Rate', 'Num Samples', 'RMS Energy',
+            'Zero Crossing Rate', 'Spectral Centroid', 'Spectral Bandwidth',
+            'Spectral Rolloff', 'Spectral Flatness', 'Harmonic Ratio', 'Percussive Ratio',
+            'Mean dB', 'Max dB', 'Min dB', 'Std dB',
+            'Peak Count', 'Peak Interval Mean', 'Dominant Frequency (Hz)', 'Frequency Range', 'Event Count'
+        ]
+
+        # Style headers
+        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+
+        for col_num, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_num)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+
+        # Helper function to build audio subfolder path
+        def build_audio_subfolder(dataset, template):
+            if not template:
+                return ''
+
+            path = template
+            path = path.replace('{category}', dataset.category.name if dataset.category else 'uncategorized')
+            path = path.replace('{class}', dataset.class_name.name if dataset.class_name else 'unclassified')
+            path = path.replace('{subclass}', dataset.subclass.name if dataset.subclass else 'unclassified')
+            path = path.replace('{region}', dataset.region.name if dataset.region else 'unknown')
+            path = path.replace('{community}', dataset.community.name if dataset.community else 'unknown')
+            path = path.replace('{collector}', dataset.collector.username if dataset.collector else 'unknown')
+            path = path.replace('{time_of_day}', dataset.time_of_day.name if dataset.time_of_day else 'unknown')
+            path = path.replace('{recording_date}', dataset.recording_date.strftime('%Y-%m-%d') if dataset.recording_date else 'unknown')
+            path = path.replace('{noise_id}', dataset.noise_id or 'unknown')
+            path = path.replace('{dataset_type}', dataset.dataset_type.name if dataset.dataset_type else 'unknown')
+
+            import re
+            path = re.sub(r'[<>:"|?*]', '_', path)
+            path = path.replace('\\', '/').strip('/')
+
+            return path
+
+        # Process datasets in batches
+        processed = 0
+        for dataset in queryset.iterator(chunk_size=100):
+            processed += 1
+
+            # Build audio subdirectory
+            subfolder = build_audio_subfolder(dataset, audio_structure_template)
+            if subfolder:
+                audio_subdir = os.path.join(audio_base_dir, subfolder)
+            else:
+                audio_subdir = audio_base_dir
+
+            os.makedirs(audio_subdir, exist_ok=True)
+
+            # Download audio file from S3 (READ-ONLY)
+            audio_filename = None
+            audio_relative_path = None
+            if dataset.audio:
+                try:
+                    source_path = dataset.audio.path if hasattr(dataset.audio, 'path') else None
+                    if not source_path and hasattr(dataset.audio, 'url'):
+                        source_path = dataset.audio.name
+
+                    if source_path:
+                        original_filename = os.path.basename(dataset.audio.name)
+                        file_ext = os.path.splitext(original_filename)[1] or '.mp3'
+                        audio_filename = f"{dataset.noise_id}{file_ext}"
+                        dest_path = os.path.join(audio_subdir, audio_filename)
+
+                        # Download from S3 using storage.open() (READ-ONLY)
+                        try:
+                            with dataset.audio.storage.open(dataset.audio.name, 'rb') as source_file:
+                                with open(dest_path, 'wb') as dest_file:
+                                    shutil.copyfileobj(source_file, dest_file)
+                        except Exception as s3_error:
+                            logger.error(f"S3 download failed for {dataset.noise_id}: {s3_error}")
+                            # Fallback: try direct file copy if local
+                            if os.path.exists(source_path):
+                                shutil.copy2(source_path, dest_path)
+                            else:
+                                logger.warning(f"Could not download audio for {dataset.noise_id}")
+
+                        # Calculate relative path from Excel location to audio file
+                        if audio_filename:
+                            excel_dir_normalized = os.path.normpath(excel_dir)
+                            audio_file_normalized = os.path.normpath(dest_path)
+
+                            try:
+                                audio_relative_path = os.path.relpath(audio_file_normalized, excel_dir_normalized).replace('\\', '/')
+                            except ValueError:
+                                # If paths are on different drives, use absolute path from root
+                                audio_relative_path = os.path.join(audio_path, subfolder, audio_filename).replace('\\', '/') if subfolder else os.path.join(audio_path, audio_filename).replace('\\', '/')
+                except Exception as e:
+                    logger.error(f"Error downloading audio for {dataset.noise_id}: {e}")
+
+            # Get audio features and analysis
+            audio_feature = dataset.audiofeature_set.first()
+            noise_analysis = dataset.noiseanalysis_set.first()
+
+            # Add row to Excel with ALL metadata
+            row = [
+                dataset.noise_id or '',
+                dataset.name or '',
+                dataset.category.name if dataset.category else '',
+                dataset.class_name.name if dataset.class_name else '',
+                dataset.subclass.name if dataset.subclass else '',
+                dataset.region.name if dataset.region else '',
+                dataset.community.name if dataset.community else '',
+                dataset.collector.username if dataset.collector else '',
+                dataset.recording_device or '',
+                dataset.recording_date.strftime('%Y-%m-%d %H:%M:%S') if dataset.recording_date else '',
+                dataset.time_of_day.name if dataset.time_of_day else '',
+                dataset.microphone_type.name if dataset.microphone_type else '',
+                dataset.description or '',
+                dataset.dataset_type.name if dataset.dataset_type else '',
+                audio_relative_path or '',
+                f'=HYPERLINK("{audio_relative_path}", "Open Audio")' if audio_relative_path else '',
+                audio_feature.duration if audio_feature else '',
+                audio_feature.sample_rate if audio_feature else '',
+                audio_feature.num_samples if audio_feature else '',
+                audio_feature.rms_energy if audio_feature else '',
+                audio_feature.zero_crossing_rate if audio_feature else '',
+                audio_feature.spectral_centroid if audio_feature else '',
+                audio_feature.spectral_bandwidth if audio_feature else '',
+                audio_feature.spectral_rolloff if audio_feature else '',
+                audio_feature.spectral_flatness if audio_feature else '',
+                audio_feature.harmonic_ratio if audio_feature else '',
+                audio_feature.percussive_ratio if audio_feature else '',
+                noise_analysis.mean_db if noise_analysis else '',
+                noise_analysis.max_db if noise_analysis else '',
+                noise_analysis.min_db if noise_analysis else '',
+                noise_analysis.std_db if noise_analysis else '',
+                noise_analysis.peak_count if noise_analysis else '',
+                noise_analysis.peak_interval_mean if noise_analysis else '',
+                noise_analysis.dominant_frequency if noise_analysis else '',
+                noise_analysis.frequency_range if noise_analysis else '',
+                noise_analysis.event_count if noise_analysis else '',
+            ]
+
+            ws.append(row)
+
+            # Update progress every 10 records
+            if processed % 10 == 0:
+                progress = int((processed / total) * 100)
+                self.update_state(state='PROGRESS', meta={
+                    'progress': progress,
+                    'current': processed,
+                    'total': total
+                })
+
+        # Auto-adjust column widths
+        for col_num, header in enumerate(headers, 1):
+            column_letter = get_column_letter(col_num)
+            max_length = len(header)
+            for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=col_num, max_col=col_num):
+                if row[0].value:
+                    max_length = max(max_length, len(str(row[0].value)))
+            ws.column_dimensions[column_letter].width = min(max_length + 2, 50)
+
+        # Save Excel file
+        excel_file_path = os.path.join(excel_dir, f'{export_name}.xlsx')
+        wb.save(excel_file_path)
+
+        # Create ZIP file
+        zip_path = os.path.join(export_base_dir, f'{export_name}.zip')
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(root_export_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, root_export_dir)
+                    zipf.write(file_path, arcname)
+
+        # Clean up temporary directory
+        shutil.rmtree(root_export_dir)
+
+        # Calculate file size
+        file_size = os.path.getsize(zip_path)
+
+        # Create download URL
+        download_url = f"/media/exports/user_{user.id}/{export_name}.zip"
+
+        # Update export history
+        export_history.status = 'completed'
+        export_history.download_url = download_url
+        export_history.file_size = file_size
+        export_history.total_files = total
+        export_history.completed_at = timezone.now()
+        export_history.save()
+
+        return {
+            'download_url': download_url,
+            'file_size': file_size,
+            'total_files': total,
+            'export_name': export_name
+        }
+
+    except Exception as e:
+        logger.error(f"Export task failed: {str(e)}", exc_info=True)
+
+        # Update export history with error
+        try:
+            export_history = ExportHistory.objects.get(id=export_history_id)
+            export_history.status = 'failed'
+            export_history.error_message = str(e)
+            export_history.completed_at = timezone.now()
+            export_history.save()
+        except:
+            pass
+
+        raise
 
 
 @shared_task
@@ -29,7 +327,6 @@ def process_audio_task(noise_dataset_id):
                 f"Audio processing failed for NoiseDataset {noise_dataset_id}"
             )
     except NoiseDataset.DoesNotExist:
-        
 
         logging.warning(f"NoiseDataset with ID {noise_dataset_id} not found.")
 
@@ -38,7 +335,6 @@ def process_audio_task(noise_dataset_id):
 def check_task_revocation(task_id):
     """Check if a task has been revoked - separate from main processing to avoid Numba issues"""
     try:
-      
 
         result = AsyncResult(task_id)
         return result.revoked()

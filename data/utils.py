@@ -119,8 +119,6 @@ def process_audio_file(instance: NoiseDataset):
         raise
 
 
-
-
 def create_visualization_presets(instance):
     """Create standard visualization presets for the audio"""
     try:
@@ -252,16 +250,24 @@ def safe_process_audio_file(instance: NoiseDataset):
         logger.error(
             f"Error in audio processing for {instance.noise_id}: {processing_error}"
         )
-        
-        # error loggin 
+
+        # error loggin
         error_str = str(processing_error)
         if "Could not load audio file" in error_str:
             if ".m4a" in error_str:
-                logger.error("M4A file loading failed. This may be due to missing audio codecs in the Docker container.")
-                logger.error("Solution: Ensure ffmpeg is installed in the Docker container.")
+                logger.error(
+                    "M4A file loading failed. This may be due to missing audio codecs in the Docker container."
+                )
+                logger.error(
+                    "Solution: Ensure ffmpeg is installed in the Docker container."
+                )
             elif ".mp3" in error_str:
-                logger.error("MP3 file loading failed. This may be due to missing audio codecs.")
+                logger.error(
+                    "MP3 file loading failed. This may be due to missing audio codecs."
+                )
             else:
-                logger.error("Audio file loading failed. Check if the file is corrupted or in an unsupported format.")
-        
+                logger.error(
+                    "Audio file loading failed. Check if the file is corrupted or in an unsupported format."
+                )
+
         return False

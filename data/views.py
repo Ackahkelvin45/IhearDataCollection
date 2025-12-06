@@ -366,7 +366,7 @@ class NoiseDatasetListView(ListView, LoginRequiredMixin):
     template_name = "data/datasetlist.html"
     context_object_name = "datasets"
     ordering = ["-created_at"]
-    paginate_by = 200  
+    paginate_by = 200
 
     def get_paginate_by(self, queryset):
         try:
@@ -522,26 +522,27 @@ class ExportDataAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-   
-        
+
         start_time = time.time()
-        
+
         # Get batch parameters first
         batch_size = int(request.GET.get("batch_size", 500))
         offset = int(request.GET.get("offset", 0))
         batch_size = min(batch_size, 1000)
-        
+
         # Build WHERE clause based on filters
         where_clauses = []
         params = []
-        
+
         # Apply search filter
         search_query = request.GET.get("search", "").strip()
         if search_query:
-            where_clauses.append("(nd.name ILIKE %s OR nd.noise_id ILIKE %s OR nd.description ILIKE %s)")
+            where_clauses.append(
+                "(nd.name ILIKE %s OR nd.noise_id ILIKE %s OR nd.description ILIKE %s)"
+            )
             search_pattern = f"%{search_query}%"
             params.extend([search_pattern, search_pattern, search_pattern])
-        
+
         # Apply other filters from request
         if request.GET.get("category"):
             where_clauses.append("nd.category_id = %s")
@@ -558,13 +559,13 @@ class ExportDataAPIView(APIView):
         if request.GET.get("collector"):
             where_clauses.append("nd.collector_id = %s")
             params.append(request.GET.get("collector"))
-        
+
         where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
-        
+
         # For first request, get total count
         if offset == 0:
             count_sql = f"""
-                SELECT COUNT(*) 
+                SELECT COUNT(*)
                 FROM data_noisedataset nd
                 WHERE {where_sql}
             """
@@ -574,11 +575,13 @@ class ExportDataAPIView(APIView):
         else:
             total_count = int(request.GET.get("total", 0))
 
-        logger.info(f"Export API: offset={offset}, batch_size={batch_size}, total={total_count}")
-        
+        logger.info(
+            f"Export API: offset={offset}, batch_size={batch_size}, total={total_count}"
+        )
+
         # Raw SQL query for maximum performance - join all tables in one query
         sql = f"""
-            SELECT 
+            SELECT
                 nd.id, nd.noise_id, nd.name, nd.description, nd.recording_device,
                 nd.recording_date, nd.created_at, nd.updated_at, nd.audio,
                 cat.name as category_name,
@@ -612,85 +615,91 @@ class ExportDataAPIView(APIView):
             ORDER BY nd.id
             LIMIT %s OFFSET %s
         """
-        
+
         query_params = params + [batch_size, offset]
-        
+
         with connection.cursor() as cursor:
             cursor.execute(sql, query_params)
             columns = [col[0] for col in cursor.description]
             rows = cursor.fetchall()
-        
-        logger.info(f"Raw SQL query completed in {time.time() - start_time:.2f}s, fetched {len(rows)} rows")
 
-       
+        logger.info(
+            f"Raw SQL query completed in {time.time() - start_time:.2f}s, fetched {len(rows)} rows"
+        )
+
         export_data = []
         col_map = {col: idx for idx, col in enumerate(columns)}
-        
+
         for row in rows:
+
             def safe_val(key, default=""):
                 val = row[col_map.get(key)]
                 if val is None:
                     return default
-            
+
                 if isinstance(val, float):
                     if math.isnan(val) or math.isinf(val):
                         return default
-                if hasattr(val, 'isoformat'):
+                if hasattr(val, "isoformat"):
                     return val.isoformat()
                 return val
-            
-            export_data.append({
-                "noise_id": safe_val('noise_id'),
-                "name": safe_val('name'),
-                "dataset_type": safe_val('dataset_type_name'),
-                "collector": safe_val('collector_username'),
-                "description": safe_val('description'),
-                "recording_device": safe_val('recording_device'),
-                "recording_date": safe_val('recording_date'),
-                "created_at": safe_val('created_at'),
-                "updated_at": safe_val('updated_at'),
-                "region": safe_val('region_name'),
-                "community": safe_val('community_name'),
-                "category": safe_val('category_name'),
-                "class": safe_val('class_name'),
-                "subclass": safe_val('subclass_name'),
-                "time_of_day": safe_val('time_of_day_name'),
-                "microphone_type": safe_val('microphone_type_name'),
-                "audio_file": safe_val('audio'),
-                "audio_size": "",
-                "audio_duration": safe_val('duration'),
-                "sample_rate": safe_val('sample_rate'),
-                "num_samples": safe_val('num_samples'),
-                "rms_energy": safe_val('rms_energy'),
-                "zero_crossing_rate": safe_val('zero_crossing_rate'),
-                "spectral_centroid": safe_val('spectral_centroid'),
-                "spectral_bandwidth": safe_val('spectral_bandwidth'),
-                "spectral_rolloff": safe_val('spectral_rolloff'),
-                "spectral_flatness": safe_val('spectral_flatness'),
-                "harmonic_ratio": safe_val('harmonic_ratio'),
-                "percussive_ratio": safe_val('percussive_ratio'),
-                "mean_db": safe_val('mean_db'),
-                "max_db": safe_val('max_db'),
-                "min_db": safe_val('min_db'),
-                "std_db": safe_val('std_db'),
-                "peak_count": safe_val('peak_count'),
-                "peak_interval_mean": safe_val('peak_interval_mean'),
-                "dominant_frequency": safe_val('dominant_frequency'),
-                "frequency_range": safe_val('frequency_range'),
-                "event_count": safe_val('event_count'),
-            })
-        
-        logger.info(f"Total API time: {time.time() - start_time:.2f}s for {len(export_data)} records")
 
-        return Response({
-            "results": export_data,
-            "total": total_count,
-            "offset": offset,
-            "batch_size": batch_size,
-            "has_more": (offset + batch_size) < total_count,
-        })
+            export_data.append(
+                {
+                    "noise_id": safe_val("noise_id"),
+                    "name": safe_val("name"),
+                    "dataset_type": safe_val("dataset_type_name"),
+                    "collector": safe_val("collector_username"),
+                    "description": safe_val("description"),
+                    "recording_device": safe_val("recording_device"),
+                    "recording_date": safe_val("recording_date"),
+                    "created_at": safe_val("created_at"),
+                    "updated_at": safe_val("updated_at"),
+                    "region": safe_val("region_name"),
+                    "community": safe_val("community_name"),
+                    "category": safe_val("category_name"),
+                    "class": safe_val("class_name"),
+                    "subclass": safe_val("subclass_name"),
+                    "time_of_day": safe_val("time_of_day_name"),
+                    "microphone_type": safe_val("microphone_type_name"),
+                    "audio_file": safe_val("audio"),
+                    "audio_size": "",
+                    "audio_duration": safe_val("duration"),
+                    "sample_rate": safe_val("sample_rate"),
+                    "num_samples": safe_val("num_samples"),
+                    "rms_energy": safe_val("rms_energy"),
+                    "zero_crossing_rate": safe_val("zero_crossing_rate"),
+                    "spectral_centroid": safe_val("spectral_centroid"),
+                    "spectral_bandwidth": safe_val("spectral_bandwidth"),
+                    "spectral_rolloff": safe_val("spectral_rolloff"),
+                    "spectral_flatness": safe_val("spectral_flatness"),
+                    "harmonic_ratio": safe_val("harmonic_ratio"),
+                    "percussive_ratio": safe_val("percussive_ratio"),
+                    "mean_db": safe_val("mean_db"),
+                    "max_db": safe_val("max_db"),
+                    "min_db": safe_val("min_db"),
+                    "std_db": safe_val("std_db"),
+                    "peak_count": safe_val("peak_count"),
+                    "peak_interval_mean": safe_val("peak_interval_mean"),
+                    "dominant_frequency": safe_val("dominant_frequency"),
+                    "frequency_range": safe_val("frequency_range"),
+                    "event_count": safe_val("event_count"),
+                }
+            )
 
+        logger.info(
+            f"Total API time: {time.time() - start_time:.2f}s for {len(export_data)} records"
+        )
 
+        return Response(
+            {
+                "results": export_data,
+                "total": total_count,
+                "offset": offset,
+                "batch_size": batch_size,
+                "has_more": (offset + batch_size) < total_count,
+            }
+        )
 
 
 @login_required
@@ -997,7 +1006,6 @@ def noise_dataset_edit(request, pk):
                     # Replace the file in the form data
                     request.FILES["audio"] = renamed_file
 
-                    
                 # Update dataset name based on new values
                 updated_dataset.name = generate_dataset_name(updated_dataset)
                 updated_dataset.save()
