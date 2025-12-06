@@ -75,9 +75,14 @@ def export_with_audio_view(request):
 
     # GET request - return configuration form
 
-    categories = Category.objects.all().order_by('name')
+    # Only show categories that have at least one dataset
+    # Prefetch the dataset count to avoid N+1 queries
+    categories_with_data = Category.objects.filter(
+        noisedataset__isnull=False
+    ).distinct().order_by('name').prefetch_related('noisedataset_set')
+
     return render(request, 'export/export_with_audio.html', {
-        'categories': categories,
+        'categories': categories_with_data,
         'now': timezone.now()
     })
 

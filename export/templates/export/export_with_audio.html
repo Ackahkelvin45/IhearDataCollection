@@ -498,6 +498,12 @@
     font-weight: 500;
   }
 
+  .dataset-count {
+    color: #6b7280;
+    font-size: 0.875rem;
+    font-weight: 400;
+  }
+
   .select-all-btn {
     padding: 0.5rem 1rem;
     background: #667eea;
@@ -896,7 +902,7 @@
           {% for category in categories %}
           <div class="category-item">
             <input type="checkbox" name="categories" value="{{ category.id }}" id="cat_{{ category.id }}" class="category-checkbox">
-            <label for="cat_{{ category.id }}">{{ category.name }}</label>
+            <label for="cat_{{ category.id }}">{{ category.name }} <span class="dataset-count">({{ category.noisedataset_set.count }} dataset{{ category.noisedataset_set.count|pluralize }})</span></label>
           </div>
           {% endfor %}
         </div>
