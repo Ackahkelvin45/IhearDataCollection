@@ -83,7 +83,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "drf_spectacular",
     "django_filters",
-    "onboarding"
+    "onboarding",
 ]
 TAILWIND_APP_NAME = "theme"
 

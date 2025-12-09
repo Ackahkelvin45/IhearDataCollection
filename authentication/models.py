@@ -15,19 +15,19 @@ def random_string(length):
 
 
 class CustomUser(AbstractUser):
-    class  UserType(models.TextChoices):
-        CONTRIBUTOR = 'contributor'
-        RESEARCHER = 'researcher'
-        SUPER_ADMIN = 'super_admin'
+    class UserType(models.TextChoices):
+        CONTRIBUTOR = "contributor"
+        RESEARCHER = "researcher"
+        SUPER_ADMIN = "super_admin"
 
-    
     phone_number = models.CharField(max_length=20, blank=True, null=True)
     first_name = models.CharField(max_length=30, blank=True, null=True)
     last_name = models.CharField(max_length=30, blank=True, null=True)
     speaker_id = models.CharField(max_length=20, blank=True, null=True, unique=True)
-    user_type = models.CharField(max_length=20, blank=True, null=True, choices=UserType.choices)
+    user_type = models.CharField(
+        max_length=20, blank=True, null=True, choices=UserType.choices
+    )
     is_verified = models.BooleanField(default=False)
-    
 
     username = models.CharField(
         max_length=150,
@@ -106,7 +106,7 @@ class UserOTP(models.Model):
 
     def __str__(self):
         return f"{self.user.email} - {self.otp}"
-    
+
     def save(self, *args, **kwargs):
         if not self.expires_at:
             self.expires_at = timezone.now() + timedelta(minutes=5)

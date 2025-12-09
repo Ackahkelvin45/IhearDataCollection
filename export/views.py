@@ -135,7 +135,7 @@ def export_progress(request, task_id):
         # Results are stored in database, so we only check Celery for progress updates
         try:
             task = AsyncResult(task_id)
-            
+
             if task.ready():
                 # Task completed - check database first (results are stored there)
                 # If database doesn't have it, task might have just finished
@@ -147,7 +147,8 @@ def export_progress(request, task_id):
                         return JsonResponse(
                             {
                                 "status": "completed",
-                                "download_url": export_record.download_url or f"/export/download/{export_record.id}/",
+                                "download_url": export_record.download_url
+                                or f"/export/download/{export_record.id}/",
                                 "file_size": export_record.file_size,
                                 "total_files": export_record.total_files,
                             }
@@ -192,7 +193,9 @@ def export_progress(request, task_id):
                             else 0
                         ),
                         "total": (
-                            task.info.get("total", 0) if isinstance(task.info, dict) else 0
+                            task.info.get("total", 0)
+                            if isinstance(task.info, dict)
+                            else 0
                         ),
                     }
                 )
@@ -207,7 +210,8 @@ def export_progress(request, task_id):
                     return JsonResponse(
                         {
                             "status": "completed",
-                            "download_url": export_record.download_url or f"/export/download/{export_record.id}/",
+                            "download_url": export_record.download_url
+                            or f"/export/download/{export_record.id}/",
                             "file_size": export_record.file_size,
                             "total_files": export_record.total_files,
                         }

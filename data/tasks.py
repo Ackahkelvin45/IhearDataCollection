@@ -22,11 +22,11 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(
-    bind=True, 
-    time_limit=3600 * 6, 
+    bind=True,
+    time_limit=3600 * 6,
     soft_time_limit=3600 * 5,
     ignore_result=False,  # We need results for progress tracking
-    result_expires=300  # Expire results after 5 minutes (300 seconds)
+    result_expires=300,  # Expire results after 5 minutes (300 seconds)
 )
 def export_with_audio_task(
     self, export_history_id, folder_structure, category_ids, export_name, filters=None
@@ -141,8 +141,7 @@ def export_with_audio_task(
 
         total = queryset.count()
         self.update_state(
-            state="PROGRESS", 
-            meta={"progress": 0, "current": 0, "total": total}
+            state="PROGRESS", meta={"progress": 0, "current": 0, "total": total}
         )
 
         # Create Excel workbook
@@ -596,7 +595,7 @@ def export_with_audio_task(
 
         # 1. Clean up root export directory (temporary folder with Excel and audio files)
         if root_export_dir and os.path.exists(root_export_dir):
-            cleanup_items.append(('directory', root_export_dir))
+            cleanup_items.append(("directory", root_export_dir))
 
         # 2. Clean up ZIP file
         # Delete ZIP file if:
@@ -605,37 +604,49 @@ def export_with_audio_task(
         # - S3 is enabled but upload failed (file should be cleaned up, user can retry)
         if zip_path and os.path.exists(zip_path):
             should_delete_zip = (
-                s3_upload_successful or  # S3 upload succeeded, file is in S3
-                temp_export_base or      # Using temp directory
-                (use_s3 and not s3_upload_successful)  # S3 enabled but upload failed
+                s3_upload_successful
+                or temp_export_base  # S3 upload succeeded, file is in S3
+                or (  # Using temp directory
+                    use_s3 and not s3_upload_successful
+                )  # S3 enabled but upload failed
             )
             if should_delete_zip:
-                cleanup_items.append(('file', zip_path))
+                cleanup_items.append(("file", zip_path))
             else:
                 # Only keep ZIP file if using local storage (S3 disabled) and export succeeded
                 logger.info(f"Keeping ZIP file for local storage: {zip_path}")
 
         # 3. Clean up export_base_dir if it's a temp directory
         if export_base_dir and temp_export_base and os.path.exists(export_base_dir):
-            cleanup_items.append(('directory', export_base_dir))
+            cleanup_items.append(("directory", export_base_dir))
 
         # 4. Clean up any other tracked temporary files/directories
         for temp_file in temp_files_created:
-            if temp_file and os.path.exists(temp_file) and temp_file not in [item[1] for item in cleanup_items if item[0] == 'file']:
-                cleanup_items.append(('file', temp_file))
-        
+            if (
+                temp_file
+                and os.path.exists(temp_file)
+                and temp_file
+                not in [item[1] for item in cleanup_items if item[0] == "file"]
+            ):
+                cleanup_items.append(("file", temp_file))
+
         for temp_dir in temp_dirs_created:
-            if temp_dir and os.path.exists(temp_dir) and temp_dir not in [item[1] for item in cleanup_items if item[0] == 'directory']:
-                cleanup_items.append(('directory', temp_dir))
+            if (
+                temp_dir
+                and os.path.exists(temp_dir)
+                and temp_dir
+                not in [item[1] for item in cleanup_items if item[0] == "directory"]
+            ):
+                cleanup_items.append(("directory", temp_dir))
 
         # Perform cleanup
         for item_type, item_path in cleanup_items:
             try:
-                if item_type == 'directory':
+                if item_type == "directory":
                     if os.path.exists(item_path):
                         shutil.rmtree(item_path)
                         logger.info(f"✓ Cleaned up temporary directory: {item_path}")
-                elif item_type == 'file':
+                elif item_type == "file":
                     if os.path.exists(item_path):
                         os.remove(item_path)
                         logger.info(f"✓ Cleaned up temporary file: {item_path}")
@@ -648,7 +659,7 @@ def export_with_audio_task(
             except Exception as e:
                 logger.error(
                     f"✗ Failed to remove {item_type} {item_path}: {str(e)}",
-                    exc_info=True
+                    exc_info=True,
                 )
 
         # Additional cleanup: Remove any leftover temp files/directories in export directories
@@ -657,31 +668,43 @@ def export_with_audio_task(
                 # Clean up any remaining temp files/directories older than 1 hour
                 current_time = time_module.time()
                 one_hour_ago = current_time - 3600
-                
+
                 for root, dirs, files in os.walk(export_base_dir):
                     # Clean up old temp files
                     for file in files:
-                        if file.startswith('temp_') or file.endswith('.tmp') or file.endswith('.zip'):
+                        if (
+                            file.startswith("temp_")
+                            or file.endswith(".tmp")
+                            or file.endswith(".zip")
+                        ):
                             temp_file_path = os.path.join(root, file)
                             try:
                                 # Delete if file is older than 1 hour
                                 if os.path.getmtime(temp_file_path) < one_hour_ago:
                                     os.remove(temp_file_path)
-                                    logger.info(f"Removed old temp file: {temp_file_path}")
+                                    logger.info(
+                                        f"Removed old temp file: {temp_file_path}"
+                                    )
                             except Exception as e:
-                                logger.warning(f"Could not remove temp file {temp_file_path}: {str(e)}")
-                    
+                                logger.warning(
+                                    f"Could not remove temp file {temp_file_path}: {str(e)}"
+                                )
+
                     # Clean up old temp directories
                     for dir_name in dirs:
-                        if dir_name.startswith('temp_'):
+                        if dir_name.startswith("temp_"):
                             temp_dir_path = os.path.join(root, dir_name)
                             try:
                                 # Delete if directory is older than 1 hour
                                 if os.path.getmtime(temp_dir_path) < one_hour_ago:
                                     shutil.rmtree(temp_dir_path)
-                                    logger.info(f"Removed old temp directory: {temp_dir_path}")
+                                    logger.info(
+                                        f"Removed old temp directory: {temp_dir_path}"
+                                    )
                             except Exception as e:
-                                logger.warning(f"Could not remove temp directory {temp_dir_path}: {str(e)}")
+                                logger.warning(
+                                    f"Could not remove temp directory {temp_dir_path}: {str(e)}"
+                                )
         except Exception as e:
             logger.warning(f"Error during additional temp file cleanup: {str(e)}")
 

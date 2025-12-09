@@ -49,7 +49,7 @@
       .focus\:border-primary:focus { border-color: #005450; }
       .focus\:border-secondary:focus { border-color: #00d553; }
       .bg-gradient-primary { background: linear-gradient(135deg, #005450 0%, #00d553 100%); }
-      
+
       /* Password field styling */
       .password-wrapper {
         position: relative;
@@ -156,7 +156,7 @@
         <div class="text-center">
             <button type="submit" class="inline-block w-full px-16 py-3.5 mt-6 mb-0 font-bold leading-normal text-center text-white align-middle transition-all bg-primary border-0 rounded-lg cursor-pointer hover:-translate-y-px active:opacity-85 hover:shadow-xs text-sm ease-in tracking-tight-rem shadow-md bg-150 bg-x-25 hover:bg-secondary">Sign Up</button>
         </div>
-        
+
         <div class="text-center mt-4">
             <p class="text-sm text-gray-600">Already have an account? <a href="{% url 'auth:login' %}" class="text-primary font-semibold hover:underline">Sign In</a></p>
         </div>
@@ -188,7 +188,7 @@
     function togglePasswordVisibility(inputId, iconId) {
       const input = document.getElementById(inputId);
       const icon = document.getElementById(iconId);
-      
+
       if (input.type === 'password') {
         input.type = 'text';
         icon.classList.remove('fa-eye');
@@ -207,14 +207,14 @@
       const errorDiv = document.getElementById('passwordMatchError');
       const successDiv = document.getElementById('passwordMatchSuccess');
       const confirmInput = document.getElementById('confirm_password');
-      
+
       if (confirmPassword.length === 0) {
         errorDiv.style.display = 'none';
         successDiv.style.display = 'none';
         confirmInput.classList.remove('border-red-500', 'border-green-500');
         return true;
       }
-      
+
       if (password !== confirmPassword) {
         errorDiv.style.display = 'block';
         successDiv.style.display = 'none';
@@ -235,7 +235,7 @@
       const form = document.querySelector('form[role="form"]');
       const passwordInput = document.getElementById('password');
       const confirmPasswordInput = document.getElementById('confirm_password');
-      
+
       // Real-time password match validation
       confirmPasswordInput.addEventListener('input', validatePasswordMatch);
       passwordInput.addEventListener('input', function() {
@@ -243,12 +243,12 @@
           validatePasswordMatch();
         }
       });
-      
+
       // Form submission validation
       form.addEventListener('submit', function(e) {
         const password = passwordInput.value;
         const confirmPassword = confirmPasswordInput.value;
-        
+
         // Check if passwords match
         if (password !== confirmPassword) {
           e.preventDefault();
@@ -256,29 +256,28 @@
           alert('Passwords do not match. Please check and try again.');
           return false;
         }
-        
+
         // Check password requirements
         if (password.length < 8) {
           e.preventDefault();
           alert('Password must be at least 8 characters long.');
           return false;
         }
-        
+
         if (!/\d/.test(password)) {
           e.preventDefault();
           alert('Password must contain at least one number.');
           return false;
         }
-        
+
         if (!/[a-zA-Z]/.test(password)) {
           e.preventDefault();
           alert('Password must contain at least one letter.');
           return false;
         }
-        
+
         return true;
       });
     });
   </script>
 </html>
-

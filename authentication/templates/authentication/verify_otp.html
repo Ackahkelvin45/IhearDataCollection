@@ -49,7 +49,7 @@
       .focus\:border-primary:focus { border-color: #005450; }
       .focus\:border-secondary:focus { border-color: #00d553; }
       .bg-gradient-primary { background: linear-gradient(135deg, #005450 0%, #00d553 100%); }
-      
+
       /* OTP Input Styling */
       .otp-container {
         display: flex;
@@ -151,11 +151,11 @@
                 <i class="fas fa-check-circle mr-2"></i>Verify OTP
             </button>
         </div>
-        
+
         <div class="text-center mt-4">
             <p class="text-sm text-gray-600">Didn't receive the code? <a href="{% url 'auth:resend_otp' %}" class="text-primary font-semibold hover:underline">Resend OTP</a></p>
         </div>
-        
+
         <div class="text-center mt-2">
             <a href="{% url 'auth:login' %}" class="text-sm text-gray-500 hover:text-primary">Back to Login</a>
         </div>
@@ -187,12 +187,12 @@
       const otpInputs = document.querySelectorAll('.otp-input');
       const otpForm = document.getElementById('otpForm');
       const otpValue = document.getElementById('otpValue');
-      
+
       // Function to update the hidden OTP value
       function updateOTPValue() {
         const otp = Array.from(otpInputs).map(input => input.value).join('');
         otpValue.value = otp;
-        
+
         // Update filled class
         otpInputs.forEach((input, index) => {
           if (input.value) {
@@ -202,34 +202,34 @@
           }
         });
       }
-      
+
       // Handle input events
       otpInputs.forEach((input, index) => {
         // Only allow numbers
         input.addEventListener('input', function(e) {
           this.value = this.value.replace(/[^0-9]/g, '');
-          
+
           // Auto-focus next input
           if (this.value && index < otpInputs.length - 1) {
             otpInputs[index + 1].focus();
           }
-          
+
           updateOTPValue();
         });
-        
+
         // Handle backspace
         input.addEventListener('keydown', function(e) {
           if (e.key === 'Backspace' && !this.value && index > 0) {
             otpInputs[index - 1].focus();
           }
         });
-        
+
         // Handle paste
         input.addEventListener('paste', function(e) {
           e.preventDefault();
           const pastedData = (e.clipboardData || window.clipboardData).getData('text');
           const digits = pastedData.replace(/[^0-9]/g, '').slice(0, 6);
-          
+
           // Fill inputs with pasted digits
           digits.split('').forEach((digit, i) => {
             if (otpInputs[index + i]) {
@@ -237,15 +237,15 @@
               otpInputs[index + i].classList.add('filled');
             }
           });
-          
+
           // Focus the next empty input or the last one
           const nextEmptyIndex = Math.min(index + digits.length, otpInputs.length - 1);
           otpInputs[nextEmptyIndex].focus();
-          
+
           updateOTPValue();
         });
       });
-      
+
       // Form submission validation
       otpForm.addEventListener('submit', function(e) {
         const otp = otpValue.value;
@@ -257,10 +257,9 @@
         }
         return true;
       });
-      
+
       // Initialize
       updateOTPValue();
     });
   </script>
 </html>
-
