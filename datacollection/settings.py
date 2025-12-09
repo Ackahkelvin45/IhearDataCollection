@@ -388,10 +388,25 @@ CELERY_TASK_SOFT_TIME_LIMIT = 5 * 60 * 60  # 5 hours
 CELERY_BROKER_DB_ID = int(os.getenv("CELERY_BROKER_DB_ID", default="2"))
 CELERY_RESULT_BACKEND_DB_ID = int(os.getenv("CELERY_RESULT_BACKEND_DB_ID", default="3"))
 CELERY_BROKER_URL = f"{REDIS_URL}/{CELERY_BROKER_DB_ID}"
-CELERY_RESULT_BACKEND = f"{REDIS_URL}/{CELERY_RESULT_BACKEND_DB_ID}"
+# Use database backend for results instead of Redis to prevent Redis from filling up
+# django_celery_results is installed, so we can use database backend
+USE_DB_RESULT_BACKEND = as_bool(os.getenv("USE_DB_RESULT_BACKEND", default="True"))
+if USE_DB_RESULT_BACKEND:
+    # Store results in database instead of Redis
+    CELERY_RESULT_BACKEND = "django-db"
+    CELERY_RESULT_EXTENDED = True
+else:
+    # Fallback to Redis if needed
+    CELERY_RESULT_BACKEND = f"{REDIS_URL}/{CELERY_RESULT_BACKEND_DB_ID}"
+    if REDIS_USE_TLS:
+        CELERY_RESULT_BACKEND += "?ssl_cert_reqs=required"
+    # Result expiration to prevent Redis from filling up
+    CELERY_RESULT_EXPIRES = 300  # Expire results after 5 minutes
+    CELERY_RESULT_BACKEND_ALWAYS_RETRY = True
+    CELERY_RESULT_BACKEND_MAX_RETRIES = 10
+
 if REDIS_USE_TLS:
     CELERY_BROKER_URL += "?ssl_cert_reqs=required"
-    CELERY_RESULT_BACKEND += "?ssl_cert_reqs=required"
 
 CELERY_TASK_ALWAYS_EAGER = as_bool(
     os.getenv("CELERY_TASK_ALWAYS_EAGER", default="False")

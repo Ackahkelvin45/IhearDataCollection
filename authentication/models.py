@@ -2,6 +2,8 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 import random
 import string
+from datetime import timedelta
+from django.utils import timezone
 
 import logging
 
@@ -13,10 +15,19 @@ def random_string(length):
 
 
 class CustomUser(AbstractUser):
+    class  UserType(models.TextChoices):
+        CONTRIBUTOR = 'contributor'
+        RESEARCHER = 'researcher'
+        SUPER_ADMIN = 'super_admin'
+
+    
     phone_number = models.CharField(max_length=20, blank=True, null=True)
     first_name = models.CharField(max_length=30, blank=True, null=True)
     last_name = models.CharField(max_length=30, blank=True, null=True)
     speaker_id = models.CharField(max_length=20, blank=True, null=True, unique=True)
+    user_type = models.CharField(max_length=20, blank=True, null=True, choices=UserType.choices)
+    is_verified = models.BooleanField(default=False)
+    
 
     username = models.CharField(
         max_length=150,
@@ -85,3 +96,18 @@ class CustomUser(AbstractUser):
     class Meta:
         verbose_name = "Custom User"
         verbose_name_plural = "Custom Users"
+
+
+class UserOTP(models.Model):
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    otp = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+
+    def __str__(self):
+        return f"{self.user.email} - {self.otp}"
+    
+    def save(self, *args, **kwargs):
+        if not self.expires_at:
+            self.expires_at = timezone.now() + timedelta(minutes=5)
+        super().save(*args, **kwargs)

@@ -131,42 +131,95 @@ def export_progress(request, task_id):
         except ExportHistory.DoesNotExist:
             pass  # Continue with Celery task check
 
-        # Fallback to Celery task status
-        task = AsyncResult(task_id)
-
-        if task.ready():
-            if task.successful():
-                result = task.result
+        # Fallback to Celery task status (only for progress tracking, not for results)
+        # Results are stored in database, so we only check Celery for progress updates
+        try:
+            task = AsyncResult(task_id)
+            
+            if task.ready():
+                # Task completed - check database first (results are stored there)
+                # If database doesn't have it, task might have just finished
+                try:
+                    export_record = ExportHistory.objects.get(
+                        task_id=task_id, user=request.user
+                    )
+                    if export_record.status == "completed":
+                        return JsonResponse(
+                            {
+                                "status": "completed",
+                                "download_url": export_record.download_url or f"/export/download/{export_record.id}/",
+                                "file_size": export_record.file_size,
+                                "total_files": export_record.total_files,
+                            }
+                        )
+                    elif export_record.status == "failed":
+                        return JsonResponse(
+                            {
+                                "status": "failed",
+                                "error": export_record.error_message or "Export failed",
+                            },
+                            status=500,
+                        )
+                except ExportHistory.DoesNotExist:
+                    # Task finished but database record not updated yet
+                    if task.successful():
+                        # Task succeeded but database not updated - wait a bit
+                        return JsonResponse(
+                            {
+                                "status": "processing",
+                                "progress": 95,
+                                "message": "Finalizing export...",
+                            }
+                        )
+                    else:
+                        # Task failed
+                        error_msg = str(task.info) if task.info else "Export failed"
+                        return JsonResponse(
+                            {"status": "failed", "error": error_msg}, status=500
+                        )
+            else:
+                # Task is still processing - get progress from Celery
+                progress = (
+                    task.info.get("progress", 0) if isinstance(task.info, dict) else 0
+                )
                 return JsonResponse(
                     {
-                        "status": "completed",
-                        "download_url": result.get("download_url"),
-                        "file_size": result.get("file_size"),
-                        "total_files": result.get("total_files"),
+                        "status": "processing",
+                        "progress": progress,
+                        "current": (
+                            task.info.get("current", 0)
+                            if isinstance(task.info, dict)
+                            else 0
+                        ),
+                        "total": (
+                            task.info.get("total", 0) if isinstance(task.info, dict) else 0
+                        ),
                     }
                 )
-            else:
-                # Task failed
-                return JsonResponse(
-                    {"status": "failed", "error": str(task.info)}, status=500
+        except Exception as celery_error:
+            # If Celery check fails, try database one more time
+            logger.warning(f"Celery task check failed: {str(celery_error)}")
+            try:
+                export_record = ExportHistory.objects.get(
+                    task_id=task_id, user=request.user
                 )
-        else:
-            # Task is still processing
-            progress = (
-                task.info.get("progress", 0) if isinstance(task.info, dict) else 0
-            )
+                if export_record.status == "completed":
+                    return JsonResponse(
+                        {
+                            "status": "completed",
+                            "download_url": export_record.download_url or f"/export/download/{export_record.id}/",
+                            "file_size": export_record.file_size,
+                            "total_files": export_record.total_files,
+                        }
+                    )
+            except ExportHistory.DoesNotExist:
+                pass
+            # Return processing status if we can't determine
             return JsonResponse(
                 {
                     "status": "processing",
-                    "progress": progress,
-                    "current": (
-                        task.info.get("current", 0)
-                        if isinstance(task.info, dict)
-                        else 0
-                    ),
-                    "total": (
-                        task.info.get("total", 0) if isinstance(task.info, dict) else 0
-                    ),
+                    "progress": 0,
+                    "message": "Checking export status...",
                 }
             )
     except Exception as e:

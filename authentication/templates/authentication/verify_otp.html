@@ -1,0 +1,266 @@
+<!--
+=========================================================
+* Argon Dashboard 2 Tailwind - v1.0.1
+=========================================================
+
+* Product Page: https://www.creative-tim.com/product/argon-dashboard-tailwind
+* Copyright 2022 Creative Tim (https://www.creative-tim.com)
+
+* Coded by www.creative-tim.com
+
+=========================================================
+
+* The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+-->
+{% load static %}
+
+{% load static tailwind_tags %}
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+       {% tailwind_css %}
+
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="apple-touch-icon" sizes="76x76" href="{% static 'assets/img/apple-icon.png' %} " />
+    <link rel="icon" type="image/png" href="{% static 'assets/img/favicon.png' %}" />
+    <title>I hear Dataset - Verify OTP</title>
+    <!--     Fonts and icons     -->
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,600,700" rel="stylesheet" />
+    <!-- Font Awesome Icons -->
+    <script src="https://kit.fontawesome.com/42d5adcbca.js" crossorigin="anonymous"></script>
+    <!-- Nucleo Icons -->
+    <link href="{% static 'assets/css/nucleo-icons.css' %}" rel="stylesheet" />
+    <link href=" {% static 'assets/css/nucleo-svg.css' %}" rel="stylesheet" />
+    <!-- Main Styling -->
+    <link href=" {% static 'assets/css/argon-dashboard-tailwind.css' %}" rel="stylesheet" />
+
+    <style>
+      /* Custom colors */
+
+    .bg-primary { background-color: #005450; }
+      .bg-secondary { background-color: #00d553; }
+      .text-primary { color: #005450; }
+      .text-secondary { color: #00d553; }
+      .border-primary { border-color: #005450; }
+      .border-secondary { border-color: #00d553; }
+      .focus\:border-primary:focus { border-color: #005450; }
+      .focus\:border-secondary:focus { border-color: #00d553; }
+      .bg-gradient-primary { background: linear-gradient(135deg, #005450 0%, #00d553 100%); }
+      
+      /* OTP Input Styling */
+      .otp-container {
+        display: flex;
+        justify-content: center;
+        gap: 12px;
+        margin: 20px 0;
+      }
+      .otp-input {
+        width: 50px;
+        height: 50px;
+        text-align: center;
+        font-size: 24px;
+        font-weight: 700;
+        font-family: 'Courier New', monospace;
+        border: 2px solid #e2e8f0;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+      }
+      .otp-input:focus {
+        border-color: #00d553;
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(0, 213, 83, 0.1);
+      }
+      .otp-input.filled {
+        border-color: #005450;
+        background-color: #f0fdf4;
+      }
+      @media (max-width: 640px) {
+        .otp-container {
+          gap: 8px;
+        }
+        .otp-input {
+          width: 45px;
+          height: 45px;
+          font-size: 20px;
+        }
+      }
+    </style>
+  </head>
+
+  <body class="m-0 font-sans antialiased font-normal bg-white text-start text-base leading-default text-slate-500">
+    <div class="container sticky top-0 z-sticky">
+      <div class="flex flex-wrap -mx-3">
+        <div class="w-full max-w-full px-3 flex-0">
+
+        </div>
+      </div>
+    </div>
+    <main class="mt-0 transition-all duration-200 ease-in-out">
+      <section>
+        <div class="relative flex items-center min-h-screen p-0 overflow-hidden bg-center bg-cover">
+          <div class="container z-1">
+            <div class="flex flex-wrap -mx-3">
+              <div class="flex flex-col w-full max-w-full px-3 mx-auto lg:mx-0 shrink-0 md:flex-0 md:w-7/12 lg:w-5/12 xl:w-4/12">
+                <div class="relative flex flex-col min-w-0 break-words bg-transparent border-0 shadow-none lg:py4 dark:bg-gray-950 rounded-2xl bg-clip-border">
+                    <img class=" h-20" src="{% static 'assets/img/rail.png' %}"/>
+
+                  <div class="p-6 pb-0 mb-0">
+                    <h4 class="font-bold">Verify OTP</h4>
+                    <p class="mb-0">Enter the 6-digit code sent to your email</p>
+                  </div>
+                <!-- In your form section -->
+                      <!-- Display messages -->
+
+
+<div class="flex-auto p-6">
+        {% if messages %}
+        <div class="mb-4">
+            {% for message in messages %}
+            <div  style="color: white;" class="p-3 text-sm rounded-lg {% if message.tags == 'error' %}bg-red-600 text-red-600{% else %}bg-secondary text-white {% endif %}">
+                {{ message }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    <form role="form" method="POST" action="{% url 'auth:verify_otp' %}" id="otpForm">
+        {% csrf_token %}
+        <div class="mb-4">
+            <div class="otp-container">
+                <input type="text" class="otp-input" id="otp1" maxlength="1" pattern="[0-9]" autocomplete="off" autofocus />
+                <input type="text" class="otp-input" id="otp2" maxlength="1" pattern="[0-9]" autocomplete="off" />
+                <input type="text" class="otp-input" id="otp3" maxlength="1" pattern="[0-9]" autocomplete="off" />
+                <input type="text" class="otp-input" id="otp4" maxlength="1" pattern="[0-9]" autocomplete="off" />
+                <input type="text" class="otp-input" id="otp5" maxlength="1" pattern="[0-9]" autocomplete="off" />
+                <input type="text" class="otp-input" id="otp6" maxlength="1" pattern="[0-9]" autocomplete="off" />
+            </div>
+            <input type="hidden" name="otp" id="otpValue" required />
+        </div>
+
+        <div class="mb-4">
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+                <i class="fas fa-info-circle mr-2"></i>
+                <span>Check your email for the verification code. The code expires in 5 minutes.</span>
+            </div>
+        </div>
+
+        <div class="text-center">
+            <button type="submit" class="inline-block w-full px-16 py-3.5 mt-6 mb-0 font-bold leading-normal text-center text-white align-middle transition-all bg-primary border-0 rounded-lg cursor-pointer hover:-translate-y-px active:opacity-85 hover:shadow-xs text-sm ease-in tracking-tight-rem shadow-md bg-150 bg-x-25 hover:bg-secondary">
+                <i class="fas fa-check-circle mr-2"></i>Verify OTP
+            </button>
+        </div>
+        
+        <div class="text-center mt-4">
+            <p class="text-sm text-gray-600">Didn't receive the code? <a href="{% url 'auth:resend_otp' %}" class="text-primary font-semibold hover:underline">Resend OTP</a></p>
+        </div>
+        
+        <div class="text-center mt-2">
+            <a href="{% url 'auth:login' %}" class="text-sm text-gray-500 hover:text-primary">Back to Login</a>
+        </div>
+    </form>
+</div>
+
+                </div>
+              </div>
+              <div class="absolute top-0 right-0 flex-col justify-center hidden w-6/12 h-full max-w-full px-3 pr-0 my-auto text-center flex-0 lg:flex">
+                <div class="relative flex flex-col justify-center h-full bg-cover px-24 m-4 overflow-hidden bg-[url('https://raw.githubusercontent.com/creativetimofficial/public-assets/master/argon-dashboard-pro/assets/img/signin-ill.jpg')] rounded-xl ">
+                  <span class="absolute top-0 left-0 w-full h-full bg-center bg-cover bg-gradient-primary opacity-60"></span>
+                  <h4 class="z-20 mt-12 font-bold text-white">Secure Verification</h4>
+                  <p class="z-20 text-white ">We've sent a verification code to your email. Enter it here to complete your authentication.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+  </body>
+  <!-- plugin for scrollbar  -->
+  <script src=" {% static 'assets/js/plugins/perfect-scrollbar.min.js' %} " async></script>
+  <!-- main script file  -->
+  <script src="{% static 'assets/js/argon-dashboard-tailwind.js' %}" async></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const otpInputs = document.querySelectorAll('.otp-input');
+      const otpForm = document.getElementById('otpForm');
+      const otpValue = document.getElementById('otpValue');
+      
+      // Function to update the hidden OTP value
+      function updateOTPValue() {
+        const otp = Array.from(otpInputs).map(input => input.value).join('');
+        otpValue.value = otp;
+        
+        // Update filled class
+        otpInputs.forEach((input, index) => {
+          if (input.value) {
+            input.classList.add('filled');
+          } else {
+            input.classList.remove('filled');
+          }
+        });
+      }
+      
+      // Handle input events
+      otpInputs.forEach((input, index) => {
+        // Only allow numbers
+        input.addEventListener('input', function(e) {
+          this.value = this.value.replace(/[^0-9]/g, '');
+          
+          // Auto-focus next input
+          if (this.value && index < otpInputs.length - 1) {
+            otpInputs[index + 1].focus();
+          }
+          
+          updateOTPValue();
+        });
+        
+        // Handle backspace
+        input.addEventListener('keydown', function(e) {
+          if (e.key === 'Backspace' && !this.value && index > 0) {
+            otpInputs[index - 1].focus();
+          }
+        });
+        
+        // Handle paste
+        input.addEventListener('paste', function(e) {
+          e.preventDefault();
+          const pastedData = (e.clipboardData || window.clipboardData).getData('text');
+          const digits = pastedData.replace(/[^0-9]/g, '').slice(0, 6);
+          
+          // Fill inputs with pasted digits
+          digits.split('').forEach((digit, i) => {
+            if (otpInputs[index + i]) {
+              otpInputs[index + i].value = digit;
+              otpInputs[index + i].classList.add('filled');
+            }
+          });
+          
+          // Focus the next empty input or the last one
+          const nextEmptyIndex = Math.min(index + digits.length, otpInputs.length - 1);
+          otpInputs[nextEmptyIndex].focus();
+          
+          updateOTPValue();
+        });
+      });
+      
+      // Form submission validation
+      otpForm.addEventListener('submit', function(e) {
+        const otp = otpValue.value;
+        if (otp.length !== 6) {
+          e.preventDefault();
+          alert('Please enter the complete 6-digit OTP code.');
+          otpInputs[0].focus();
+          return false;
+        }
+        return true;
+      });
+      
+      // Initialize
+      updateOTPValue();
+    });
+  </script>
+</html>
+

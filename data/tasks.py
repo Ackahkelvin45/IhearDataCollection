@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 import logging
 from django.db import transaction
 from datetime import time
+import time as time_module
 from .utils import generate_dataset_name, generate_noise_id
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -20,7 +21,13 @@ from celery.result import AsyncResult
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, time_limit=3600 * 6, soft_time_limit=3600 * 5)
+@shared_task(
+    bind=True, 
+    time_limit=3600 * 6, 
+    soft_time_limit=3600 * 5,
+    ignore_result=False,  # We need results for progress tracking
+    result_expires=300  # Expire results after 5 minutes (300 seconds)
+)
 def export_with_audio_task(
     self, export_history_id, folder_structure, category_ids, export_name, filters=None
 ):
@@ -43,6 +50,8 @@ def export_with_audio_task(
     use_s3 = False
     temp_export_base = False  # Track if export_base_dir is a temp directory
     s3_upload_successful = False  # Track if S3 upload was successful
+    temp_files_created = []  # Track all temporary files created during export
+    temp_dirs_created = []  # Track all temporary directories created during export
 
     try:
         # Get export history record
@@ -86,6 +95,7 @@ def export_with_audio_task(
         root_export_dir = os.path.join(export_base_dir, f"temp_{export_name}")
         root_export_dir = os.path.abspath(root_export_dir)  # Track absolute path
         os.makedirs(root_export_dir, exist_ok=True)
+        temp_dirs_created.append(root_export_dir)  # Track for cleanup
 
         # Create Excel directory structure
         excel_dir = os.path.join(root_export_dir, excel_path)
@@ -131,7 +141,8 @@ def export_with_audio_task(
 
         total = queryset.count()
         self.update_state(
-            state="PROGRESS", meta={"progress": 0, "current": 0, "total": total}
+            state="PROGRESS", 
+            meta={"progress": 0, "current": 0, "total": total}
         )
 
         # Create Excel workbook
@@ -429,6 +440,7 @@ def export_with_audio_task(
         # Create ZIP file - ensure absolute path
         zip_path = os.path.join(export_base_dir, f"{export_name}.zip")
         zip_path = os.path.abspath(zip_path)  # Ensure absolute path
+        temp_files_created.append(zip_path)  # Track for cleanup
         logger.info(f"Creating ZIP file at: {zip_path}")
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
             for root, dirs, files in os.walk(root_export_dir):
@@ -552,11 +564,12 @@ def export_with_audio_task(
             f"Export {export_history.id} marked as completed. File: {zip_path if not s3_path else s3_path}, Size: {file_size} bytes"
         )
 
+        # Return minimal result - all data is already stored in ExportHistory model
+        # This prevents Redis from storing large result data
+        # The download_url, file_size, etc. are already in the database
         return {
-            "download_url": download_url,
-            "file_size": file_size,
-            "total_files": total,
-            "export_name": export_name,
+            "status": "completed",
+            "export_id": export_history.id,
         }
 
     except Exception as e:
@@ -578,51 +591,101 @@ def export_with_audio_task(
         # Clean up all temporary files and directories
         logger.info("Starting cleanup of temporary files and directories...")
 
-        # Clean up root export directory (temporary folder with Excel and audio files)
-        if root_export_dir and os.path.exists(root_export_dir):
-            try:
-                shutil.rmtree(root_export_dir)
-                logger.info(f"Cleaned up temporary export directory: {root_export_dir}")
-            except Exception as e:
-                logger.error(
-                    f"Failed to remove temporary export directory {root_export_dir}: {str(e)}"
-                )
+        # Track all files/dirs to clean up
+        cleanup_items = []
 
-        # Clean up ZIP file if S3 upload was successful or if using temp directory
+        # 1. Clean up root export directory (temporary folder with Excel and audio files)
+        if root_export_dir and os.path.exists(root_export_dir):
+            cleanup_items.append(('directory', root_export_dir))
+
+        # 2. Clean up ZIP file
+        # Delete ZIP file if:
+        # - S3 upload was successful (file is now in S3, local copy not needed)
+        # - Using temp directory (should always clean up temp files)
+        # - S3 is enabled but upload failed (file should be cleaned up, user can retry)
         if zip_path and os.path.exists(zip_path):
-            # Delete ZIP file if:
-            # 1. S3 upload was successful (file is now in S3)
-            # 2. Using temp directory (file should be cleaned up)
-            if s3_upload_successful or temp_export_base:
-                try:
-                    os.remove(zip_path)
-                    logger.info(f"Cleaned up temporary ZIP file: {zip_path}")
-                except Exception as e:
-                    logger.error(
-                        f"Failed to remove temporary ZIP file {zip_path}: {str(e)}"
-                    )
+            should_delete_zip = (
+                s3_upload_successful or  # S3 upload succeeded, file is in S3
+                temp_export_base or      # Using temp directory
+                (use_s3 and not s3_upload_successful)  # S3 enabled but upload failed
+            )
+            if should_delete_zip:
+                cleanup_items.append(('file', zip_path))
             else:
+                # Only keep ZIP file if using local storage (S3 disabled) and export succeeded
                 logger.info(f"Keeping ZIP file for local storage: {zip_path}")
 
-        # Clean up export_base_dir if it's a temp directory and is now empty
+        # 3. Clean up export_base_dir if it's a temp directory
         if export_base_dir and temp_export_base and os.path.exists(export_base_dir):
+            cleanup_items.append(('directory', export_base_dir))
+
+        # 4. Clean up any other tracked temporary files/directories
+        for temp_file in temp_files_created:
+            if temp_file and os.path.exists(temp_file) and temp_file not in [item[1] for item in cleanup_items if item[0] == 'file']:
+                cleanup_items.append(('file', temp_file))
+        
+        for temp_dir in temp_dirs_created:
+            if temp_dir and os.path.exists(temp_dir) and temp_dir not in [item[1] for item in cleanup_items if item[0] == 'directory']:
+                cleanup_items.append(('directory', temp_dir))
+
+        # Perform cleanup
+        for item_type, item_path in cleanup_items:
             try:
-                # Check if directory is empty
-                if not os.listdir(export_base_dir):
-                    os.rmdir(export_base_dir)
-                    logger.info(
-                        f"Cleaned up empty temporary export base directory: {export_base_dir}"
-                    )
-                else:
-                    logger.debug(
-                        f"Export base directory not empty, keeping: {export_base_dir}"
-                    )
+                if item_type == 'directory':
+                    if os.path.exists(item_path):
+                        shutil.rmtree(item_path)
+                        logger.info(f"✓ Cleaned up temporary directory: {item_path}")
+                elif item_type == 'file':
+                    if os.path.exists(item_path):
+                        os.remove(item_path)
+                        logger.info(f"✓ Cleaned up temporary file: {item_path}")
+            except PermissionError as e:
+                logger.error(
+                    f"✗ Permission denied removing {item_type} {item_path}: {str(e)}"
+                )
+            except FileNotFoundError:
+                logger.debug(f"File/directory already removed: {item_path}")
             except Exception as e:
-                logger.warning(
-                    f"Could not remove export base directory {export_base_dir}: {str(e)}"
+                logger.error(
+                    f"✗ Failed to remove {item_type} {item_path}: {str(e)}",
+                    exc_info=True
                 )
 
-        logger.info("Cleanup of temporary files and directories completed")
+        # Additional cleanup: Remove any leftover temp files/directories in export directories
+        try:
+            if export_base_dir and os.path.exists(export_base_dir):
+                # Clean up any remaining temp files/directories older than 1 hour
+                current_time = time_module.time()
+                one_hour_ago = current_time - 3600
+                
+                for root, dirs, files in os.walk(export_base_dir):
+                    # Clean up old temp files
+                    for file in files:
+                        if file.startswith('temp_') or file.endswith('.tmp') or file.endswith('.zip'):
+                            temp_file_path = os.path.join(root, file)
+                            try:
+                                # Delete if file is older than 1 hour
+                                if os.path.getmtime(temp_file_path) < one_hour_ago:
+                                    os.remove(temp_file_path)
+                                    logger.info(f"Removed old temp file: {temp_file_path}")
+                            except Exception as e:
+                                logger.warning(f"Could not remove temp file {temp_file_path}: {str(e)}")
+                    
+                    # Clean up old temp directories
+                    for dir_name in dirs:
+                        if dir_name.startswith('temp_'):
+                            temp_dir_path = os.path.join(root, dir_name)
+                            try:
+                                # Delete if directory is older than 1 hour
+                                if os.path.getmtime(temp_dir_path) < one_hour_ago:
+                                    shutil.rmtree(temp_dir_path)
+                                    logger.info(f"Removed old temp directory: {temp_dir_path}")
+                            except Exception as e:
+                                logger.warning(f"Could not remove temp directory {temp_dir_path}: {str(e)}")
+        except Exception as e:
+            logger.warning(f"Error during additional temp file cleanup: {str(e)}")
+
+        logger.info("✓ Cleanup of temporary files and directories completed")
 
 
 @shared_task

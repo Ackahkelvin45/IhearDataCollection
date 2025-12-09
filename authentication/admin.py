@@ -6,6 +6,14 @@ from django import forms
 from .models import CustomUser
 import random
 import string
+from .models import UserOTP
+
+
+@admin.register(UserOTP)
+class UserOTPAdmin(admin.ModelAdmin):
+    list_display = ('user', 'otp', 'created_at', 'expires_at')
+    search_fields = ('user__email', 'otp')
+    list_filter = ('created_at', 'expires_at')
 
 def random_string(length):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
@@ -63,7 +71,7 @@ class CustomUserAdmin(ModelAdmin, UserAdmin):
     
     fieldsets = (
         (None, {'fields': ('email', 'username', 'password')}),
-        ('Personal info', {'fields': ('first_name', 'last_name', 'phone_number', 'speaker_id', 'unhashed_password')}),
+        ('Personal info', {'fields': ('first_name', 'last_name', 'phone_number', 'speaker_id', 'unhashed_password', 'user_type', 'is_verified')}),
         ('Permissions', {
             'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions'),
         }),
