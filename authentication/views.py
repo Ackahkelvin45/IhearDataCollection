@@ -5,6 +5,7 @@ from django.contrib import messages
 from django.views.decorators.csrf import csrf_protect
 from .utils.generate_otp import send_otp, verify_otp
 from .models import CustomUser
+from data.models import NoiseDataset
 
 # Create your views here.
 
@@ -167,5 +168,48 @@ def verify_userotp(request):
     return render(request, "authentication/verify_otp.html")
 
 
+@login_required
 def profile_view(request):
-    return render(request, "authentication/profile.html")
+    user = request.user
+    
+    if request.method == "POST":
+        # Get form data
+        username = request.POST.get("username", "").strip()
+        email = request.POST.get("email", "").strip()
+        first_name = request.POST.get("first_name", "").strip()
+        last_name = request.POST.get("last_name", "").strip()
+        phone_number = request.POST.get("phone_number", "").strip()
+        
+        # Validate email
+        if email and email != user.email:
+            if CustomUser.objects.filter(email=email).exclude(id=user.id).exists():
+                messages.error(request, "Email already exists.")
+                return render(request, "authentication/profile.html", {"user": user})
+            user.email = email
+        
+        # Validate username
+        if username and username != user.username:
+            if CustomUser.objects.filter(username=username).exclude(id=user.id).exists():
+                messages.error(request, "Username already exists.")
+                return render(request, "authentication/profile.html", {"user": user})
+            user.username = username
+        
+        # Update other fields
+        user.first_name = first_name
+        user.last_name = last_name
+        user.phone_number = phone_number
+        
+        try:
+            user.save()
+            messages.success(request, "Profile updated successfully!")
+            return redirect("auth:profile")
+        except Exception as e:
+            messages.error(request, f"Error updating profile: {str(e)}")
+    
+    # Get total noise data count for the user
+    total_noise_data = NoiseDataset.objects.filter(collector=user).count()
+    
+    return render(request, "authentication/profile.html", {
+        "user": user,
+        "total_noise_data": total_noise_data
+    })
