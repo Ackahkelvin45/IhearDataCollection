@@ -97,13 +97,9 @@ def export_with_audio_task(
         os.makedirs(root_export_dir, exist_ok=True)
         temp_dirs_created.append(root_export_dir)  # Track for cleanup
 
-        # Create Excel directory structure
+        # Create Excel directory structure (kept on disk)
         excel_dir = os.path.join(root_export_dir, excel_path)
         os.makedirs(excel_dir, exist_ok=True)
-
-        # Create audio directory structure
-        audio_base_dir = os.path.join(root_export_dir, audio_path)
-        os.makedirs(audio_base_dir, exist_ok=True)
 
         # Build queryset
         queryset = NoiseDataset.objects.select_related(
@@ -256,28 +252,22 @@ def export_with_audio_task(
 
             return path
 
+        # Track audio files we need to stream into the ZIP (to avoid temp copies)
+        audio_files_to_zip = []
+
         # Process datasets in batches
         processed = 0
         for dataset in queryset.iterator(chunk_size=100):
             processed += 1
 
-            # Build audio subdirectory
+            # Build audio subfolder (logical path only, not created on disk)
             subfolder = build_audio_subfolder(dataset, audio_structure_template)
-            if subfolder:
-                audio_subdir = os.path.join(audio_base_dir, subfolder)
-            else:
-                audio_subdir = audio_base_dir
-
-            os.makedirs(audio_subdir, exist_ok=True)
 
             # Download audio file from S3 or local storage (READ-ONLY)
-            audio_filename = None
             audio_relative_path = None
+            audio_zip_path = None
             if dataset.audio:
                 try:
-                    # Check if S3 is enabled
-                    use_s3_for_audio = hasattr(settings, "USE_S3") and settings.USE_S3
-
                     # Get the relative path (name) - this works for both S3 and local storage
                     audio_name = dataset.audio.name
 
@@ -285,72 +275,34 @@ def export_with_audio_task(
                         original_filename = os.path.basename(audio_name)
                         file_ext = os.path.splitext(original_filename)[1] or ".mp3"
                         audio_filename = f"{dataset.noise_id}{file_ext}"
-                        dest_path = os.path.join(audio_subdir, audio_filename)
 
-                        # Download from storage (S3 or local) using storage.open() (READ-ONLY)
-                        try:
-                            # Use storage.open() which works for both S3 and local storage
-                            with dataset.audio.storage.open(
-                                audio_name, "rb"
-                            ) as source_file:
-                                with open(dest_path, "wb") as dest_file:
-                                    shutil.copyfileobj(source_file, dest_file)
-                            logger.debug(
-                                f"Successfully downloaded audio for {dataset.noise_id}"
-                            )
-                        except Exception as storage_error:
-                            logger.error(
-                                f"Storage download failed for {dataset.noise_id}: {storage_error}"
-                            )
+                        # Logical path of the audio file inside the ZIP archive
+                        if subfolder:
+                            audio_zip_path = os.path.join(
+                                audio_path, subfolder, audio_filename
+                            ).replace("\\", "/")
+                        else:
+                            audio_zip_path = os.path.join(
+                                audio_path, audio_filename
+                            ).replace("\\", "/")
 
-                            # Fallback: try direct file copy if local storage (not S3)
-                            if not use_s3_for_audio:
-                                try:
-                                    # Only try .path if not using S3
-                                    if hasattr(dataset.audio, "path"):
-                                        source_path = dataset.audio.path
-                                        if os.path.exists(source_path):
-                                            shutil.copy2(source_path, dest_path)
-                                            logger.debug(
-                                                f"Fallback: copied audio from local path for {dataset.noise_id}"
-                                            )
-                                        else:
-                                            logger.warning(
-                                                f"Local audio file not found at {source_path} for {dataset.noise_id}"
-                                            )
-                                    else:
-                                        logger.warning(
-                                            f"Could not get local path for audio file {dataset.noise_id}"
-                                        )
-                                except Exception as fallback_error:
-                                    logger.error(
-                                        f"Fallback copy also failed for {dataset.noise_id}: {fallback_error}"
-                                    )
-                            else:
-                                logger.error(
-                                    f"Could not download audio from S3 for {dataset.noise_id}"
-                                )
+                        # Relative path from Excel file to audio file
+                        # Use virtual paths so we don't need the files on disk
+                        excel_virtual_dir = os.path.join("root", excel_path)
+                        audio_virtual_path = os.path.join("root", audio_zip_path)
+                        audio_relative_path = os.path.relpath(
+                            audio_virtual_path, excel_virtual_dir
+                        ).replace("\\", "/")
 
-                        # Calculate relative path from Excel location to audio file
-                        if audio_filename:
-                            excel_dir_normalized = os.path.normpath(excel_dir)
-                            audio_file_normalized = os.path.normpath(dest_path)
-
-                            try:
-                                audio_relative_path = os.path.relpath(
-                                    audio_file_normalized, excel_dir_normalized
-                                ).replace("\\", "/")
-                            except ValueError:
-                                # If paths are on different drives, use absolute path from root
-                                audio_relative_path = (
-                                    os.path.join(
-                                        audio_path, subfolder, audio_filename
-                                    ).replace("\\", "/")
-                                    if subfolder
-                                    else os.path.join(
-                                        audio_path, audio_filename
-                                    ).replace("\\", "/")
-                                )
+                        # Record this audio file so we can stream it directly into the ZIP later
+                        audio_files_to_zip.append(
+                            {
+                                "audio_field": dataset.audio,
+                                "audio_name": audio_name,
+                                "zip_path": audio_zip_path,
+                                "noise_id": dataset.noise_id,
+                            }
+                        )
                 except Exception as e:
                     logger.error(
                         f"Error downloading audio for {dataset.noise_id}: {e}",
@@ -442,11 +394,56 @@ def export_with_audio_task(
         temp_files_created.append(zip_path)  # Track for cleanup
         logger.info(f"Creating ZIP file at: {zip_path}")
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-            for root, dirs, files in os.walk(root_export_dir):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path, root_export_dir)
-                    zipf.write(file_path, arcname)
+            # 1. Add the Excel file at the configured excel_path inside the ZIP
+            excel_arcname = os.path.join(excel_path, f"{export_name}.xlsx").replace(
+                "\\", "/"
+            )
+            zipf.write(excel_file_path, excel_arcname)
+
+            # 2. Stream audio files directly into the ZIP without creating temp copies
+            for audio_info in audio_files_to_zip:
+                audio_field = audio_info["audio_field"]
+                audio_name = audio_info["audio_name"]
+                audio_zip_path = audio_info["zip_path"]
+                noise_id = audio_info.get("noise_id") or "unknown"
+
+                try:
+                    # Prefer storage.open (works for both S3 and local)
+                    with audio_field.storage.open(audio_name, "rb") as source_file:
+                        with zipf.open(audio_zip_path, "w") as dest_file:
+                            shutil.copyfileobj(source_file, dest_file)
+                    logger.debug(
+                        f"Streamed audio for {noise_id} into ZIP at {audio_zip_path}"
+                    )
+                except Exception as storage_error:
+                    logger.error(
+                        f"Failed to read audio from storage for {noise_id}: {storage_error}"
+                    )
+
+                    # Fallback: if local storage, try using the filesystem path
+                    try:
+                        if hasattr(audio_field, "path"):
+                            source_path = audio_field.path
+                            if os.path.exists(source_path):
+                                with open(source_path, "rb") as source_file:
+                                    with zipf.open(audio_zip_path, "w") as dest_file:
+                                        shutil.copyfileobj(source_file, dest_file)
+                                logger.debug(
+                                    f"Fallback: streamed audio from local path for {noise_id} at {audio_zip_path}"
+                                )
+                            else:
+                                logger.warning(
+                                    f"Local audio file not found at {source_path} for {noise_id}"
+                                )
+                        else:
+                            logger.warning(
+                                f"No local path available for audio file {noise_id}"
+                            )
+                    except Exception as fallback_error:
+                        logger.error(
+                            f"Fallback streaming also failed for {noise_id}: {fallback_error}",
+                            exc_info=True,
+                        )
 
         # Verify ZIP file exists before marking as completed
         # Note: Cleanup of root_export_dir and zip_path will happen in finally block
