@@ -36,6 +36,7 @@ urlpatterns = [
     path ("api/docs/", SpectacularSwaggerView.as_view(url_name="schema")),
     path("export/", include("export.urls")),
     path("onboarding/", include("onboarding.urls")),
+    path("chatbot/", include("chatbot.urls")),
 ]
 
 

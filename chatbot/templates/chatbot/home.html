@@ -1,0 +1,546 @@
+
+{% extends 'datacollection/layout.html' %}
+{% load static %}
+
+{% block content %}
+<!-- CSRF Token -->
+<input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+
+<nav>
+  <!-- breadcrumb -->
+  <ol style="margin-bottom: 30px;" class="flex flex-wrap pt-1 mr-12 bg-transparent rounded-lg sm:mr-16">
+    <li class="text-sm leading-normal">
+      <a class="text-white opacity-50" href="javascript:;">home</a>
+    </li>
+    <li class="text-sm pl-2 capitalize leading-normal text-white before:float-left before:pr-2 before:text-white before:content-['/']" aria-current="page">Chatbot</li>
+  </ol>
+</nav>
+
+<div class="flex h-screen bg-gray-50">
+    <!-- Sidebar -->
+    <div style="width: 330px;" class=" bg-white border-r border-gray-200 flex flex-col">
+        <!-- Header -->
+        <div class="p-4 border-b border-gray-200">
+            <div class="flex items-center justify-between mb-4">
+                <h6 class="text-lg  font-bold text-gray-800">Chat Sessions</h6>
+                <button id="newChatBtn" class="inline-flex items-center px-2 py-2 text-sm rounded-lg text-white bg-primary hover:opacity-90 shadow-sm text-sm">
+                    <i class="fa-regular fa-plus mr-2"></i>
+                    New Chat
+                </button>
+            </div>
+        </div>
+
+        <!-- Sessions List -->
+        <div id="sessionsList" class="flex-1 overflow-y-auto p-4">
+            <div class="text-center text-gray-500 py-8">
+                <i class="fa-regular fa-message text-4xl mb-2"></i>
+                <p>No sessions yet</p>
+                <p class="text-sm">Start a new conversation</p>
+            </div>
+        </div>
+
+        <!-- Documents Section -->
+        <div class="border-t border-gray-200 p-4">
+            <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Documents</h3>
+            <form id="uploadForm" class="mb-3" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="file" id="fileInput" name="file" accept=".pdf,.docx,.txt,.md" class="hidden">
+                <button type="button" onclick="document.getElementById('fileInput').click()" class="w-full bg-green-600 hover:bg-green-700 text-white text-sm font-medium py-2 px-3 rounded transition">
+                    <svg class="inline w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                    </svg>
+                    Upload Document
+                </button>
+            </form>
+            <div id="documentsList" class="space-y-1 max-h-32 overflow-y-auto">
+                <!-- Documents will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex flex-col">
+        <!-- Header -->
+        <div class="bg-white border-b border-gray-200 p-4">
+            <div class="text-center">
+                <h1 class="text-xl font-semibold text-gray-800">Welcome to AI Assistant</h1>
+                <p class="text-sm text-gray-500">Ask questions about your documents and project</p>
+            </div>
+        </div>
+
+        <!-- Welcome Content -->
+        <div class="flex-1 flex flex-col items-center justify-center p-8">
+            <div class="text-center max-w-2xl">
+                <div class="mb-6">
+\                    <h2 class="text-3xl font-bold text-gray-800 mb-2">IHear Assistant</h2>
+                    <p class="text-gray-600 mb-8">ask questions to get you have about thr Ihear project.</p>
+                </div>
+
+                <!-- Suggestions -->
+                <div  style="gap: 10px;"  class="flex flex-wrap justify-center gap-3 mb-8">
+                    <button onclick="startChatWithSuggestion('Summarize the uploaded documents')" class="px-4 py-2 rounded-full bg-primary-light text-primary hover:bg-primary-hover border border-primary/10 shadow-sm transition">
+                        Summarize the uploaded documents
+                    </button>
+                    <button onclick="startChatWithSuggestion('What are the main topics in my documents?')" class="px-4 py-2 rounded-full bg-primary-light text-primary hover:bg-primary-hover border border-primary/10 shadow-sm transition">
+                        What are the main topics?
+                    </button>
+                    <button onclick="startChatWithSuggestion('Find information about...')" class="px-4 py-2 rounded-full bg-primary-light text-primary hover:bg-primary-hover border border-primary/10 shadow-sm transition">
+                        Find specific information
+                    </button>
+                    <button onclick="startChatWithSuggestion('Compare documents')" class="px-4 py-2 rounded-full bg-primary-light text-primary hover:bg-primary-hover border border-primary/10 shadow-sm transition">
+                        Compare documents
+                    </button>
+                </div>
+
+                <!-- Input Form -->
+                <form id="homeForm" class="w-full max-w-lg " style="padding: 5px;">
+                    <div class="relative" style="position: relative;">
+                        <input
+                            id="homeInput"
+                            type="text"
+                            class="w-full bg-slate-50 border border-slate-200 rounded-full py-4 pl-4 pr-16 outline-none text-slate-700 focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
+                            placeholder="Type your question..."
+                        />
+                        <button
+                            type="submit"
+                            class="absolute w-12 h-12 rounded-full bg-secondary text-white flex items-center justify-center shadow hover:opacity-90"
+                            aria-label="Send"
+                            style="position: absolute; right: 0;   top: 50%; transform: translateY(-50%);margin-right:10px;"
+                        >
+                            <i class="fa-solid fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </form>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-lg p-6 flex items-center space-x-3">
+        <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+        <span class="text-gray-700">Loading...</span>
+    </div>
+</div>
+
+<!-- Error Toast -->
+<div id="errorToast" class="fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 hidden">
+    <div class="flex items-center space-x-2">
+        <i class="fa-solid fa-exclamation-triangle"></i>
+        <span id="errorMessage"></span>
+    </div>
+</div>
+
+<!-- Success Toast -->
+<div id="successToast" class="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 hidden">
+    <div class="flex items-center space-x-2">
+        <i class="fa-solid fa-check"></i>
+        <span id="successMessage"></span>
+    </div>
+</div>
+
+<script>
+// Chatbot Home Page Manager
+class ChatbotHomePageManager {
+    constructor() {
+        this.apiBaseUrl = window.location.origin;
+        this.headers = {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': this.getCSRFToken()
+        };
+        this.sessions = [];
+
+        this.initializeEventListeners();
+        this.loadSessions();
+        this.loadDocuments();
+    }
+
+    getCSRFToken() {
+        return document.querySelector('[name=csrfmiddlewaretoken]')?.value ||
+               document.querySelector('meta[name="csrf-token"]')?.content || '';
+    }
+
+    initializeEventListeners() {
+        // New chat button
+        document.getElementById('newChatBtn').addEventListener('click', () => {
+            this.createNewSession();
+        });
+
+        // Home form submission
+        document.getElementById('homeForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const input = document.getElementById('homeInput');
+            const message = input.value.trim();
+
+            if (message) {
+                this.createSessionAndSendMessage(message);
+            }
+        });
+
+        // File upload
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            this.uploadDocument(e.target.files[0]);
+        });
+    }
+
+    async loadSessions() {
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/chatbot/api/sessions/`, {
+                headers: this.headers
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                this.sessions = data.results || data;
+                this.updateSessionsList();
+            } else if (response.status === 401) {
+                this.showErrorToast('Please log in to access chat sessions');
+                window.location.href = '/admin/login/';
+            } else if (response.status === 403) {
+                this.updateSessionsList(); // Show empty state
+            }
+        } catch (error) {
+            console.error('Error loading sessions:', error);
+            this.updateSessionsList(); // Show empty state
+        }
+    }
+
+    updateSessionsList() {
+        const container = document.getElementById('sessionsList');
+
+        if (!Array.isArray(this.sessions)) {
+            this.sessions = [];
+        }
+
+        if (this.sessions.length === 0) {
+            container.innerHTML = `
+                <div class="text-center text-gray-500 py-8">
+                    <i class="fa-regular fa-message text-4xl mb-2"></i>
+                    <p>No sessions yet</p>
+                    <p class="text-sm">Start a new conversation</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = this.sessions.map(session => `
+            <div class="session-item p-3 rounded-lg cursor-pointer transition-colors mb-2 hover:bg-gray-50"
+                 data-session-id="${session.id}" onclick="loadSession(${session.id})">
+                <div class="flex items-start justify-between">
+                    <div class="flex-1 min-w-0">
+                        <h6 class="font-medium text-gray-800 truncate">${session.title.length > 25 ? session.title.substring(0, 20) + "..." : session.title || 'Untitled Session'}</h6>
+                        <p class="text-sm text-gray-500 mt-1">${session.message_count || 0} messages</p>
+                        <p class="text-xs text-gray-400">${this.formatDate(session.updated_at || session.created_at)}</p>
+                    </div>
+                    <div class="flex items-center space-x-1 ml-2">
+                        <button class="session-delete-btn p-1 text-gray-400 hover:text-red-500"
+                                onclick="event.stopPropagation(); deleteSession(${session.id})">
+                                                        <i class="fa-regular fa-trash text-xs"></i>
+
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    async loadDocuments() {
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/chatbot/api/documents/`, {
+                headers: this.headers
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                this.displayDocuments(data.results || data);
+            }
+        } catch (error) {
+            console.error('Error loading documents:', error);
+        }
+    }
+
+    displayDocuments(documents) {
+        const container = document.getElementById('documentsList');
+
+        if (documents.length === 0) {
+            container.innerHTML = '<p class="text-xs text-gray-500 italic">No documents uploaded</p>';
+            return;
+        }
+
+        container.innerHTML = documents.map(doc => `
+            <div class="document-item flex items-center justify-between py-2 px-3 bg-gray-50 rounded text-sm">
+                <div class="flex-1 min-w-0">
+                    <p class="font-medium text-gray-800 truncate">${doc.name}</p>
+                    <p class="text-xs text-gray-500">${this.formatFileSize(doc.file_size)} • ${this.formatDate(doc.created_at)}</p>
+                </div>
+                <button class="document-delete-btn p-1 text-gray-400 hover:text-red-500 ml-2"
+                        onclick="deleteDocument(${doc.id})">
+                    <i class="fa-regular fa-trash text-xs"></i>
+                </button>
+            </div>
+        `).join('');
+    }
+
+    async createNewSession() {
+        try {
+            this.showLoading();
+            const response = await fetch(`${this.apiBaseUrl}/chatbot/api/sessions/`, {
+                method: 'POST',
+                headers: this.headers,
+                body: JSON.stringify({ title: null })
+            });
+
+            if (response.ok) {
+                const session = await response.json();
+                // For now, just reload to show the new session
+                // In a full implementation, this would redirect to a chat page
+                this.loadSessions();
+                this.showSuccessToast('New chat session created');
+            } else {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || 'Failed to create session');
+            }
+        } catch (error) {
+            console.error('Error creating session:', error);
+            this.showErrorToast('Failed to create new session');
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    async createSessionAndSendMessage(message) {
+        try {
+            this.showLoading();
+            const response = await fetch(`${this.apiBaseUrl}/chatbot/api/sessions/`, {
+                method: 'POST',
+                headers: this.headers,
+                body: JSON.stringify({ title: null })
+            });
+
+            if (response.ok) {
+                const session = await response.json();
+                // Store the initial message and session ID for the chat interface
+                sessionStorage.setItem('initialMessage', message);
+                sessionStorage.setItem('loadSessionId', session.id.toString());
+                // For now, redirect to home with chat mode
+                // In a full implementation, this would redirect to a dedicated chat page
+                window.location.href = "{% url 'chatbot:home' %}#chat";
+            } else {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || 'Failed to create session');
+            }
+        } catch (error) {
+            console.error('Error creating session:', error);
+            this.showErrorToast('Failed to start conversation');
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    async uploadDocument(file) {
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            this.showLoading();
+            const response = await fetch(`${this.apiBaseUrl}/chatbot/api/documents/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': this.getCSRFToken()
+                },
+                body: formData
+            });
+
+            if (response.ok) {
+                this.showSuccessToast('Document uploaded successfully');
+                this.loadDocuments();
+            } else {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || 'Failed to upload document');
+            }
+        } catch (error) {
+            console.error('Error uploading document:', error);
+            this.showErrorToast('Failed to upload document');
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    async deleteDocument(docId) {
+        if (!confirm('Are you sure you want to delete this document?')) return;
+
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/chatbot/api/documents/${docId}/`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRFToken': this.getCSRFToken()
+                }
+            });
+
+            if (response.ok) {
+                this.showSuccessToast('Document deleted successfully');
+                this.loadDocuments();
+            } else {
+                throw new Error('Failed to delete document');
+            }
+        } catch (error) {
+            console.error('Error deleting document:', error);
+            this.showErrorToast('Failed to delete document');
+        }
+    }
+
+    formatDate(dateString) {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffTime = Math.abs(now - date);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (diffDays === 1) return 'Today';
+        if (diffDays === 2) return 'Yesterday';
+        if (diffDays <= 7) return `${diffDays - 1} days ago`;
+
+        return date.toLocaleDateString();
+    }
+
+    formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    showLoading() {
+        document.getElementById('loadingOverlay').classList.remove('hidden');
+    }
+
+    hideLoading() {
+        document.getElementById('loadingOverlay').classList.add('hidden');
+    }
+
+    showErrorToast(message) {
+        const toast = document.getElementById('errorToast');
+        const messageEl = document.getElementById('errorMessage');
+        messageEl.textContent = message;
+        toast.classList.remove('hidden');
+
+        setTimeout(() => {
+            toast.classList.add('hidden');
+        }, 5000);
+    }
+
+    showSuccessToast(message) {
+        const toast = document.getElementById('successToast');
+        const messageEl = document.getElementById('successMessage');
+        messageEl.textContent = message;
+        toast.classList.remove('hidden');
+
+        setTimeout(() => {
+            toast.classList.add('hidden');
+        }, 3000);
+    }
+}
+
+// Global functions for session interaction
+function loadSession(sessionId) {
+    sessionStorage.setItem('loadSessionId', sessionId.toString());
+    window.location.href = "{% url 'chatbot:home' %}#chat";
+}
+
+async function deleteSession(sessionId) {
+    if (!confirm('Are you sure you want to delete this session?')) return;
+
+    try {
+        const response = await fetch(`${window.location.origin}/chatbot/api/sessions/${sessionId}/`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
+            }
+        });
+
+        if (response.ok) {
+            window.chatbotHomePageManager.loadSessions(); // Reload sessions
+            window.chatbotHomePageManager.showSuccessToast('Session deleted successfully');
+        } else {
+            throw new Error('Failed to delete session');
+        }
+    } catch (error) {
+        console.error('Error deleting session:', error);
+        window.chatbotHomePageManager.showErrorToast('Failed to delete session');
+    }
+}
+
+async function deleteDocument(docId) {
+    if (window.chatbotHomePageManager) {
+        await window.chatbotHomePageManager.deleteDocument(docId);
+    }
+}
+
+function startChatWithSuggestion(suggestion) {
+    if (window.chatbotHomePageManager) {
+        window.chatbotHomePageManager.createSessionAndSendMessage(suggestion);
+    }
+}
+
+// Initialize when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    window.chatbotHomePageManager = new ChatbotHomePageManager();
+});
+
+</script>
+
+<style>
+/* Custom styles for the chatbot home page */
+.session-item {
+    transition: all 0.2s ease;
+}
+
+.session-item:hover {
+    transform: translateX(2px);
+}
+
+.document-item {
+    transition: all 0.2s ease;
+}
+
+.document-item:hover {
+    background-color: #f9fafb;
+}
+
+/* Scrollbar styling */
+#sessionsList::-webkit-scrollbar,
+#documentsList::-webkit-scrollbar {
+    width: 6px;
+}
+
+#sessionsList::-webkit-scrollbar-track,
+#documentsList::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+#sessionsList::-webkit-scrollbar-thumb,
+#documentsList::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+}
+
+#sessionsList::-webkit-scrollbar-thumb:hover,
+#documentsList::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+/* Animation */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+</style>
+
+{% endblock %}
+

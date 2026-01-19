@@ -15,14 +15,14 @@
   </ol>
 </nav>
 
-<div class="flex h-screen bg-gray-50" style="height: calc(100vh - 200px);">
+<div class="flex h-screen bg-gray-50">
     <!-- Sidebar -->
-    <div class="w-80 bg-white border-r border-gray-200 flex flex-col rounded-l-2xl shadow-xl">
+    <div class="w-80 bg-white border-r border-gray-200 flex flex-col">
         <!-- Header -->
         <div class="p-4 border-b border-gray-200">
             <div class="flex items-center justify-between mb-4">
-                <h5 class="text-xl font-semibold text-gray-800">Chat Sessions</h5>
-                <button id="newChatBtn" class="inline-flex items-center px-3 py-2 rounded-lg text-white bg-primary hover:opacity-90 shadow-sm text-sm">
+                <h6 class="text-xl font-semibold text-gray-800">Chat Sessions</h6>
+                <button id="newChatBtn" class="inline-flex items-center px-2 py-2 text-sm rounded-lg text-white bg-primary hover:opacity-90 shadow-sm text-sm">
                     <i class="fa-regular fa-plus mr-2"></i>
                     New Chat
                 </button>
@@ -33,76 +33,53 @@
         <div id="sessionsList" class="flex-1 overflow-y-auto p-4">
             <div class="text-center text-gray-500 py-8">
                 <i class="fa-regular fa-message text-4xl mb-2"></i>
-                <p>Loading sessions...</p>
+                <p>No sessions yet</p>
+                <p class="text-sm">Start a new conversation</p>
             </div>
         </div>
     </div>
 
     <!-- Main Content Area -->
-    <div class="flex-1 flex flex-col bg-white rounded-r-2xl shadow-xl">
+    <div class="flex-1 flex flex-col">
         <!-- Header -->
-        <div class="bg-white border-b border-gray-200 p-6 rounded-tr-2xl">
+        <div class="bg-white border-b border-gray-200 p-4">
             <div class="text-center">
-                <h4 class="text-3xl font-bold text-gray-800 mb-2">Welcome to Data Insights!</h4>
-                <p class="text-gray-600">Ask me anything about your audio data or select a session from the left</p>
+                <h1 class="text-xl font-semibold text-gray-800">Welcome to Data Insights!</h1>
+                <p class="text-sm text-gray-500">Ask me anything about your audio data</p>
             </div>
         </div>
 
         <!-- Welcome Content -->
         <div class="flex-1 flex flex-col items-center justify-center p-8">
             <div class="text-center max-w-2xl">
-                <div class="mb-8">
+                <div class="mb-6">
                     <i class="fa-solid fa-chart-line text-6xl text-primary mb-4"></i>
-                    <h5 class="text-2xl font-semibold text-gray-800 mb-4">Get Started</h5>
-                    <p class="text-gray-600 mb-8 text-sm">Try one of these suggestions or ask your own question:</p>
+                    <h2 class="text-3xl font-bold text-gray-800 mb-2">Audio Data Insights</h2>
+                    <p class="text-gray-600 mb-8">Ask me anything about your audio data or try one of the suggestions below.</p>
                 </div>
 
                 <!-- Suggestions -->
                 <div class="flex flex-wrap justify-center gap-3 mb-8">
                     {% for s in suggestions %}
-                    <button style="margin-bottom: 10px; margin-right: 5px;" onclick="startChatWithSuggestion('{{ s|escapejs }}')" class="px-4 py-2 rounded-full bg-primary-light text-primary hover:bg-primary-hover border border-primary/10 shadow-sm transition">
+                    <button onclick="startChatWithSuggestion('{{ s|escapejs }}')" class="px-4 py-2 rounded-full bg-primary-light text-primary hover:bg-primary-hover border border-primary/10 shadow-sm transition">
                         {{ s }}
                     </button>
                     {% endfor %}
                 </div>
 
                 <!-- Input Form -->
- <form id="homeForm" class="px-2" style="width: 100%; margin: 0 auto;">
-  <div style="position: relative; width: 100%;">
+                <form id="homeForm" class="w-full max-w-lg mx-auto">
+                    <div class="relative">
     <input 
       id="homeInput" 
       type="text" 
+                            class="w-full bg-slate-50 border border-slate-200 rounded-full py-4 pl-4 pr-16 outline-none text-slate-700 focus:ring-2 focus:ring-secondary/30 focus:border-secondary" 
       placeholder="Type your question..."
-      style="
-        width: 100%;
-        background-color: #f8fafc; 
-        border: 1px solid #e2e8f0; 
-        border-radius: 9999px;
-        padding: 1rem 4rem 1rem 1rem;
-        outline: none;
-        color: #334155;
-        font-size: 1rem;
-      "
     />
     <button 
       type="submit" 
+                            class="absolute right-2 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-secondary text-white flex items-center justify-center shadow hover:opacity-90"
       aria-label="Send"
-      style="
-        position: absolute; 
-        right: 0.5rem; 
-        top: 50%; 
-        transform: translateY(-50%);
-        width: 3rem; 
-        height: 3rem; 
-        border-radius: 9999px; 
-        background-color: #22c55e; /* secondary */
-        color: #fff; 
-        display: flex; 
-        align-items: center; 
-        justify-content: center; 
-        box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-        cursor: pointer;
-      "
     >
       <i class="fa-solid fa-paper-plane"></i>
     </button>
@@ -211,7 +188,7 @@ class HomePageManager {
                 <div class="text-center text-gray-500 py-8">
                     <i class="fa-regular fa-message text-4xl mb-2"></i>
                     <p>No sessions yet</p>
-                    <p class="text-sm">Create your first chat</p>
+                    <p class="text-sm">Start a new conversation</p>
                 </div>
             `;
             return;
@@ -224,23 +201,14 @@ class HomePageManager {
                  data-session-id="${session.id}" onclick="loadSession(${session.id})">
                 <div class="flex items-start justify-between">
                     <div class="flex-1 min-w-0">
-                        <h6 class="font-medium text-gray-800 truncate">${session.title || 'Untitled Session'}</h6>
-                        <p class="text-xs text-gray-400">${this.formatDate(session.created_at)}</p>
+                        <h3 class="font-medium text-gray-800 truncate">${session.title || 'Untitled Session'}</h3>
+                        <p class="text-sm text-gray-500 mt-1">${session.total_messages || 0} messages</p>
+                        <p class="text-xs text-gray-400">${this.formatDate(session.updated_at || session.created_at)}</p>
                     </div>
                     <div class="flex items-center space-x-1 ml-2">
-                        <button class="session-delete-btn p-1 text-gray-400 hover:text-red-600" 
+                        <button class="session-delete-btn p-1 text-gray-400 hover:text-red-500" 
                                 onclick="event.stopPropagation(); deleteSession(${session.id})">
-
-
-                                <button type="button" style="background:none; border:none; cursor:pointer;">
-<svg xmlns="http://www.w3.org/2000/svg" 
-     viewBox="0 0 24 24" 
-     fill="currentColor" 
-     style="width:20px; height:20px; color:#dc2626; cursor:pointer;">
-  <path d="M9 3a1 1 0 0 0-1 1v1H4.5a.5.5 0 0 0 0 1h15a.5.5 0 0 0 0-1H16V4a1 1 0 0 0-1-1H9zM6 7h12l-.7 11.2a2 2 0 0 1-2 1.8H8.7a2 2 0 0 1-2-1.8L6 7z"/>
-</svg>
-
-
+                            <i class="fa-regular fa-trash text-xs"></i>
                         </button>
                     </div>
                 </div>
@@ -383,6 +351,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
 #sessionsList::-webkit-scrollbar-thumb:hover {
     background: #a8a8a8;
+}
+
+/* Animation */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 </style>
 {% endblock %}

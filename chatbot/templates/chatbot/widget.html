@@ -1,0 +1,112 @@
+{% load static %}
+<!-- Floating Chat Widget -->
+<div id="chatWidget" class="chat-widget">
+    <!-- Chat Button (collapsed state) -->
+    <button id="chatWidgetToggle" class="chat-widget-toggle" aria-label="Open AI Assistant">
+        <svg class="chat-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path>
+        </svg>
+        <svg class="close-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+        </svg>
+        <span class="notification-badge hidden">0</span>
+    </button>
+
+    <!-- Chat Window (expanded state) -->
+    <div id="chatWidgetWindow" class="chat-widget-window hidden">
+        <!-- Header -->
+        <div class="chat-widget-header">
+            <div class="flex items-center" >
+                <div class="chat-avatar" style="position: relative;">
+                   <img src="{% static 'assets/img/chatbot.jpeg' %}" alt="Ihear Assistant" class="w-10 h-10 rounded-full">
+
+                   <div style="position: absolute; bottom: 0; right: 0; width: 10px; height: 10px; background-color: #00d553; border-radius: 50%;"></div>
+                </div>
+                <div class="mr-2.5" style="margin-left: 10px;">
+                    <h5 class="font-semibold text-white">Ihear Assiatant</h5>
+                    <p class="text-xs text-blue-100">Ask me anything aboutthe ihear project</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="openFullPageBtn" class="chat-widget-close" aria-label="Open full page" title="Open full page">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+                    </svg>
+                </button>
+                <button style="margin-left: 10px;"   id="chatWidgetMinimize" class="chat-widget-close" aria-label="Minimize chat">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="chat-widget-quick-actions">
+            <button class="quick-action-btn" data-action="upload">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                </svg>
+                <span>Upload Doc</span>
+            </button>
+            <button class="quick-action-btn" data-action="newchat">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                </svg>
+                <span>New Chat</span>
+            </button>
+        </div>
+
+        <!-- Messages Area -->
+        <div id="widgetChatMessages" class="chat-widget-messages">
+            <div class="welcome-message">
+              
+                <h4 class="welcome-title">Welcome!</h4>
+                <p class="welcome-text">I'm your AI assistant. Upload documents and ask me questions about your project.</p>
+                <div class="welcome-suggestions">
+                    <button class="suggestion-btn" data-question="How do I upload audio files?">
+                        How do I upload audio files?
+                    </button>
+                    <button class="suggestion-btn" data-question="What features are available?">
+                        What features are available?
+                    </button>
+                    <button class="suggestion-btn" data-question="How does data export work?">
+                        How does data export work?
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="chat-widget-input">
+            <form id="widgetMessageForm" class="widget-form">
+                {% csrf_token %}
+                <textarea 
+                    id="widgetMessageInput" 
+                    rows="1"
+                    placeholder="Type your message..."
+                    maxlength="2000"
+                ></textarea>
+                <button type="submit" id="widgetSendBtn" class="widget-send-btn" aria-label="Send message">
+                    <svg fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
+                    </svg>
+                </button>
+            </form>
+            <div class="widget-footer">
+                <label class="widget-toggle-label">
+                    <input type="checkbox" id="widgetStreamToggle" checked>
+                    <span>Streaming</span>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden file input for document upload -->
+    <input type="file" id="widgetFileInput" accept=".pdf,.docx,.txt,.md" class="hidden">
+</div>
+
+<!-- Load widget styles and scripts -->
+<link rel="stylesheet" href="{% static 'chatbot/css/widget.css' %}">
+<script src="{% static 'chatbot/js/widget.js' %}"></script>
+

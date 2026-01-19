@@ -84,6 +84,7 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "django_filters",
     "onboarding",
+    'chatbot',
 ]
 TAILWIND_APP_NAME = "theme"
 
@@ -151,6 +152,47 @@ else:
             "OPTIONS": {"sslmode": os.getenv("PGSSLMODE", "prefer")},
         }
     }
+
+# Celery Configuration
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://redis:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+
+# Celery Beat Settings (optional, for periodic tasks)
+CELERY_BEAT_SCHEDULE = {
+    'cleanup-old-sessions': {
+        'task': 'chatbot.tasks.cleanup_old_sessions_task',
+        'schedule': 3600.0,  # Run every hour
+    },
+    'clear-expired-cache': {
+        'task': 'chatbot.tasks.clear_cache_task',
+        'schedule': 1800.0,  # Run every 30 minutes
+    },
+}
+    
+
+# Celery Configuration
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://redis:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+
+# Celery Beat Settings (optional, for periodic tasks)
+CELERY_BEAT_SCHEDULE = {
+    'cleanup-old-sessions': {
+        'task': 'chatbot.tasks.cleanup_old_sessions_task',
+        'schedule': 3600.0,  # Run every hour
+    },
+    'clear-expired-cache': {
+        'task': 'chatbot.tasks.clear_cache_task',
+        'schedule': 1800.0,  # Run every 30 minutes
+    },
+}
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
@@ -315,6 +357,27 @@ if USE_S3:
         },
     }
 
+# Celery Configuration
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://redis:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+
+# Celery Beat Settings (optional, for periodic tasks)
+CELERY_BEAT_SCHEDULE = {
+    'cleanup-old-sessions': {
+        'task': 'chatbot.tasks.cleanup_old_sessions_task',
+        'schedule': 3600.0,  # Run every hour
+    },
+    'clear-expired-cache': {
+        'task': 'chatbot.tasks.clear_cache_task',
+        'schedule': 1800.0,  # Run every 30 minutes
+    },
+    }
+
+if USE_S3:
     STATIC_URL = f"{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/static/"
     MEDIA_URL = f"{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/media/"
 else:
@@ -332,6 +395,26 @@ else:
             "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
         },
     }
+
+# Celery Configuration
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://redis:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+
+# Celery Beat Settings (optional, for periodic tasks)
+CELERY_BEAT_SCHEDULE = {
+    'cleanup-old-sessions': {
+        'task': 'chatbot.tasks.cleanup_old_sessions_task',
+        'schedule': 3600.0,  # Run every hour
+    },
+    'clear-expired-cache': {
+        'task': 'chatbot.tasks.clear_cache_task',
+        'schedule': 1800.0,  # Run every 30 minutes
+    },
+}
 
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, "static"),
@@ -353,13 +436,7 @@ else:
 CACHE_TIMEOUT = int(os.getenv("CACHE_TIMEOUT", default=3600))
 # DJANGO CACHE
 CACHE_DB_ID = int(os.getenv("CACHE_DB_ID", default="1"))
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": f"{REDIS_URL}/{CACHE_DB_ID}",
-        # "OPTIONS": {"CACHE_TIMEOUT": CACHE_TIMEOUT},
-    }
-}
+
 # CHANNELS FOR WEBSOCKET
 CHANNEL_LAYER_DB_ID = int(os.getenv("CHANNEL_LAYER_DB_ID", default="0"))
 CHANNEL_LAYERS = {
@@ -424,6 +501,42 @@ CELERY_WORKER_MAX_MEMORY_PER_CHILD = 500000  # Restart if >500MB
 # Can be overridden via env var SHARED_UPLOADS_DIR
 SHARED_UPLOADS_DIR = os.getenv("SHARED_UPLOADS_DIR", "/shared_uploads")
 
+# CHATBOT configuration - defined early to avoid parsing issues
+CHATBOT = {
+    "VECTOR_DB": {
+        "PATH": "/code/chroma_db",
+        "COLLECTION_NAME": "project_documents",
+        "USE_POSTGRESQL": True,
+        "POSTGRESQL_CONNECTION": {
+            "host": "db",
+            "port": 5432,
+            "dbname": "iheardatadb",
+            "user": "postgres",
+            "password": "admin",
+        }
+    },
+    "EMBEDDINGS": {
+        "MODEL": "text-embedding-3-small",
+        "DIMENSIONS": 1536,
+    },
+    "RAG": {
+        "CHUNK_SIZE": 1000,
+        "CHUNK_OVERLAP": 200,
+        "TOP_K_RESULTS": 4,
+        "ENABLE_RERANKING": True,
+        "STREAMING_ENABLED": True,
+    },
+    "RATE_LIMITS": {
+        "MESSAGES_PER_MINUTE": 30,
+        "DOCUMENTS_PER_DAY": 50,
+    },
+    "DOCUMENT": {
+        "MAX_FILE_SIZE_MB": 25,
+        "ALLOWED_EXTENSIONS": ["pdf", "docx", "txt", "md"],
+        "ENABLE_OCR": True,
+    },
+}
+
 
 # open ai
 
@@ -432,79 +545,179 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 if USE_SQLITE:
 
+
     AI_INSIGHT = {
-        "DATABASE": {
-            "USER": os.getenv("LOCAL_POSTGRES_USER", "postgres"),
-            "PASSWORD": os.getenv("LOCAL_POSTGRES_PASSWORD", "localhost"),
-            "HOST": os.getenv("LOCAL_POSTGRES_HOST", "db"),
-            "PORT": int(os.getenv("LOCAL_POSTGRES_PORT", 5432)),
-            "NAME": os.getenv("LOCAL_POSTGRES_DB", "iheardatadb"),
-            "MAX_CONNECTIONS": int(os.getenv("AI_INSIGHT_DB_MAX_CONNECTIONS", 20)),
-            "CONNECTION_TIMEOUT": int(
-                os.getenv("AI_INSIGHT_DB_CONNECTION_TIMEOUT", 30)
-            ),
-        },
-        "AGENT": {
-            "MODEL": OPENAI_MODEL,
-            "MAX_RETRIES": int(os.getenv("AI_INSIGHT_MAX_RETRIES", 3)),
-            "TIMEOUT_SECONDS": int(os.getenv("AI_INSIGHT_TIMEOUT_SECONDS", 120)),
-            "DEFAULT_TOP_K": int(os.getenv("AI_INSIGHT_DEFAULT_TOP_K", 100)),
-            "MAX_TOP_K": int(os.getenv("AI_INSIGHT_MAX_TOP_K", 1000)),
-            "ENABLE_CACHING": as_bool(os.getenv("AI_INSIGHT_ENABLE_CACHING", "True")),
-        },
-        "SECURITY": {
-            "DEFAULT_ALLOWED_TABLES": [],
-            "MAX_SESSIONS_PER_USER": int(
-                os.getenv("AI_INSIGHT_MAX_SESSIONS_PER_USER", 10)
-            ),
-            "SESSION_INACTIVITY_HOURS": int(
-                os.getenv("AI_INSIGHT_SESSION_INACTIVITY_HOURS", 24)
-            ),
-            "RATE_LIMIT_PER_MINUTE": int(
-                os.getenv("AI_INSIGHT_RATE_LIMIT_PER_MINUTE", 30)
-            ),
-            "MAX_MESSAGE_LENGTH": int(
-                os.getenv("AI_INSIGHT_MAX_MESSAGE_LENGTH", 10000)
-            ),
-        },
-    }
-
-
+            "DATABASE": {
+                "USER": os.getenv("LOCAL_POSTGRES_USER", "postgres"),
+                "PASSWORD": os.getenv("LOCAL_POSTGRES_PASSWORD", "localhost"),
+                "HOST": os.getenv("LOCAL_POSTGRES_HOST", "db"),
+                "PORT": int(os.getenv("LOCAL_POSTGRES_PORT", 5432)),
+                "NAME": os.getenv("LOCAL_POSTGRES_DB", "iheardatadb"),
+                "MAX_CONNECTIONS": int(os.getenv("AI_INSIGHT_DB_MAX_CONNECTIONS", 20)),
+                "CONNECTION_TIMEOUT": int(
+                    os.getenv("AI_INSIGHT_DB_CONNECTION_TIMEOUT", 30)
+                ),
+            },
+            "AGENT": {
+                "MODEL": OPENAI_MODEL,
+                "MAX_RETRIES": int(os.getenv("AI_INSIGHT_MAX_RETRIES", 3)),
+                "TIMEOUT_SECONDS": int(os.getenv("AI_INSIGHT_TIMEOUT_SECONDS", 120)),
+                "DEFAULT_TOP_K": int(os.getenv("AI_INSIGHT_DEFAULT_TOP_K", 100)),
+                "MAX_TOP_K": int(os.getenv("AI_INSIGHT_MAX_TOP_K", 1000)),
+                "ENABLE_CACHING": as_bool(os.getenv("AI_INSIGHT_ENABLE_CACHING", "True")),
+            },
+            "SECURITY": {
+                "DEFAULT_ALLOWED_TABLES": [],
+                "MAX_SESSIONS_PER_USER": int(
+                    os.getenv("AI_INSIGHT_MAX_SESSIONS_PER_USER", 10)
+                ),
+                "SESSION_INACTIVITY_HOURS": int(
+                    os.getenv("AI_INSIGHT_SESSION_INACTIVITY_HOURS", 24)
+                ),
+                "RATE_LIMIT_PER_MINUTE": int(
+                    os.getenv("AI_INSIGHT_RATE_LIMIT_PER_MINUTE", 30)
+                ),
+                "MAX_MESSAGE_LENGTH": int(
+                    os.getenv("AI_INSIGHT_MAX_MESSAGE_LENGTH", 10000)
+                ),
+            },
+        }
 else:
 
     AI_INSIGHT = {
-        "DATABASE": {
-            "USER": os.getenv("POSTGRES_USER", "postgres"),
-            "PASSWORD": os.getenv("POSTGRES_PASSWORD", "localhost"),
-            "HOST": os.getenv("POSTGRES_HOST", "db"),
-            "PORT": int(os.getenv("POSTGRES_PORT", 5432)),
-            "NAME": os.getenv("POSTGRES_DB", "iheardatadb"),
-            "MAX_CONNECTIONS": int(os.getenv("AI_INSIGHT_DB_MAX_CONNECTIONS", 20)),
-            "CONNECTION_TIMEOUT": int(
-                os.getenv("AI_INSIGHT_DB_CONNECTION_TIMEOUT", 30)
-            ),
-        },
-        "AGENT": {
-            "MODEL": OPENAI_MODEL,
-            "MAX_RETRIES": int(os.getenv("AI_INSIGHT_MAX_RETRIES", 3)),
-            "TIMEOUT_SECONDS": int(os.getenv("AI_INSIGHT_TIMEOUT_SECONDS", 120)),
-            "DEFAULT_TOP_K": int(os.getenv("AI_INSIGHT_DEFAULT_TOP_K", 100)),
-            "MAX_TOP_K": int(os.getenv("AI_INSIGHT_MAX_TOP_K", 1000)),
-            "ENABLE_CACHING": as_bool(os.getenv("AI_INSIGHT_ENABLE_CACHING", "True")),
-        },
-        "SECURITY": {
-            "DEFAULT_ALLOWED_TABLES": [],
-            "MAX_SESSIONS_PER_USER": int(
-                os.getenv("AI_INSIGHT_MAX_SESSIONS_PER_USER", 10)
-            ),
-            "SESSION_INACTIVITY_HOURS": int(
-                os.getenv("AI_INSIGHT_SESSION_INACTIVITY_HOURS", 24)
-            ),
-            "RATE_LIMIT_PER_MINUTE": int(
-                os.getenv("AI_INSIGHT_RATE_LIMIT_PER_MINUTE", 30)
-            ),
-            "MAX_MESSAGE_LENGTH": int(
-                os.getenv("AI_INSIGHT_MAX_MESSAGE_LENGTH", 10000)
-            ),
-        },
-    }
+            "DATABASE": {
+                "USER": os.getenv("POSTGRES_USER", "postgres"),
+                "PASSWORD": os.getenv("POSTGRES_PASSWORD", "localhost"),
+                "HOST": os.getenv("POSTGRES_HOST", "db"),
+                "PORT": int(os.getenv("POSTGRES_PORT", 5432)),
+                "NAME": os.getenv("POSTGRES_DB", "iheardatadb"),
+                "MAX_CONNECTIONS": int(os.getenv("AI_INSIGHT_DB_MAX_CONNECTIONS", 20)),
+                "CONNECTION_TIMEOUT": int(
+                    os.getenv("AI_INSIGHT_DB_CONNECTION_TIMEOUT", 30)
+                ),
+            },
+            "AGENT": {
+                "MODEL": OPENAI_MODEL,
+                "MAX_RETRIES": int(os.getenv("AI_INSIGHT_MAX_RETRIES", 3)),
+                "TIMEOUT_SECONDS": int(os.getenv("AI_INSIGHT_TIMEOUT_SECONDS", 120)),
+                "DEFAULT_TOP_K": int(os.getenv("AI_INSIGHT_DEFAULT_TOP_K", 100)),
+                "MAX_TOP_K": int(os.getenv("AI_INSIGHT_MAX_TOP_K", 1000)),
+                "ENABLE_CACHING": as_bool(os.getenv("AI_INSIGHT_ENABLE_CACHING", "True")),
+            },
+            "SECURITY": {
+                "DEFAULT_ALLOWED_TABLES": [],
+                "MAX_SESSIONS_PER_USER": int(
+                    os.getenv("AI_INSIGHT_MAX_SESSIONS_PER_USER", 10)
+                ),
+                "SESSION_INACTIVITY_HOURS": int(
+                    os.getenv("AI_INSIGHT_SESSION_INACTIVITY_HOURS", 24)
+                ),
+                "RATE_LIMIT_PER_MINUTE": int(
+                    os.getenv("AI_INSIGHT_RATE_LIMIT_PER_MINUTE", 30)
+                ),
+                "MAX_MESSAGE_LENGTH": int(
+                    os.getenv("AI_INSIGHT_MAX_MESSAGE_LENGTH", 10000)
+                ),
+            },
+        }
+
+
+# Celery Configuration
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://redis:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+
+# Celery Beat Settings (optional, for periodic tasks)
+CELERY_BEAT_SCHEDULE = {
+    'cleanup-old-sessions': {
+        'task': 'chatbot.tasks.cleanup_old_sessions_task',
+        'schedule': 3600.0,  # Run every hour
+    },
+    'clear-expired-cache': {
+        'task': 'chatbot.tasks.clear_cache_task',
+        'schedule': 1800.0,  # Run every 30 minutes
+    },
+}
+
+
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://redis:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+
+# Celery Beat Settings (optional, for periodic tasks)
+CELERY_BEAT_SCHEDULE = {
+    'cleanup-old-sessions': {
+        'task': 'chatbot.tasks.cleanup_old_sessions_task',
+        'schedule': 3600.0,  # Run every hour
+    },
+    'clear-expired-cache': {
+        'task': 'chatbot.tasks.clear_cache_task',
+        'schedule': 1800.0,  # Run every 30 minutes
+    },
+}
+
+# Celery Configuration
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://redis:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+
+# Celery Beat Settings (optional, for periodic tasks)
+CELERY_BEAT_SCHEDULE = {
+    'cleanup-old-sessions': {
+        'task': 'chatbot.tasks.cleanup_old_sessions_task',
+        'schedule': 3600.0,  # Run every hour
+    },
+    'clear-expired-cache': {
+        'task': 'chatbot.tasks.clear_cache_task',
+        'schedule': 1800.0,  # Run every 30 minutes
+    },
+}
+
+
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+
+# Celery Beat Settings (optional, for periodic tasks)
+CELERY_BEAT_SCHEDULE = {
+    'cleanup-old-sessions': {
+        'task': 'chatbot.tasks.cleanup_old_sessions_task',
+        'schedule': 3600.0,  # Run every hour
+    },
+    'clear-expired-cache': {
+        'task': 'chatbot.tasks.clear_cache_task',
+        'schedule': 1800.0,  # Run every 30 minutes
+    },
+}
+
+# Celery Configuration
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://redis:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+
+# Celery Beat Settings (optional, for periodic tasks)
+CELERY_BEAT_SCHEDULE = {
+    'cleanup-old-sessions': {
+        'task': 'chatbot.tasks.cleanup_old_sessions_task',
+        'schedule': 3600.0,  # Run every hour
+    },
+    'clear-expired-cache': {
+        'task': 'chatbot.tasks.clear_cache_task',
+        'schedule': 1800.0,  # Run every 30 minutes
+    },
+}
+
+
+# Cache Configuration
+
