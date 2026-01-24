@@ -25,11 +25,34 @@ def export_with_audio_view(request):
         try:
             # Get export configuration
             folder_structure_json = request.POST.get("folder_structure", "{}")
-            category_ids = request.POST.getlist("categories")
+            raw_category_ids = request.POST.getlist("categories")
             export_name = request.POST.get(
                 "export_name", f'export_{timezone.now().strftime("%Y%m%d_%H%M%S")}'
             )
             audio_structure_template = request.POST.get("audio_structure_template", "")
+
+            # Parse category IDs - handle split category parts (e.g., "123_part1")
+            category_ids = []
+            category_parts = {}  # {category_id: part_number}
+            
+            for cat_value in raw_category_ids:
+                if cat_value == "all":
+                    category_ids = []  # Empty means all categories
+                    category_parts = {}
+                    break
+                elif "_part" in cat_value:
+                    # This is a split category part, e.g., "123_part1"
+                    try:
+                        cat_id_str, part_str = cat_value.split("_part")
+                        cat_id = int(cat_id_str)
+                        part_num = int(part_str)
+                        category_ids.append(str(cat_id))
+                        category_parts[str(cat_id)] = part_num
+                    except (ValueError, IndexError):
+                        continue
+                else:
+                    # Regular category ID
+                    category_ids.append(cat_value)
 
             # Validate folder structure JSON
             try:
@@ -63,7 +86,10 @@ def export_with_audio_view(request):
                 folder_structure=folder_structure,
                 audio_structure_template=audio_structure_template,
                 category_ids=category_ids if category_ids else None,
-                applied_filters=dict(request.GET),  # Store current filters
+                applied_filters={
+                    **dict(request.GET),
+                    "category_parts": category_parts,  # Store which parts are selected
+                },
                 status="pending",
                 split_count=split_count,
             )
@@ -74,7 +100,10 @@ def export_with_audio_view(request):
                 folder_structure=folder_structure,
                 category_ids=category_ids,
                 export_name=export_name,
-                filters=dict(request.GET),
+                filters={
+                    **dict(request.GET),
+                    "category_parts": category_parts,  # Pass parts info to task
+                },
                 split_count=split_count,
             )
 
@@ -99,11 +128,53 @@ def export_with_audio_view(request):
         .order_by("name")
         .prefetch_related("noisedataset_set")
     )
+    
+    # Build enhanced category list with split options for large categories
+    # Threshold for splitting: categories with more than 300 datasets
+    SPLIT_THRESHOLD = 300
+    enhanced_categories = []
+    
+    for category in categories_with_data:
+        dataset_count = category.noisedataset_set.count()
+        
+        if dataset_count > SPLIT_THRESHOLD:
+            # Split large categories into 3 parts
+            third = dataset_count // 3
+            remainder = dataset_count % 3
+            
+            # Calculate ranges for each part
+            part1_end = third + (1 if remainder > 0 else 0)
+            part2_end = part1_end + third + (1 if remainder > 1 else 0)
+            part3_end = dataset_count
+            
+            enhanced_categories.append({
+                'id': category.id,
+                'name': category.name,
+                'count': dataset_count,
+                'is_split': True,
+                'parts': [
+                    {'part': 1, 'start': 0, 'end': part1_end, 'count': part1_end},
+                    {'part': 2, 'start': part1_end, 'end': part2_end, 'count': part2_end - part1_end},
+                    {'part': 3, 'start': part2_end, 'end': part3_end, 'count': part3_end - part2_end},
+                ]
+            })
+        else:
+            enhanced_categories.append({
+                'id': category.id,
+                'name': category.name,
+                'count': dataset_count,
+                'is_split': False,
+                'parts': []
+            })
 
     return render(
         request,
         "export/export_with_audio.html",
-        {"categories": categories_with_data, "now": timezone.now()},
+        {
+            "categories": categories_with_data,
+            "enhanced_categories": enhanced_categories,
+            "now": timezone.now(),
+        },
     )
 
 

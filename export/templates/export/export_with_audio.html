@@ -740,17 +740,37 @@
       <!-- Category Selection -->
       <div class="form-group">
         <label class="mb-2 font-bold text-base">Select Categories to Export</label>
+        <p class="text-xs text-gray-500 mb-2">Large categories (300+ datasets) are automatically split into 3 parts for easier exporting. Select the part you want to export.</p>
 
         <div class="category-selector">
           <div class="category-item">
-            <input type="checkbox" name="categories" value="all" id="cat_all" checked>
-            <label for="cat_all"><strong>All Categories</strong></label>
+            <input type="checkbox" name="categories" value="all" id="cat_all">
+            <label for="cat_all"><strong>All Categories (Not Recommended for Large Exports)</strong></label>
           </div>
-          {% for category in categories %}
-          <div class="category-item">
-            <input type="checkbox" name="categories" value="{{ category.id }}" id="cat_{{ category.id }}" class="category-checkbox">
-            <label class="text-sm" for="cat_{{ category.id }}">{{ category.name }} <span class="dataset-count">({{ category.noisedataset_set.count }} dataset{{ category.noisedataset_set.count|pluralize }})</span></label>
-          </div>
+          
+          {% for cat in enhanced_categories %}
+            {% if cat.is_split %}
+              <!-- Split category header -->
+              <div class="category-item bg-amber-50 border-l-4 border-amber-400" style="background-color: #fffbeb; border-left: 4px solid #f59e0b;">
+                <span class="text-sm font-bold text-amber-700">{{ cat.name }} <span class="text-xs font-normal">({{ cat.count }} datasets - split into 3 parts)</span></span>
+              </div>
+              <!-- Split category parts -->
+              {% for part in cat.parts %}
+              <div class="category-item ml-6" style="margin-left: 1.5rem; background-color: #fef3c7;">
+                <input type="checkbox" name="categories" value="{{ cat.id }}_part{{ part.part }}" id="cat_{{ cat.id }}_part{{ part.part }}" class="category-checkbox" data-category-id="{{ cat.id }}" data-part="{{ part.part }}" data-start="{{ part.start }}" data-end="{{ part.end }}">
+                <label class="text-sm" for="cat_{{ cat.id }}_part{{ part.part }}">
+                  <span class="font-medium">{{ cat.name }} - Part {{ part.part }}/3</span>
+                  <span class="dataset-count text-amber-600">({{ part.count }} datasets)</span>
+                </label>
+              </div>
+              {% endfor %}
+            {% else %}
+              <!-- Regular category -->
+              <div class="category-item">
+                <input type="checkbox" name="categories" value="{{ cat.id }}" id="cat_{{ cat.id }}" class="category-checkbox">
+                <label class="text-sm" for="cat_{{ cat.id }}">{{ cat.name }} <span class="dataset-count">({{ cat.count }} dataset{{ cat.count|pluralize }})</span></label>
+              </div>
+            {% endif %}
           {% endfor %}
         </div>
       </div>

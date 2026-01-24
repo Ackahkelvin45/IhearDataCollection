@@ -146,6 +146,67 @@ def export_with_audio_task(
                 queryset = queryset.filter(dataset_type_id=filters["dataset_type"])
             if filters.get("collector"):
                 queryset = queryset.filter(collector_id=filters["collector"])
+        
+        # Handle category parts - when user selects part 1, 2, or 3 of a large category
+        category_parts = filters.get("category_parts", {}) if filters else {}
+        if category_parts:
+            logger.info(f"Category parts filter: {category_parts}")
+            
+            # For each category with a part specified, filter to only that portion
+            filtered_ids = []
+            
+            for cat_id_str, part_num in category_parts.items():
+                try:
+                    cat_id = int(cat_id_str)
+                    # Get all dataset IDs for this category, ordered by ID
+                    cat_dataset_ids = list(
+                        queryset.filter(category_id=cat_id)
+                        .order_by('id')
+                        .values_list('id', flat=True)
+                    )
+                    
+                    if cat_dataset_ids:
+                        total_count = len(cat_dataset_ids)
+                        third = total_count // 3
+                        remainder = total_count % 3
+                        
+                        # Calculate boundaries for each part
+                        part1_end = third + (1 if remainder > 0 else 0)
+                        part2_end = part1_end + third + (1 if remainder > 1 else 0)
+                        
+                        if part_num == 1:
+                            selected_ids = cat_dataset_ids[0:part1_end]
+                        elif part_num == 2:
+                            selected_ids = cat_dataset_ids[part1_end:part2_end]
+                        elif part_num == 3:
+                            selected_ids = cat_dataset_ids[part2_end:]
+                        else:
+                            selected_ids = cat_dataset_ids
+                        
+                        filtered_ids.extend(selected_ids)
+                        logger.info(f"Category {cat_id} part {part_num}: selected {len(selected_ids)} of {total_count} datasets")
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Error parsing category part: {e}")
+                    continue
+            
+            # Also include datasets from categories without parts specified
+            cats_with_parts = [int(k) for k in category_parts.keys()]
+            other_cat_ids = [
+                cid for cid in (category_ids or [])
+                if int(cid) not in cats_with_parts
+            ]
+            if other_cat_ids:
+                other_ids = list(
+                    queryset.filter(category_id__in=other_cat_ids)
+                    .values_list('id', flat=True)
+                )
+                filtered_ids.extend(other_ids)
+                logger.info(f"Other categories (no parts): {len(other_ids)} datasets")
+            
+            # Filter queryset to only include the selected IDs
+            if filtered_ids:
+                queryset = queryset.filter(id__in=filtered_ids)
+                logger.info(f"Total filtered datasets after part selection: {len(filtered_ids)}")
 
         total = queryset.count()
         self.update_state(
