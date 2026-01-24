@@ -58,6 +58,7 @@ def export_with_audio_task(
     s3_upload_successful = False  # Track if S3 upload was successful
     temp_files_created = []  # Track all temporary files created during export
     temp_dirs_created = []  # Track all temporary directories created during export
+    all_zip_paths = []  # Track all zip files for split exports
 
     try:
         # Get export history record
@@ -727,24 +728,27 @@ def export_with_audio_task(
         if root_export_dir and os.path.exists(root_export_dir):
             cleanup_items.append(("directory", root_export_dir))
 
-        # 2. Clean up ZIP file
-        # Delete ZIP file if:
-        # - S3 upload was successful (file is now in S3, local copy not needed)
+        # 2. Clean up ZIP files
+        # Delete ZIP files if:
+        # - S3 upload was successful (files are now in S3, local copies not needed)
         # - Using temp directory (should always clean up temp files)
-        # - S3 is enabled but upload failed (file should be cleaned up, user can retry)
-        if zip_path and os.path.exists(zip_path):
-            should_delete_zip = (
-                s3_upload_successful
-                or temp_export_base  # S3 upload succeeded, file is in S3
-                or (  # Using temp directory
-                    use_s3 and not s3_upload_successful
-                )  # S3 enabled but upload failed
-            )
-            if should_delete_zip:
-                cleanup_items.append(("file", zip_path))
-            else:
-                # Only keep ZIP file if using local storage (S3 disabled) and export succeeded
-                logger.info(f"Keeping ZIP file for local storage: {zip_path}")
+        # - S3 is enabled but upload failed (files should be cleaned up, user can retry)
+        should_delete_zip = (
+            s3_upload_successful
+            or temp_export_base  # S3 upload succeeded, files are in S3
+            or (  # Using temp directory
+                use_s3 and not s3_upload_successful
+            )  # S3 enabled but upload failed
+        )
+
+        # Clean up all zip files (for split exports)
+        for current_zip_path in all_zip_paths:
+            if current_zip_path and os.path.exists(current_zip_path):
+                if should_delete_zip:
+                    cleanup_items.append(("file", current_zip_path))
+                else:
+                    # Only keep ZIP file if using local storage (S3 disabled) and export succeeded
+                    logger.info(f"Keeping ZIP file for local storage: {current_zip_path}")
 
         # 3. Clean up export_base_dir if it's a temp directory
         if export_base_dir and temp_export_base and os.path.exists(export_base_dir):

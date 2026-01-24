@@ -99,3 +99,18 @@ class ExportHistory(models.Model):
         if self.file_size:
             return round(self.file_size / (1024 * 1024), 2)
         return None
+
+    @property
+    def total_file_size(self):
+        """Return total file size in bytes for all parts"""
+        if self.file_sizes and isinstance(self.file_sizes, list):
+            return sum(self.file_sizes)
+        return self.file_size or 0
+
+    @property
+    def total_file_size_mb(self):
+        """Return total file size in MB for all parts"""
+        total = self.total_file_size
+        if total:
+            return round(total / (1024 * 1024), 2)
+        return None

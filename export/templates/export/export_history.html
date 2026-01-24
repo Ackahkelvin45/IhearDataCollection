@@ -438,7 +438,14 @@
                       <td class="p-2 align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
                         <div class="flex px-2 py-1">
                           <div class="flex flex-col justify-center">
-                            <h6 class="mb-0 text-sm leading-normal dark:text-white">{{ export.export_name }}</h6>
+                            <h6 class="mb-0 text-sm leading-normal dark:text-white">
+                              {{ export.export_name }}
+                              {% if export.split_count > 1 %}
+                                <span class="ml-1 px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded" title="Split into {{ export.split_count }} files">
+                                  {{ export.split_count }} parts
+                                </span>
+                              {% endif %}
+                            </h6>
                             {% if export.status == 'processing' %}
                               <span class="progress-indicator" title="Processing..."></span>
                             {% endif %}
@@ -456,8 +463,11 @@
                       </td>
                       <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
                         <span class="text-sm font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">
-                          {% if export.file_size %}
-                            {{ export.file_size_mb|floatformat:1 }} MB
+                          {% if export.total_file_size_mb %}
+                            {{ export.total_file_size_mb|floatformat:1 }} MB
+                            {% if export.split_count > 1 %}
+                              <span class="text-xs text-gray-400">({{ export.split_count }} parts)</span>
+                            {% endif %}
                           {% else %}
                             -
                           {% endif %}
@@ -481,7 +491,7 @@
                         <div class="flex flex-row items-center justify-center gap-4">
                           {% if export.status == 'completed' %}
                             {% if export.split_count > 1 and export.download_urls %}
-                              <button onclick="showSplitDownloads({{ export.id }}, '{{ export.export_name }}', {{ export.split_count }}, {{ export.download_urls|safe }}, {{ export.file_sizes|default:'[]'|safe }})" class="text-sm mr-2 font-semibold leading-tight text-green-600 hover:text-green-800">
+                              <button onclick="showSplitDownloads({{ export.id }}, '{{ export.export_name|escapejs }}', {{ export.split_count }}, {{ export.download_urls|to_json }}, {{ export.file_sizes|to_json }})" class="text-sm mr-2 font-semibold leading-tight text-green-600 hover:text-green-800">
                                 <i class="fas fa-download mr-1"></i>Download ({{ export.split_count }} files)
                               </button>
                             {% elif export.download_url %}
