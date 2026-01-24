@@ -495,7 +495,7 @@
                                 <i class="fas fa-download mr-1"></i>Download ({{ export.split_count }} files)
                               </button>
                             {% elif export.download_url %}
-                              <a href="{{ export.download_url }}" class="text-sm mr-2 font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">Download</a>
+                            <a href="{{ export.download_url }}" class="text-sm mr-2 font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">Download</a>
                             {% endif %}
                           {% endif %}
                           <a onclick="toggleDetails({{ export.id }})" class="text-sm text-cyan-500 mr-2 font-semibold leading-tight dark:text-white dark:opacity-80">Details</a>

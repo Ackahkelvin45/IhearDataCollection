@@ -108,7 +108,8 @@ def export_with_audio_task(
         excel_dir = os.path.join(root_export_dir, excel_path)
         os.makedirs(excel_dir, exist_ok=True)
 
-        # Validate split_count
+        # Validate split_count - prefer the value from export_history if available
+        split_count = export_history.split_count if hasattr(export_history, 'split_count') else split_count
         split_count = max(1, min(3, split_count or 1))  # Ensure 1-3 range
         logger.info(f"Export will be split into {split_count} file(s)")
 
@@ -151,6 +152,22 @@ def export_with_audio_task(
             state="PROGRESS", meta={"progress": 0, "current": 0, "total": total}
         )
 
+        # Handle empty dataset case
+        if total == 0:
+            logger.warning("No datasets found matching the criteria")
+            export_history.status = "completed"
+            export_history.download_url = ""
+            export_history.file_size = 0
+            export_history.total_files = 0
+            export_history.completed_at = timezone.now()
+            export_history.error_message = "No datasets found matching the selected criteria"
+            export_history.save()
+            return {
+                "status": "completed",
+                "export_id": export_history.id,
+                "message": "No datasets to export",
+            }
+
         # Get all dataset IDs and split into parts
         all_dataset_ids = list(queryset.values_list("id", flat=True))
 
@@ -168,6 +185,12 @@ def export_with_audio_task(
                     dataset_splits.append(all_dataset_ids[start_idx:end_idx])
 
         logger.info(f"Dataset split sizes: {[len(s) for s in dataset_splits]}")
+        logger.info(f"Total datasets to export: {total}, Split count: {split_count}")
+
+        # Validate dataset_splits
+        if not dataset_splits or all(len(s) == 0 for s in dataset_splits):
+            logger.error("No dataset splits created - this should not happen")
+            raise Exception("Failed to create dataset splits")
 
         # ALL metadata columns
         headers = [
@@ -311,16 +334,23 @@ def export_with_audio_task(
                 part_export_name = export_name
 
             logger.info(
-                f"Processing split {split_num}/{split_total}: {len(split_dataset_ids)} datasets"
+                f"=== Starting split {split_num}/{split_total}: {len(split_dataset_ids)} datasets ==="
             )
+            
+            # Skip empty splits
+            if not split_dataset_ids:
+                logger.warning(f"Split {split_num} has no datasets, skipping")
+                continue
 
             # Create Excel workbook for this split
+            logger.info(f"Split {split_num}: Creating Excel workbook...")
             wb, ws = create_workbook_with_headers()
 
             # Track audio files for this split
             audio_files_to_zip = []
 
             # Get datasets for this split
+            logger.info(f"Split {split_num}: Fetching {len(split_dataset_ids)} datasets...")
             split_queryset = NoiseDataset.objects.filter(
                 id__in=split_dataset_ids
             ).select_related(
@@ -336,8 +366,10 @@ def export_with_audio_task(
             )
 
             # Process datasets in this split
+            split_processed = 0
             for dataset in split_queryset.iterator(chunk_size=100):
                 processed += 1
+                split_processed += 1
 
                 # Build audio subfolder (logical path only, not created on disk)
                 subfolder = build_audio_subfolder(dataset, audio_structure_template)
@@ -460,12 +492,17 @@ def export_with_audio_task(
                         },
                     )
 
+            logger.info(f"Split {split_num}: Processed {split_processed} datasets, {len(audio_files_to_zip)} audio files to zip")
+
             # Auto-adjust column widths
+            logger.info(f"Split {split_num}: Adjusting column widths...")
             auto_adjust_columns(ws)
 
             # Save Excel file for this split
             excel_file_path = os.path.join(excel_dir, f"{part_export_name}.xlsx")
+            logger.info(f"Split {split_num}: Saving Excel file to {excel_file_path}...")
             wb.save(excel_file_path)
+            logger.info(f"Split {split_num}: Excel file saved successfully")
 
             # Create ZIP file for this split - ensure absolute path
             zip_path = os.path.join(export_base_dir, f"{part_export_name}.zip")
@@ -474,15 +511,24 @@ def export_with_audio_task(
             all_zip_paths.append(zip_path)
             logger.info(f"Creating ZIP file at: {zip_path}")
 
+            logger.info(f"Split {split_num}: Creating ZIP file with {len(audio_files_to_zip)} audio files...")
+            audio_processed = 0
+            
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
                 # 1. Add the Excel file at the configured excel_path inside the ZIP
                 excel_arcname = os.path.join(
                     excel_path, f"{part_export_name}.xlsx"
                 ).replace("\\", "/")
                 zipf.write(excel_file_path, excel_arcname)
+                logger.info(f"Split {split_num}: Excel file added to ZIP")
 
                 # 2. Stream audio files directly into the ZIP without creating temp copies
                 for audio_info in audio_files_to_zip:
+                    audio_processed += 1
+                    
+                    # Log progress every 50 audio files
+                    if audio_processed % 50 == 0:
+                        logger.info(f"Split {split_num}: Zipped {audio_processed}/{len(audio_files_to_zip)} audio files...")
                     audio_field = audio_info["audio_field"]
                     audio_name = audio_info["audio_name"]
                     audio_zip_path = audio_info["zip_path"]
@@ -528,6 +574,8 @@ def export_with_audio_task(
                                 exc_info=True,
                             )
 
+            logger.info(f"Split {split_num}: ZIP file closed, verifying...")
+
             # Verify ZIP file exists
             if not os.path.exists(zip_path):
                 error_msg = f"ZIP file was not created at expected path: {zip_path}"
@@ -542,11 +590,23 @@ def export_with_audio_task(
             file_size = os.path.getsize(zip_path)
             all_file_sizes.append(file_size)
             logger.info(
-                f"Export ZIP file {split_num}/{split_total} created successfully: {zip_path} ({file_size} bytes)"
+                f"=== Split {split_num}/{split_total} COMPLETE: {zip_path} ({file_size} bytes, {audio_processed} audio files) ==="
             )
 
+        # Verify we have at least one zip file
+        logger.info(f"=== All splits complete. Created {len(all_zip_paths)} ZIP files ===")
+        
+        if not all_zip_paths:
+            error_msg = "No ZIP files were created. Export failed."
+            logger.error(error_msg)
+            export_history.status = "failed"
+            export_history.error_message = error_msg
+            export_history.completed_at = timezone.now()
+            export_history.save()
+            raise Exception(error_msg)
+
         # Use the first file for backward compatibility with single file exports
-        zip_path = all_zip_paths[0] if all_zip_paths else None
+        zip_path = all_zip_paths[0]
         file_size = all_file_sizes[0] if all_file_sizes else 0
 
         # Upload to S3 if S3 is enabled, otherwise keep local
@@ -724,15 +784,9 @@ def export_with_audio_task(
         # Track all files/dirs to clean up
         cleanup_items = []
 
-        # 1. Clean up root export directory (temporary folder with Excel and audio files)
         if root_export_dir and os.path.exists(root_export_dir):
             cleanup_items.append(("directory", root_export_dir))
 
-        # 2. Clean up ZIP files
-        # Delete ZIP files if:
-        # - S3 upload was successful (files are now in S3, local copies not needed)
-        # - Using temp directory (should always clean up temp files)
-        # - S3 is enabled but upload failed (files should be cleaned up, user can retry)
         should_delete_zip = (
             s3_upload_successful
             or temp_export_base  # S3 upload succeeded, files are in S3
