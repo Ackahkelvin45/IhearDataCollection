@@ -207,22 +207,45 @@ def export_progress(request, task_id):
                 progress = (
                     task.info.get("progress", 0) if isinstance(task.info, dict) else 0
                 )
-                return JsonResponse(
-                    {
-                        "status": "processing",
-                        "progress": progress,
-                        "current": (
-                            task.info.get("current", 0)
-                            if isinstance(task.info, dict)
-                            else 0
-                        ),
-                        "total": (
-                            task.info.get("total", 0)
-                            if isinstance(task.info, dict)
-                            else 0
-                        ),
-                    }
-                )
+                response_data = {
+                    "status": "processing",
+                    "progress": progress,
+                    "current": (
+                        task.info.get("current", 0)
+                        if isinstance(task.info, dict)
+                        else 0
+                    ),
+                    "total": (
+                        task.info.get("total", 0)
+                        if isinstance(task.info, dict)
+                        else 0
+                    ),
+                }
+                
+                # For split exports, include info about completed parts
+                if isinstance(task.info, dict):
+                    completed_parts = task.info.get("completed_parts", 0)
+                    total_parts = task.info.get("total_parts", 1)
+                    if completed_parts > 0:
+                        response_data["completed_parts"] = completed_parts
+                        response_data["total_parts"] = total_parts
+                        response_data["download_urls"] = task.info.get("download_urls", [])
+                        response_data["file_sizes"] = task.info.get("file_sizes", [])
+                
+                # Also check database for already completed parts
+                try:
+                    export_record = ExportHistory.objects.get(
+                        task_id=task_id, user=request.user
+                    )
+                    if export_record.download_urls and len(export_record.download_urls) > 0:
+                        response_data["completed_parts"] = len(export_record.download_urls)
+                        response_data["total_parts"] = export_record.split_count
+                        response_data["download_urls"] = export_record.download_urls
+                        response_data["file_sizes"] = export_record.file_sizes or []
+                except ExportHistory.DoesNotExist:
+                    pass
+                
+                return JsonResponse(response_data)
         except Exception as celery_error:
             # If Celery check fails, try database one more time
             logger.warning(f"Celery task check failed: {str(celery_error)}")

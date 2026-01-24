@@ -322,6 +322,11 @@ def export_with_audio_task(
         all_file_sizes = []
         all_download_urls = []
         processed = 0
+        
+        # Initialize download_urls and file_sizes in export_history for tracking partial progress
+        export_history.download_urls = []
+        export_history.file_sizes = []
+        export_history.save()
 
         for split_idx, split_dataset_ids in enumerate(dataset_splits):
             split_num = split_idx + 1
@@ -592,6 +597,70 @@ def export_with_audio_task(
             logger.info(
                 f"=== Split {split_num}/{split_total} COMPLETE: {zip_path} ({file_size} bytes, {audio_processed} audio files) ==="
             )
+            
+            # For split exports, upload each part to S3 immediately and update export history
+            # This allows users to download completed parts while others are still processing
+            if split_count > 1:
+                part_download_url = f"/export/download/{export_history.id}/?part={split_num}"
+                
+                # Upload to S3 if enabled
+                if hasattr(settings, "USE_S3") and settings.USE_S3:
+                    try:
+                        from django.core.files.storage import default_storage
+                        from django.core.files import File as DjangoFile
+                        
+                        current_file_name = os.path.basename(zip_path)
+                        s3_relative_path = f"exports/user_{user.id}/{current_file_name}"
+                        
+                        logger.info(f"Uploading split {split_num} to S3: {s3_relative_path}")
+                        
+                        with open(zip_path, "rb") as zip_file:
+                            s3_path = default_storage.save(
+                                s3_relative_path, DjangoFile(zip_file, name=current_file_name)
+                            )
+                        
+                        # Get S3 URL
+                        try:
+                            part_download_url = default_storage.url(s3_path)
+                        except Exception:
+                            if hasattr(settings, "MEDIA_URL"):
+                                part_download_url = f"{settings.MEDIA_URL.rstrip('/')}/{s3_relative_path}"
+                        
+                        logger.info(f"Split {split_num} uploaded to S3: {part_download_url}")
+                        
+                    except Exception as s3_error:
+                        logger.error(f"Failed to upload split {split_num} to S3: {s3_error}")
+                        # Keep local download URL as fallback
+                
+                all_download_urls.append(part_download_url)
+                
+                # Update export history with this part's info - allows partial downloads
+                export_history.refresh_from_db()
+                current_urls = export_history.download_urls or []
+                current_sizes = export_history.file_sizes or []
+                current_urls.append(part_download_url)
+                current_sizes.append(file_size)
+                export_history.download_urls = current_urls
+                export_history.file_sizes = current_sizes
+                export_history.download_url = current_urls[0]  # First file URL for backward compat
+                export_history.file_size = current_sizes[0]
+                export_history.save()
+                
+                logger.info(f"Export history updated with split {split_num} download URL")
+                
+                # Update progress to show this part is complete
+                self.update_state(
+                    state="PROGRESS",
+                    meta={
+                        "progress": int((split_num / split_total) * 100),
+                        "current": processed,
+                        "total": total,
+                        "completed_parts": split_num,
+                        "total_parts": split_total,
+                        "download_urls": current_urls,
+                        "file_sizes": current_sizes,
+                    },
+                )
 
         # Verify we have at least one zip file
         logger.info(f"=== All splits complete. Created {len(all_zip_paths)} ZIP files ===")
@@ -630,89 +699,95 @@ def export_with_audio_task(
                 )
                 logger.info(f"  - MEDIA_URL: {getattr(settings, 'MEDIA_URL', 'N/A')}")
 
-                # Upload all ZIP files to S3
-                for idx, current_zip_path in enumerate(all_zip_paths):
-                    current_file_name = os.path.basename(current_zip_path)
-                    s3_relative_path = f"exports/user_{user.id}/{current_file_name}"
+                # For split exports, files were already uploaded per-split, so just verify
+                if split_count > 1 and all_download_urls:
+                    logger.info(f"Split files already uploaded to S3 during processing")
+                    s3_upload_successful = True
+                    download_url = all_download_urls[0] if all_download_urls else f"/export/download/{export_history.id}/"
+                else:
+                    # Single file export - upload now
+                    for idx, current_zip_path in enumerate(all_zip_paths):
+                        current_file_name = os.path.basename(current_zip_path)
+                        s3_relative_path = f"exports/user_{user.id}/{current_file_name}"
 
-                    logger.info(
-                        f"Uploading export ZIP {idx + 1}/{len(all_zip_paths)} to S3"
-                    )
-                    logger.info(f"  - S3 relative path: {s3_relative_path}")
-                    logger.info(f"  - Full S3 path will be: media/{s3_relative_path}")
-                    logger.info(f"  - ZIP file size: {all_file_sizes[idx]} bytes")
-                    logger.info(f"  - ZIP file path: {current_zip_path}")
-
-                    # Verify file exists before upload
-                    if not os.path.exists(current_zip_path):
-                        raise Exception(
-                            f"ZIP file does not exist at {current_zip_path}"
-                        )
-
-                    with open(current_zip_path, "rb") as zip_file:
-                        # Use Django's default storage to upload
-                        # The storage backend will prepend the 'media' location
-                        current_s3_path = default_storage.save(
-                            s3_relative_path, File(zip_file, name=current_file_name)
-                        )
                         logger.info(
-                            f"Successfully uploaded to S3. Storage path: {current_s3_path}"
+                            f"Uploading export ZIP {idx + 1}/{len(all_zip_paths)} to S3"
                         )
+                        logger.info(f"  - S3 relative path: {s3_relative_path}")
+                        logger.info(f"  - Full S3 path will be: media/{s3_relative_path}")
+                        logger.info(f"  - ZIP file size: {all_file_sizes[idx]} bytes")
+                        logger.info(f"  - ZIP file path: {current_zip_path}")
 
-                        if idx == 0:
-                            s3_path = current_s3_path  # Track first file for backward compatibility
-
-                    # Get the S3 URL - the storage backend should provide the full URL
-                    try:
-                        s3_url = default_storage.url(current_s3_path)
-                        all_download_urls.append(s3_url)
-                        if idx == 0:
-                            download_url = s3_url
-                        logger.info(f"S3 URL for export part {idx + 1}: {s3_url}")
-                    except Exception as url_error:
-                        logger.warning(
-                            f"Could not get S3 URL from storage: {str(url_error)}",
-                            exc_info=True,
-                        )
-                        # Fallback: construct URL manually
-                        if hasattr(settings, "MEDIA_URL"):
-                            # MEDIA_URL already includes the bucket and media path
-                            constructed_url = (
-                                f"{settings.MEDIA_URL.rstrip('/')}/{s3_relative_path}"
+                        # Verify file exists before upload
+                        if not os.path.exists(current_zip_path):
+                            raise Exception(
+                                f"ZIP file does not exist at {current_zip_path}"
                             )
-                            all_download_urls.append(constructed_url)
-                            if idx == 0:
-                                download_url = constructed_url
+
+                        with open(current_zip_path, "rb") as zip_file:
+                            # Use Django's default storage to upload
+                            # The storage backend will prepend the 'media' location
+                            current_s3_path = default_storage.save(
+                                s3_relative_path, File(zip_file, name=current_file_name)
+                            )
                             logger.info(
-                                f"Constructed S3 URL manually: {constructed_url}"
+                                f"Successfully uploaded to S3. Storage path: {current_s3_path}"
                             )
-                        else:
-                            fallback_url = (
-                                f"/export/download/{export_history.id}/?part={idx + 1}"
-                            )
-                            all_download_urls.append(fallback_url)
+
                             if idx == 0:
-                                download_url = f"/export/download/{export_history.id}/"
+                                s3_path = current_s3_path  # Track first file for backward compatibility
+
+                        # Get the S3 URL - the storage backend should provide the full URL
+                        try:
+                            s3_url = default_storage.url(current_s3_path)
+                            all_download_urls.append(s3_url)
+                            if idx == 0:
+                                download_url = s3_url
+                            logger.info(f"S3 URL for export part {idx + 1}: {s3_url}")
+                        except Exception as url_error:
                             logger.warning(
-                                "Could not construct S3 URL, falling back to local download"
+                                f"Could not get S3 URL from storage: {str(url_error)}",
+                                exc_info=True,
+                            )
+                            # Fallback: construct URL manually
+                            if hasattr(settings, "MEDIA_URL"):
+                                # MEDIA_URL already includes the bucket and media path
+                                constructed_url = (
+                                    f"{settings.MEDIA_URL.rstrip('/')}/{s3_relative_path}"
+                                )
+                                all_download_urls.append(constructed_url)
+                                if idx == 0:
+                                    download_url = constructed_url
+                                logger.info(
+                                    f"Constructed S3 URL manually: {constructed_url}"
+                                )
+                            else:
+                                fallback_url = (
+                                    f"/export/download/{export_history.id}/?part={idx + 1}"
+                                )
+                                all_download_urls.append(fallback_url)
+                                if idx == 0:
+                                    download_url = f"/export/download/{export_history.id}/"
+                                logger.warning(
+                                    "Could not construct S3 URL, falling back to local download"
+                                )
+
+                        # Verify the file exists in S3
+                        try:
+                            if default_storage.exists(current_s3_path):
+                                logger.info(
+                                    f"Verified file exists in S3: {current_s3_path}"
+                                )
+                            else:
+                                logger.error(
+                                    f"File does not exist in S3 after upload: {current_s3_path}"
+                                )
+                        except Exception as verify_error:
+                            logger.warning(
+                                f"Could not verify file in S3: {str(verify_error)}"
                             )
 
-                    # Verify the file exists in S3
-                    try:
-                        if default_storage.exists(current_s3_path):
-                            logger.info(
-                                f"Verified file exists in S3: {current_s3_path}"
-                            )
-                        else:
-                            logger.error(
-                                f"File does not exist in S3 after upload: {current_s3_path}"
-                            )
-                    except Exception as verify_error:
-                        logger.warning(
-                            f"Could not verify file in S3: {str(verify_error)}"
-                        )
-
-                s3_upload_successful = True
+                    s3_upload_successful = True
 
             except Exception as e:
                 logger.error(f"Failed to upload export to S3: {str(e)}", exc_info=True)

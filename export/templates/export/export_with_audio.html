@@ -1462,6 +1462,8 @@
   function pollExportProgress(taskId) {
     const progressFill = document.getElementById('progress-fill');
     const progressText = document.getElementById('progress-text');
+    const progressContainer = document.getElementById('progress-container');
+    let shownCompletedParts = 0; // Track which parts we've already shown
 
     const interval = setInterval(async () => {
       try {
@@ -1472,7 +1474,59 @@
           const progress = data.progress || 0;
           progressFill.style.width = `${progress}%`;
           progressFill.textContent = `${progress}%`;
-          progressText.textContent = `Processing ${data.current} of ${data.total} files...`;
+          
+          // Check if there are completed parts available for download
+          const completedParts = data.completed_parts || 0;
+          const totalParts = data.total_parts || 1;
+          
+          if (completedParts > 0 && completedParts > shownCompletedParts && totalParts > 1) {
+            shownCompletedParts = completedParts;
+            
+            // Show download links for completed parts
+            let partsHtml = `<div id="completed-parts-list" class="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div class="flex items-center mb-3 text-green-700">
+                <i class="fas fa-check-circle mr-2"></i>
+                <strong>${completedParts} of ${totalParts} files ready for download</strong>
+              </div>
+              <div class="space-y-2">`;
+            
+            const fileSizes = data.file_sizes || [];
+            const downloadUrls = data.download_urls || [];
+            
+            downloadUrls.forEach((url, idx) => {
+              const partNum = idx + 1;
+              const fileSize = fileSizes[idx] ? (fileSizes[idx] / 1024 / 1024).toFixed(2) : '?';
+              partsHtml += `
+                <div class="flex justify-between items-center p-2 bg-white rounded border border-green-100">
+                  <span class="font-medium text-sm">Part ${partNum} of ${totalParts}</span>
+                  <span class="text-xs text-gray-500">${fileSize} MB</span>
+                  <a href="${url}" target="_blank" class="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 transition-colors">
+                    <i class="fas fa-download mr-1"></i> Download
+                  </a>
+                </div>
+              `;
+            });
+            
+            partsHtml += `</div>
+              <div class="mt-2 text-sm text-gray-500">
+                <i class="fas fa-spinner fa-spin mr-1"></i> Processing remaining parts...
+              </div>
+            </div>`;
+            
+            // Add or update completed parts section
+            let existingParts = document.getElementById('completed-parts-list');
+            if (existingParts) {
+              existingParts.outerHTML = partsHtml;
+            } else {
+              progressContainer.insertAdjacentHTML('beforeend', partsHtml);
+            }
+          }
+          
+          if (totalParts > 1 && completedParts > 0) {
+            progressText.textContent = `Part ${completedParts + 1} of ${totalParts}: Processing ${data.current} of ${data.total} files...`;
+          } else {
+            progressText.textContent = `Processing ${data.current} of ${data.total} files...`;
+          }
         } else if (data.status === 'completed') {
           clearInterval(interval);
           progressFill.style.width = '100%';
