@@ -13,9 +13,7 @@ router.register(r"feedback", views.MessageFeedbackViewSet, basename="feedback")
 urlpatterns = [
     # Frontend
     path("", views.chatbot_home, name="home"),
-    
     # API routes
     path("api/", include(router.urls)),
     path("api/stats/", views.chatbot_stats, name="stats"),
 ]
-

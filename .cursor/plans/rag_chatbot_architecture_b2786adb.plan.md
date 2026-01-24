@@ -68,31 +68,31 @@ graph TB
         WebUI[Web Interface]
         API[REST API]
     end
-    
+
     subgraph ApplicationLayer [Application Layer]
         ChatViews[Chat Views]
         DocProcessor[Document Processor]
         RAGEngine[RAG Engine]
         StreamHandler[Stream Handler]
     end
-    
+
     subgraph DataLayer [Data Layer]
         PostgreSQL[(PostgreSQL)]
         Redis[(Redis Cache)]
         VectorDB[(ChromaDB)]
         FileStorage[File Storage]
     end
-    
+
     subgraph ExternalServices [External Services]
         OpenAI[OpenAI API]
         EmbedModel[Embedding Model]
     end
-    
+
     subgraph BackgroundLayer [Background Processing]
         Celery[Celery Workers]
         TaskQueue[Task Queue]
     end
-    
+
     WebUI -->|HTTP/WebSocket| ChatViews
     API -->|REST| ChatViews
     ChatViews -->|Query| RAGEngine
@@ -123,27 +123,27 @@ flowchart LR
         UserQuery[User Query]
         ChatHistory[Chat History]
     end
-    
+
     subgraph Retrieval [Retrieval Phase]
         QueryEmbed[Query Embedding]
         VectorSearch[Vector Similarity Search]
         Rerank[Re-ranking]
         ContextBuilder[Context Builder]
     end
-    
+
     subgraph Generation [Generation Phase]
         PromptTemplate[Prompt Template]
         LLMCall[LLM API Call]
         StreamParser[Stream Parser]
         ResponseFormat[Response Formatter]
     end
-    
+
     subgraph Output [Output Handling]
         UserResponse[User Response]
         SourceAttribution[Source Attribution]
         FeedbackCapture[Feedback Capture]
     end
-    
+
     UserQuery --> QueryEmbed
     ChatHistory --> ContextBuilder
     QueryEmbed --> VectorSearch
@@ -169,26 +169,26 @@ flowchart TB
         Validation[File Validation]
         Storage[Store in FileSystem]
     end
-    
+
     subgraph Processing [Async Processing via Celery]
         ExtractText[Text Extraction]
         ExtractImages[Image Extraction OCR]
         Chunking[Smart Chunking]
         Metadata[Metadata Enrichment]
     end
-    
+
     subgraph Embedding [Vectorization]
         GenEmbeddings[Generate Embeddings]
         StoreVectors[Store in ChromaDB]
         IndexUpdate[Update Index]
     end
-    
+
     subgraph Versioning [Version Control]
         HashCalc[Calculate Content Hash]
         VersionCheck[Check for Duplicates]
         VersionStore[Store Version Info]
     end
-    
+
     FileUpload --> Validation
     Validation -->|Valid| Storage
     Storage -->|Trigger Celery| ExtractText
@@ -215,7 +215,7 @@ sequenceDiagram
     participant RAGEngine
     participant OpenAI
     participant ChromaDB
-    
+
     User->>Frontend: Send message
     Frontend->>DjangoView: POST /api/chat/stream
     DjangoView->>PostgreSQL: Save user message
@@ -223,14 +223,14 @@ sequenceDiagram
     ChromaDB-->>DjangoView: Return top-k chunks
     DjangoView->>RAGEngine: Build context + prompt
     RAGEngine->>OpenAI: Stream completion request
-    
+
     loop Streaming Tokens
         OpenAI-->>RAGEngine: Token chunk
         RAGEngine-->>DjangoView: Process chunk
         DjangoView-->>Frontend: SSE event
         Frontend-->>User: Display token
     end
-    
+
     RAGEngine-->>DjangoView: Stream complete
     DjangoView->>PostgreSQL: Save assistant message
     DjangoView-->>Frontend: Complete with sources
@@ -254,7 +254,7 @@ erDiagram
     DocumentChunk ||--o{ ChunkMetadata : has
     Message }o--o{ DocumentChunk : references
     ChatSession }o--o{ Document : uses
-    
+
     ChatSession {
         uuid id PK
         uuid user_id FK
@@ -264,7 +264,7 @@ erDiagram
         timestamp updated_at
         json settings
     }
-    
+
     Message {
         uuid id PK
         uuid session_id FK
@@ -275,7 +275,7 @@ erDiagram
         float response_time
         timestamp created_at
     }
-    
+
     MessageFeedback {
         uuid id PK
         uuid message_id FK
@@ -284,7 +284,7 @@ erDiagram
         json metadata
         timestamp created_at
     }
-    
+
     Document {
         uuid id PK
         uuid uploaded_by FK
@@ -298,7 +298,7 @@ erDiagram
         timestamp uploaded_at
         timestamp processed_at
     }
-    
+
     DocumentVersion {
         uuid id PK
         uuid document_id FK
@@ -306,7 +306,7 @@ erDiagram
         string content_hash
         timestamp created_at
     }
-    
+
     DocumentChunk {
         uuid id PK
         uuid document_id FK
@@ -316,7 +316,7 @@ erDiagram
         json metadata
         timestamp created_at
     }
-    
+
     ChunkMetadata {
         uuid id PK
         uuid chunk_id FK

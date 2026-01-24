@@ -46,6 +46,109 @@
     animation: slideIn 0.3s ease-out;
 }
 
+/* Markdown styling for chatbot */
+.prose {
+    max-width: none;
+}
+
+.prose strong,
+.prose b {
+    font-weight: 600;
+}
+
+.prose em,
+.prose i {
+    font-style: italic;
+}
+
+.prose code {
+    background: rgba(0, 0, 0, 0.1);
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 13px;
+}
+
+.prose pre {
+    background: rgba(0, 0, 0, 0.05);
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin: 8px 0;
+    overflow-x: auto;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.prose pre code {
+    background: none;
+    padding: 0;
+}
+
+.prose ul,
+.prose ol {
+    margin: 8px 0;
+    padding-left: 20px;
+}
+
+.prose li {
+    margin: 4px 0;
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4,
+.prose h5,
+.prose h6 {
+    font-weight: 600;
+    margin: 12px 0 8px 0;
+    line-height: 1.3;
+}
+
+.prose h1 { font-size: 18px; }
+.prose h2 { font-size: 16px; }
+.prose h3 { font-size: 15px; }
+.prose h4 { font-size: 14px; }
+.prose h5 { font-size: 13px; }
+.prose h6 { font-size: 12px; }
+
+.prose p {
+    margin: 8px 0;
+}
+
+.prose a {
+    color: #005450;
+    text-decoration: underline;
+}
+
+.prose a:hover {
+    color: #00d553;
+}
+
+/* Dark theme for user messages */
+.prose.prose-invert strong,
+.prose.prose-invert b {
+    font-weight: 600;
+}
+
+.prose.prose-invert em,
+.prose.prose-invert i {
+    font-style: italic;
+}
+
+.prose.prose-invert code {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.prose.prose-invert pre {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.prose.prose-invert a {
+    color: #00d553;
+}
+
 @keyframes slideIn {
     from {
         opacity: 0;
@@ -112,4 +215,3 @@
 #chatMessages a:hover {
     color: #2563eb;
 }
-

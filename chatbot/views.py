@@ -23,6 +23,7 @@ from .serializers import (
     CreateSessionSerializer,
     DocumentUploadSerializer,
 )
+
 # Services are imported lazily to avoid ChromaDB import issues
 # from .tasks import process_document_task, delete_document_vectors_task
 
@@ -168,10 +169,10 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
             # Classify the question intent
             intent_classifier = IntentClassifier()
             routing_info = intent_classifier.get_routing_info(message_text)
-            intent = routing_info['intent']
+            intent = routing_info["intent"]
 
             # Route based on intent
-            if intent == 'NUMERIC':
+            if intent == "NUMERIC":
                 # Handle numeric/database queries
                 dataset_service = DatasetService()
                 result = dataset_service.query_dataset(message_text, {})
@@ -211,7 +212,7 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def send_message_stream(self, request, pk=None):
-        """Send a message with streaming response (SSE)"""
+        """Send a message with streaming response (SSE) - Async version for ASGI"""
         session = self.get_object()
         serializer = SendMessageSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -226,34 +227,72 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
         # Get chat history
         chat_history = self._get_chat_history(session, exclude_last=True)
 
-        # Create streaming response with intelligent routing
+        # Build comprehensive context for the chatbot
+        context = {
+            "session_id": str(session.id),
+            "user_id": request.user.id if request.user.is_authenticated else None,
+            "chat_history": chat_history,
+            "session_created": session.created_at.isoformat(),
+            "message_count": session.messages.count(),
+            "user_authenticated": request.user.is_authenticated,
+        }
+
+        # Add user information if authenticated
+        if request.user.is_authenticated:
+            context.update({
+                "username": request.user.username,
+                "user_email": request.user.email,
+                "is_staff": request.user.is_staff,
+                "date_joined": request.user.date_joined.isoformat(),
+            })
+
+        # Create streaming response
         def stream_generator():
             try:
-                from .services import IntentClassifier, RAGService, StreamingService, DatasetService
+                from .services import (
+                    ChatbotService,
+                    StreamingService,
+                )
 
-                # Classify the question intent
-                intent_classifier = IntentClassifier()
-                routing_info = intent_classifier.get_routing_info(message_text)
-                intent = routing_info['intent']
+                chatbot_service = ChatbotService()
 
-                if intent == 'NUMERIC':
+                # Process question with full context awareness
+                result = chatbot_service.process_question(message_text, context)
+                intent = result.get("intent", "EXPLANATORY")
+
+                if intent == "NUMERIC":
                     # For numeric questions, return immediate result (no streaming needed)
-                    dataset_service = DatasetService()
-                    result = dataset_service.query_dataset(message_text, {})
+                    answer = result.get("answer", "I processed your numeric query.")
+
+                    # Save the assistant message immediately for numeric responses
+                    Message.objects.create(
+                        session=session,
+                        role="assistant",
+                        content=answer,
+                        sources=result.get("sources", []),
+                        tokens_used=result.get("tokens_used", 0),
+                        metadata={
+                            "intent": result.get("intent"),
+                            "method_used": result.get("method_used"),
+                            "conversation_context": result.get("conversation_context"),
+                            "follow_up_suggestions": result.get("follow_up_suggestions"),
+                            "processing_time": result.get("processing_time"),
+                        }
+                    )
 
                     # Yield a single complete response
-                    yield f"data: {{\"type\": \"start\"}}\n\n"
-                    yield f"data: {{\"type\": \"token\", \"content\": \"{result['answer'].replace(chr(10), '\\\\n').replace('\"', '\\\\\"')}\"}}\n\n"
-                    yield f"data: {{\"type\": \"source\", \"sources\": {result.get('sources', [])}, \"intent\": \"{intent}\", \"method\": \"database\"}}\n\n"
-                    yield f"data: {{\"type\": \"end\", \"tokens_used\": 0, \"response_time\": 0.1}}\n\n"
+                    yield f'data: {{"type": "start"}}\n\n'
+                    yield f"data: {{\"type\": \"token\", \"content\": \"{answer.replace(chr(10), '\\\\n').replace('\"', '\\\\\"')}\"}}\n\n"
+                    yield f"data: {{\"type\": \"source\", \"sources\": {result.get('sources', [])}, \"intent\": \"{intent}\", \"method\": \"{result.get('method_used', 'database')}\", \"follow_up_suggestions\": {result.get('follow_up_suggestions', [])}}}\n\n"
+                    yield f"data: {{\"type\": \"end\", \"tokens_used\": {result.get('tokens_used', 0)}, \"response_time\": {result.get('processing_time', 0):.2f}, \"conversation_context\": {result.get('conversation_context', {})}}}\n\n"
                     return
 
                 else:
-                    # For explanatory questions, use streaming RAG
-                    rag_service = RAGService()
+                    # For explanatory questions, use streaming RAG with context
+                    rag_service = chatbot_service.rag_service
                     streaming_service = StreamingService()
 
-                    # Stream the RAG response
+                    # Stream the RAG response with enhanced context
                     accumulated_content = ""
                     accumulated_sources = []
                     tokens_used = 0
@@ -306,29 +345,44 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                             except:
                                 pass
 
-                    # Save assistant message after streaming completes
-                if accumulated_content:
-                    Message.objects.create(
-                        session=session,
-                        role="assistant",
-                        content=accumulated_content,
-                        sources=accumulated_sources,
-                        tokens_used=tokens_used,
-                    )
+                    # Save assistant message after streaming completes with enhanced context
+                    if accumulated_content:
+                        # Get the full result from chatbot service for context
+                        full_result = chatbot_service.process_question(message_text, context)
 
-                    # Update session timestamp
-                    session.save()
+                        Message.objects.create(
+                            session=session,
+                            role="assistant",
+                            content=accumulated_content,
+                            sources=accumulated_sources,
+                            tokens_used=tokens_used,
+                            metadata={
+                                "intent": full_result.get("intent"),
+                                "method_used": full_result.get("method_used"),
+                                "conversation_context": full_result.get("conversation_context"),
+                                "follow_up_suggestions": full_result.get("follow_up_suggestions"),
+                                "processing_time": full_result.get("processing_time"),
+                            }
+                        )
+
+                        # Update session timestamp
+                        session.save()
 
             except Exception as e:
-                logger.error(f"Error in streaming: {e}")
+                logger.error(f"Error in async streaming: {e}")
                 from .services import StreamingService
+
                 streaming_service = StreamingService()
                 yield streaming_service.format_sse(
                     {"type": "error", "message": str(e)}, event="error"
                 )
 
+        # Return ASGI-compatible streaming response
+        from django.http import StreamingHttpResponse
+
         response = StreamingHttpResponse(
-            stream_generator(), content_type="text/event-stream"
+            stream_generator(),
+            content_type="text/event-stream"
         )
         response["Cache-Control"] = "no-cache"
         response["X-Accel-Buffering"] = "no"
@@ -387,9 +441,7 @@ class MessageFeedbackViewSet(viewsets.ModelViewSet):
 
         # Verify message belongs to user
         message_id = serializer.validated_data["message"].id
-        message = get_object_or_404(
-            Message, id=message_id, session__user=request.user
-        )
+        message = get_object_or_404(Message, id=message_id, session__user=request.user)
 
         # Create or update feedback
         feedback, created = MessageFeedback.objects.update_or_create(
@@ -428,6 +480,7 @@ def chatbot_stats(request):
     # Get vector store stats
     try:
         from .services import RAGService
+
         rag_service = RAGService()
         vector_stats = rag_service.get_collection_stats()
         stats["vector_store"] = vector_stats

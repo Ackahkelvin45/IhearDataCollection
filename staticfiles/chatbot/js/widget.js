@@ -76,7 +76,7 @@
     // Toggle widget open/close
     function toggleWidget() {
         isExpanded = !isExpanded;
-        
+
         if (isExpanded) {
             widgetWindow.classList.remove('hidden');
             chatIcon.classList.add('hidden');
@@ -95,7 +95,7 @@
             // Try to get the most recent active session
             const response = await fetch('/chatbot/api/sessions/?page_size=1');
             const data = await response.json();
-            
+
             if (data.results && data.results.length > 0) {
                 currentSessionId = data.results[0].id;
                 await loadMessages();
@@ -121,7 +121,7 @@
                     title: 'Quick Chat ' + new Date().toLocaleString()
                 })
             });
-            
+
             const session = await response.json();
             currentSessionId = session.id;
             clearMessages();
@@ -139,9 +139,9 @@
             const response = await fetch(`/chatbot/api/sessions/${currentSessionId}/messages/`);
             const data = await response.json();
             const messages = data.results || data;
-            
+
             clearMessages();
-            
+
             if (messages.length === 0) {
                 // Show welcome message
                 return;
@@ -206,7 +206,7 @@
             });
 
             const data = await response.json();
-            
+
             // Remove typing indicator
             removeTypingIndicator();
 
@@ -223,7 +223,7 @@
     // Send message with streaming
     async function sendMessageWithStreaming(message) {
         isStreaming = true;
-        
+
         // Create streaming message bubble
         const messageId = 'stream-' + Date.now();
         const messageBubble = createStreamingBubble(messageId);
@@ -349,7 +349,7 @@
     function addSourcesToMessage(messageBubble, sources) {
         const sourcesDiv = document.createElement('div');
         sourcesDiv.className = 'message-sources';
-        
+
         const title = document.createElement('div');
         title.className = 'message-sources-title';
         title.textContent = '📚 Sources:';
@@ -371,14 +371,14 @@
         const indicator = document.createElement('div');
         indicator.className = 'message-bubble assistant';
         indicator.id = 'typing-indicator';
-        
+
         const content = document.createElement('div');
         content.className = 'message-content';
-        
+
         const typing = document.createElement('div');
         typing.className = 'typing-indicator';
         typing.innerHTML = '<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>';
-        
+
         content.appendChild(typing);
         indicator.appendChild(content);
 
@@ -404,7 +404,7 @@
     function clearMessages() {
         messagesArea.innerHTML = `
             <div class="welcome-message">
-            
+
                 <h4 class="welcome-title">Welcome!</h4>
                 <p class="welcome-text">I'm your AI assistant. Ask me anything about your project.</p>
             </div>
@@ -496,4 +496,3 @@
         init();
     }
 })();
-

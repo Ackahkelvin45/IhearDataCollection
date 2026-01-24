@@ -113,9 +113,7 @@ def process_document_task(self, document_id: str):
 
         vector_ids = list(range(len(chunk_texts)))  # dummy IDs for now
 
-        chunks = DocumentChunk.objects.filter(
-            document=document
-        ).order_by("chunk_index")
+        chunks = DocumentChunk.objects.filter(document=document).order_by("chunk_index")
 
         for chunk, vector_id in zip(chunks, vector_ids):
             chunk.vector_id = vector_id

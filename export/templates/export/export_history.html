@@ -479,8 +479,14 @@
                       </td>
                       <td class="p-2 align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
                         <div class="flex flex-row items-center justify-center gap-4">
-                          {% if export.status == 'completed' and export.download_url %}
-                            <a href="{{ export.download_url }}" class="text-sm mr-2 font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">Download</a>
+                          {% if export.status == 'completed' %}
+                            {% if export.split_count > 1 and export.download_urls %}
+                              <button onclick="showSplitDownloads({{ export.id }}, '{{ export.export_name }}', {{ export.split_count }}, {{ export.download_urls|safe }}, {{ export.file_sizes|default:'[]'|safe }})" class="text-sm mr-2 font-semibold leading-tight text-green-600 hover:text-green-800">
+                                <i class="fas fa-download mr-1"></i>Download ({{ export.split_count }} files)
+                              </button>
+                            {% elif export.download_url %}
+                              <a href="{{ export.download_url }}" class="text-sm mr-2 font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">Download</a>
+                            {% endif %}
                           {% endif %}
                           <a onclick="toggleDetails({{ export.id }})" class="text-sm text-cyan-500 mr-2 font-semibold leading-tight dark:text-white dark:opacity-80">Details</a>
                           {% if export.status == 'processing' %}
@@ -498,6 +504,13 @@
                             <span class="detail-label">Task ID:</span>
                             <span class="detail-value">{{ export.task_id|truncatechars:20 }}</span>
                           </div>
+
+                          {% if export.split_count > 1 %}
+                            <div class="detail-row">
+                              <span class="detail-label">Split Files:</span>
+                              <span class="detail-value font-semibold text-blue-600">{{ export.split_count }} parts</span>
+                            </div>
+                          {% endif %}
 
                           {% if export.category_ids %}
                             <div class="detail-row">
@@ -750,6 +763,45 @@
     } else {
       detailsRow.style.display = 'none';
     }
+  }
+
+  function showSplitDownloads(exportId, exportName, splitCount, downloadUrls, fileSizes) {
+    let downloadLinksHtml = '<div class="text-left">';
+    
+    downloadUrls.forEach((url, idx) => {
+      const partNum = idx + 1;
+      const fileSize = fileSizes && fileSizes[idx] ? (fileSizes[idx] / 1024 / 1024).toFixed(2) : '?';
+      downloadLinksHtml += `
+        <div class="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div class="flex justify-between items-center">
+            <div>
+              <span class="font-semibold text-gray-800">${exportName}_part${partNum}of${splitCount}.zip</span>
+              <span class="text-sm text-gray-500 ml-2">(${fileSize} MB)</span>
+            </div>
+            <a href="${url}" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors">
+              <i class="fas fa-download mr-1"></i> Download
+            </a>
+          </div>
+        </div>
+      `;
+    });
+    downloadLinksHtml += '</div>';
+    
+    Swal.fire({
+      title: 'Download Export Files',
+      html: `
+        <p class="mb-4 text-gray-600">This export was split into ${splitCount} parts for easier downloading.</p>
+        ${downloadLinksHtml}
+      `,
+      width: '550px',
+      showConfirmButton: true,
+      confirmButtonText: 'Close',
+      customClass: {
+        popup: 'dark:bg-slate-800 dark:text-white',
+        confirmButton: '!bg-gray-200 hover:!bg-gray-300 !text-gray-800 !px-4 !py-2 !rounded'
+      },
+      buttonsStyling: false
+    });
   }
 
   function cancelExport(taskId) {

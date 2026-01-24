@@ -14,16 +14,14 @@ class CacheService:
         self.default_timeout = 3600  # 1 hour
         self.cache_prefix = "chatbot"
 
-    def get_query_cache_key(
-        self, query: str, context: Optional[str] = None
-    ) -> str:
+    def get_query_cache_key(self, query: str, context: Optional[str] = None) -> str:
         """
         Generate cache key for a query
-        
+
         Args:
             query: User's query
             context: Additional context (e.g., chat history)
-            
+
         Returns:
             Cache key
         """
@@ -36,22 +34,22 @@ class CacheService:
     ) -> Optional[Dict[str, Any]]:
         """
         Get cached response for a query
-        
+
         Args:
             query: User's query
             context: Additional context
-            
+
         Returns:
             Cached response or None
         """
         cache_key = self.get_query_cache_key(query, context)
         cached_data = cache.get(cache_key)
-        
+
         if cached_data:
             logger.info(f"Cache hit for query: {query[:50]}")
             # Increment hit count if tracking
             cached_data["cache_hit"] = True
-            
+
         return cached_data
 
     def set_cached_response(
@@ -63,7 +61,7 @@ class CacheService:
     ):
         """
         Cache a query response
-        
+
         Args:
             query: User's query
             response: Response to cache
@@ -72,28 +70,26 @@ class CacheService:
         """
         cache_key = self.get_query_cache_key(query, context)
         timeout = timeout or self.default_timeout
-        
+
         cache_data = {
             **response,
             "cached_at": datetime.now().isoformat(),
             "cache_hit": False,
         }
-        
+
         cache.set(cache_key, cache_data, timeout=timeout)
         logger.info(f"Cached response for query: {query[:50]}")
 
     def invalidate_document_cache(self, doc_id: str):
         """
         Invalidate all cached queries related to a document
-        
+
         Note: This is a simple implementation. For production,
         consider using cache tags or a more sophisticated system.
         """
         # Since we can't easily list all keys, we'll just clear the entire cache
         # In production, use Redis SCAN or maintain a separate index
-        logger.warning(
-            f"Document {doc_id} updated - consider clearing related cache"
-        )
+        logger.warning(f"Document {doc_id} updated - consider clearing related cache")
 
     def clear_user_cache(self, user_id: str):
         """Clear all cached queries for a user"""
@@ -109,7 +105,7 @@ class CacheService:
     ):
         """
         Cache session context (30 min default)
-        
+
         Args:
             session_id: Chat session ID
             context: Session context to cache
@@ -128,4 +124,3 @@ class CacheService:
         cache_key = self.get_session_cache_key(session_id)
         cache.delete(cache_key)
         logger.info(f"Invalidated cache for session {session_id}")
-

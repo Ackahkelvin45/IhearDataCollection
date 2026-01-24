@@ -1,7 +1,5 @@
 {% extends 'datacollection/layout.html' %}
 
-}
-
 {% block content %}
 
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -625,6 +623,45 @@
           required
           class="focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
         >
+      </div>
+
+      <!-- Split Files Option -->
+      <div class="form-group mt-6">
+        <label class="mb-2 font-bold text-sm text-slate-700 dark:text-white/80">Split Export Into Multiple Files</label>
+        <p class="text-xs text-gray-500 mb-3">Large exports can be split into smaller files for easier downloading. Each file will contain an equal portion of the data with its own Excel file and audio files.</p>
+        
+        <div class="flex flex-wrap gap-3 mt-2">
+          <label class="split-option cursor-pointer">
+            <input type="radio" name="split_count" value="1" checked class="hidden peer">
+            <div class="peer-checked:bg-primary peer-checked:text-white peer-checked:border-primary px-4 py-3 rounded-lg border-2 border-gray-300 bg-white hover:border-primary transition-all duration-200 text-center min-w-[120px]">
+              <div class="font-bold text-lg">1 File</div>
+              <div class="text-xs opacity-75">Single download</div>
+            </div>
+          </label>
+          
+          <label class="split-option cursor-pointer">
+            <input type="radio" name="split_count" value="2" class="hidden peer">
+            <div class="peer-checked:bg-primary peer-checked:text-white peer-checked:border-primary px-4 py-3 rounded-lg border-2 border-gray-300 bg-white hover:border-primary transition-all duration-200 text-center min-w-[120px]">
+              <div class="font-bold text-lg">2 Files</div>
+              <div class="text-xs opacity-75">50% each</div>
+            </div>
+          </label>
+          
+          <label class="split-option cursor-pointer">
+            <input type="radio" name="split_count" value="3" class="hidden peer">
+            <div class="peer-checked:bg-primary peer-checked:text-white peer-checked:border-primary px-4 py-3 rounded-lg border-2 border-gray-300 bg-white hover:border-primary transition-all duration-200 text-center min-w-[120px]">
+              <div class="font-bold text-lg">3 Files</div>
+              <div class="text-xs opacity-75">~33% each</div>
+            </div>
+          </label>
+        </div>
+        
+        <div id="split-info" class="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200 hidden">
+          <div class="flex items-center text-blue-700">
+            <i class="fas fa-info-circle mr-2"></i>
+            <span id="split-info-text" class="text-sm"></span>
+          </div>
+        </div>
       </div>
 
       <!-- Visual Folder Builder with jsTree -->
@@ -1334,6 +1371,26 @@
     categoryCheckboxes.forEach(cb => cb.checked = !isAllChecked);
   }
 
+  // Split count info update
+  document.querySelectorAll('input[name="split_count"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+      const splitInfo = document.getElementById('split-info');
+      const splitInfoText = document.getElementById('split-info-text');
+      const splitCount = parseInt(this.value);
+      
+      if (splitCount > 1) {
+        splitInfo.classList.remove('hidden');
+        if (splitCount === 2) {
+          splitInfoText.textContent = 'Your export will be split into 2 files: Part 1 (first 50% of data) and Part 2 (remaining 50%). Each file will have its own Excel metadata and audio files.';
+        } else if (splitCount === 3) {
+          splitInfoText.textContent = 'Your export will be split into 3 files: Part 1 (~33%), Part 2 (~33%), and Part 3 (remaining ~33%). Each file will have its own Excel metadata and audio files.';
+        }
+      } else {
+        splitInfo.classList.add('hidden');
+      }
+    });
+  });
+
   // Form submission
   document.getElementById('export-form').addEventListener('submit', async function(e) {
     e.preventDefault();
@@ -1424,23 +1481,61 @@
 
           // Add minimum delay to show completion
           setTimeout(() => {
-            Swal.fire({
-              icon: 'success',
-              title: 'Export Complete!',
-              html: `
-                <p>Successfully exported ${data.total_files} files</p>
-                <p>File size: ${(data.file_size / 1024 / 1024).toFixed(2)} MB</p>
-              `,
-              showCancelButton: true,
-              confirmButtonText: 'Download',
-              cancelButtonText: 'Close'
-            }).then((result) => {
-              if (result.isConfirmed) {
-                window.location.href = data.download_url;
-              }
-              document.getElementById('export-btn').disabled = false;
-              document.getElementById('progress-container').classList.remove('active');
-            });
+            // Check if this is a split export
+            const splitCount = data.split_count || 1;
+            
+            if (splitCount > 1 && data.download_urls && data.download_urls.length > 1) {
+              // Multiple files - show all download links
+              let downloadLinksHtml = `<p class="mb-3">Successfully exported ${data.total_files} files into ${splitCount} parts</p>`;
+              downloadLinksHtml += '<div class="text-left">';
+              
+              const fileSizes = data.file_sizes || [];
+              data.download_urls.forEach((url, idx) => {
+                const partNum = idx + 1;
+                const fileSize = fileSizes[idx] ? (fileSizes[idx] / 1024 / 1024).toFixed(2) : '?';
+                downloadLinksHtml += `
+                  <div class="mb-2 p-2 bg-gray-50 rounded-lg flex justify-between items-center">
+                    <span class="font-medium">Part ${partNum} of ${splitCount}</span>
+                    <span class="text-sm text-gray-500">${fileSize} MB</span>
+                    <a href="${url}" class="px-3 py-1 bg-primary text-white rounded text-sm hover:bg-blue-700 transition-colors">
+                      <i class="fas fa-download mr-1"></i> Download
+                    </a>
+                  </div>
+                `;
+              });
+              downloadLinksHtml += '</div>';
+              
+              Swal.fire({
+                icon: 'success',
+                title: 'Export Complete!',
+                html: downloadLinksHtml,
+                width: '500px',
+                showConfirmButton: true,
+                confirmButtonText: 'Close'
+              }).then(() => {
+                document.getElementById('export-btn').disabled = false;
+                document.getElementById('progress-container').classList.remove('active');
+              });
+            } else {
+              // Single file
+              Swal.fire({
+                icon: 'success',
+                title: 'Export Complete!',
+                html: `
+                  <p>Successfully exported ${data.total_files} files</p>
+                  <p>File size: ${(data.file_size / 1024 / 1024).toFixed(2)} MB</p>
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'Download',
+                cancelButtonText: 'Close'
+              }).then((result) => {
+                if (result.isConfirmed) {
+                  window.location.href = data.download_url;
+                }
+                document.getElementById('export-btn').disabled = false;
+                document.getElementById('progress-container').classList.remove('active');
+              });
+            }
           }, 1000); // Show completion for at least 1 second
         } else if (data.status === 'failed') {
           clearInterval(interval);

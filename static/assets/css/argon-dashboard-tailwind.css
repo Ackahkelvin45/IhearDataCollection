@@ -155,7 +155,7 @@ strong {
 .hover\:bg-primary-hover:hover { background-color: rgba(0, 84, 80, 0.15); }
 .border-primary\/10 { border-color: rgba(0, 84, 80, 0.1); }
 .border-primary\/20 { border-color: rgba(0, 84, 80, 0.2); }
-.focus\:ring-secondary\/30:focus { 
+.focus\:ring-secondary\/30:focus {
   --tw-ring-color: rgba(0, 213, 83, 0.3);
   --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);
   --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color);

@@ -53,7 +53,10 @@ class DocumentAdmin(ModelAdmin):
         ),
         (
             "Metadata",
-            {"fields": ("content_hash", "processing_metadata"), "classes": ("collapse",)},
+            {
+                "fields": ("content_hash", "processing_metadata"),
+                "classes": ("collapse",),
+            },
         ),
     )
 
@@ -148,7 +151,11 @@ class QueryCacheAdmin(ModelAdmin):
     readonly_fields = ["id", "query_hash", "created_at", "last_accessed", "hit_count"]
 
     def query_preview(self, obj):
-        return obj.query_text[:100] + "..." if len(obj.query_text) > 100 else obj.query_text
+        return (
+            obj.query_text[:100] + "..."
+            if len(obj.query_text) > 100
+            else obj.query_text
+        )
 
     query_preview.short_description = "Query"
 

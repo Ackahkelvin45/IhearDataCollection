@@ -24,7 +24,7 @@ class DocumentProcessor:
     def validate_file(self, file) -> Tuple[bool, str]:
         """
         Validate uploaded file
-        
+
         Returns:
             (is_valid, error_message)
         """
@@ -48,7 +48,7 @@ class DocumentProcessor:
     def extract_text_from_file(self, file_path: str) -> Tuple[str, Dict[str, Any]]:
         """
         Extract text from various file formats
-        
+
         Returns:
             (extracted_text, metadata)
         """
@@ -126,9 +126,11 @@ class DocumentProcessor:
         """Extract text from DOCX"""
         try:
             doc = docx.Document(file_path)
-            
+
             # Extract paragraphs
-            paragraphs = [paragraph.text for paragraph in doc.paragraphs if paragraph.text.strip()]
+            paragraphs = [
+                paragraph.text for paragraph in doc.paragraphs if paragraph.text.strip()
+            ]
             text = "\n\n".join(paragraphs)
 
             # Extract tables
@@ -168,7 +170,7 @@ class DocumentProcessor:
     def perform_ocr_on_image(self, image_path: str) -> str:
         """
         Perform OCR on an image (placeholder for future implementation)
-        
+
         Note: This requires pytesseract or cloud OCR service
         """
         # Placeholder for OCR functionality
@@ -177,7 +179,7 @@ class DocumentProcessor:
         # - Google Cloud Vision API
         # - Azure Computer Vision
         # - AWS Textract
-        
+
         logger.info(f"OCR requested for {image_path} - Feature not yet implemented")
         return ""
 
@@ -190,7 +192,7 @@ class DocumentProcessor:
     ) -> List[Dict[str, Any]]:
         """
         Split text into chunks with smart boundary detection
-        
+
         Returns:
             List of chunk dictionaries with content and metadata
         """
@@ -204,7 +206,7 @@ class DocumentProcessor:
         )
 
         chunks = splitter.split_text(text)
-        
+
         # Add metadata to each chunk
         chunk_data = []
         for idx, chunk in enumerate(chunks):
@@ -252,12 +254,12 @@ class DocumentProcessor:
     ) -> Dict[str, Any]:
         """
         Complete document processing pipeline
-        
+
         Args:
             file_path: Path to the document file
             doc_id: Document UUID
             title: Document title
-            
+
         Returns:
             Processing result with chunks and metadata
         """
@@ -301,4 +303,3 @@ class DocumentProcessor:
         except Exception as e:
             logger.error(f"Error processing document {doc_id}: {e}")
             raise
-

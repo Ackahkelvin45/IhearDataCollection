@@ -60,7 +60,7 @@
         <!-- Messages Area -->
         <div id="widgetChatMessages" class="chat-widget-messages">
             <div class="welcome-message">
-              
+
                 <h4 class="welcome-title">Welcome!</h4>
                 <p class="welcome-text">I'm your AI assistant. Upload documents and ask me questions about your project.</p>
                 <div class="welcome-suggestions">
@@ -81,8 +81,8 @@
         <div class="chat-widget-input">
             <form id="widgetMessageForm" class="widget-form">
                 {% csrf_token %}
-                <textarea 
-                    id="widgetMessageInput" 
+                <textarea
+                    id="widgetMessageInput"
                     rows="1"
                     placeholder="Type your message..."
                     maxlength="2000"
@@ -109,4 +109,3 @@
 <!-- Load widget styles and scripts -->
 <link rel="stylesheet" href="{% static 'chatbot/css/widget.css' %}">
 <script src="{% static 'chatbot/js/widget.js' %}"></script>
-

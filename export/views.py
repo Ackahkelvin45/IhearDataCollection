@@ -48,6 +48,14 @@ def export_with_audio_view(request):
                     status=400,
                 )
 
+            # Get split count (default to 1 for single file export)
+            try:
+                split_count = int(request.POST.get("split_count", 1))
+                if split_count not in [1, 2, 3]:
+                    split_count = 1
+            except (ValueError, TypeError):
+                split_count = 1
+
             # Create export history record
             export_history = ExportHistory.objects.create(
                 user=request.user,
@@ -57,6 +65,7 @@ def export_with_audio_view(request):
                 category_ids=category_ids if category_ids else None,
                 applied_filters=dict(request.GET),  # Store current filters
                 status="pending",
+                split_count=split_count,
             )
 
             # Create Celery task
@@ -66,6 +75,7 @@ def export_with_audio_view(request):
                 category_ids=category_ids,
                 export_name=export_name,
                 filters=dict(request.GET),
+                split_count=split_count,
             )
 
             # Update task_id in history
@@ -112,14 +122,22 @@ def export_progress(request, task_id):
                     export_record.download_url
                     or f"/export/download/{export_record.id}/"
                 )
-                return JsonResponse(
-                    {
-                        "status": "completed",
-                        "download_url": download_url,
-                        "file_size": export_record.file_size,
-                        "total_files": export_record.total_files,
-                    }
-                )
+                
+                # Check if this is a split export
+                response_data = {
+                    "status": "completed",
+                    "download_url": download_url,
+                    "file_size": export_record.file_size,
+                    "total_files": export_record.total_files,
+                    "split_count": export_record.split_count,
+                }
+                
+                # Include split file information if available
+                if export_record.split_count > 1 and export_record.download_urls:
+                    response_data["download_urls"] = export_record.download_urls
+                    response_data["file_sizes"] = export_record.file_sizes or []
+                
+                return JsonResponse(response_data)
             elif export_record.status == "failed":
                 return JsonResponse(
                     {
@@ -144,15 +162,18 @@ def export_progress(request, task_id):
                         task_id=task_id, user=request.user
                     )
                     if export_record.status == "completed":
-                        return JsonResponse(
-                            {
-                                "status": "completed",
-                                "download_url": export_record.download_url
-                                or f"/export/download/{export_record.id}/",
-                                "file_size": export_record.file_size,
-                                "total_files": export_record.total_files,
-                            }
-                        )
+                        response_data = {
+                            "status": "completed",
+                            "download_url": export_record.download_url
+                            or f"/export/download/{export_record.id}/",
+                            "file_size": export_record.file_size,
+                            "total_files": export_record.total_files,
+                            "split_count": export_record.split_count,
+                        }
+                        if export_record.split_count > 1 and export_record.download_urls:
+                            response_data["download_urls"] = export_record.download_urls
+                            response_data["file_sizes"] = export_record.file_sizes or []
+                        return JsonResponse(response_data)
                     elif export_record.status == "failed":
                         return JsonResponse(
                             {
@@ -207,15 +228,18 @@ def export_progress(request, task_id):
                     task_id=task_id, user=request.user
                 )
                 if export_record.status == "completed":
-                    return JsonResponse(
-                        {
-                            "status": "completed",
-                            "download_url": export_record.download_url
-                            or f"/export/download/{export_record.id}/",
-                            "file_size": export_record.file_size,
-                            "total_files": export_record.total_files,
-                        }
-                    )
+                    response_data = {
+                        "status": "completed",
+                        "download_url": export_record.download_url
+                        or f"/export/download/{export_record.id}/",
+                        "file_size": export_record.file_size,
+                        "total_files": export_record.total_files,
+                        "split_count": export_record.split_count,
+                    }
+                    if export_record.split_count > 1 and export_record.download_urls:
+                        response_data["download_urls"] = export_record.download_urls
+                        response_data["file_sizes"] = export_record.file_sizes or []
+                    return JsonResponse(response_data)
             except ExportHistory.DoesNotExist:
                 pass
             # Return processing status if we can't determine
@@ -288,9 +312,22 @@ def download_export(request, export_id):
     try:
         export_record = ExportHistory.objects.get(id=export_id, user=request.user)
 
+        # Get part number for split exports (1-indexed)
+        try:
+            part = int(request.GET.get("part", 1))
+        except (ValueError, TypeError):
+            part = 1
+        
+        # Validate part number
+        if export_record.split_count > 1:
+            if part < 1 or part > export_record.split_count:
+                part = 1
+        else:
+            part = 1  # Single file export
+
         # Log the attempt
         logger.info(
-            f"Download request for export {export_id}: status={export_record.status}, export_name={export_record.export_name}, user={request.user.id}"
+            f"Download request for export {export_id} (part {part}/{export_record.split_count}): status={export_record.status}, export_name={export_record.export_name}, user={request.user.id}"
         )
 
         if export_record.status != "completed":
@@ -304,42 +341,55 @@ def download_export(request, export_id):
         # Check if S3 is enabled
         use_s3 = hasattr(settings, "USE_S3") and settings.USE_S3
 
+        # Determine the correct download URL for split exports
+        if export_record.split_count > 1 and export_record.download_urls:
+            # Use the URL for the specific part (0-indexed array)
+            part_idx = part - 1
+            if part_idx < len(export_record.download_urls):
+                download_url = export_record.download_urls[part_idx]
+            else:
+                download_url = export_record.download_url
+        else:
+            download_url = export_record.download_url
+
         # Check if download_url is an S3 URL (starts with http:// or https://)
-        is_s3_url = export_record.download_url and (
-            export_record.download_url.startswith("http://")
-            or export_record.download_url.startswith("https://")
+        is_s3_url = download_url and (
+            download_url.startswith("http://")
+            or download_url.startswith("https://")
         )
 
         # Log current state
         logger.info(
-            f"S3 enabled: {use_s3}, download_url: {export_record.download_url}, is_s3_url: {is_s3_url}"
+            f"S3 enabled: {use_s3}, download_url: {download_url}, is_s3_url: {is_s3_url}"
         )
 
         # If S3 is enabled but download_url is not an S3 URL, log warning
         if use_s3 and not is_s3_url:
             logger.warning(
-                f"S3 is enabled but download_url is not an S3 URL: {export_record.download_url}"
+                f"S3 is enabled but download_url is not an S3 URL: {download_url}"
             )
             logger.warning("This might indicate the S3 upload failed. Check task logs.")
 
-        # For API requests, return the download URL
+        # For API requests, return the download URL(s)
         if (
             request.headers.get("Accept") == "application/json"
             or request.GET.get("format") == "json"
         ):
-            return JsonResponse(
-                {
-                    "status": "success",
-                    "download_url": export_record.download_url
-                    or f"/export/download/{export_record.id}/",
-                    "file_size": export_record.file_size_mb,
-                }
-            )
+            response_data = {
+                "status": "success",
+                "download_url": download_url or f"/export/download/{export_record.id}/",
+                "file_size": export_record.file_size_mb,
+                "split_count": export_record.split_count,
+            }
+            if export_record.split_count > 1 and export_record.download_urls:
+                response_data["download_urls"] = export_record.download_urls
+                response_data["file_sizes"] = export_record.file_sizes or []
+            return JsonResponse(response_data)
 
         # If S3 URL, redirect to it
         if is_s3_url:
-            logger.info(f"Redirecting to S3 URL: {export_record.download_url}")
-            return redirect(export_record.download_url)
+            logger.info(f"Redirecting to S3 URL: {download_url}")
+            return redirect(download_url)
 
         # If S3 is enabled but no S3 URL, this is an error
         if use_s3:
@@ -360,6 +410,12 @@ def download_export(request, export_id):
             else os.path.abspath("media")
         )
 
+        # Determine the file name based on whether it's a split export
+        if export_record.split_count > 1:
+            file_name = f"{export_record.export_name}_part{part}of{export_record.split_count}.zip"
+        else:
+            file_name = f"{export_record.export_name}.zip"
+
         # Build list of possible file locations to check
         possible_paths = [
             # Primary location
@@ -367,7 +423,7 @@ def download_export(request, export_id):
                 media_root,
                 "exports",
                 f"user_{request.user.id}",
-                f"{export_record.export_name}.zip",
+                file_name,
             ),
             # Alternative locations (Docker, relative paths, etc.)
             os.path.join(
@@ -375,29 +431,29 @@ def download_export(request, export_id):
                 "media",
                 "exports",
                 f"user_{request.user.id}",
-                f"{export_record.export_name}.zip",
+                file_name,
             ),
             os.path.join(
                 os.path.abspath("."),
                 "exports",
                 f"user_{request.user.id}",
-                f"{export_record.export_name}.zip",
+                file_name,
             ),
             os.path.join(
                 "/app",
                 "media",
                 "exports",
                 f"user_{request.user.id}",
-                f"{export_record.export_name}.zip",
+                file_name,
             ),
             os.path.join(
                 "/app",
                 "exports",
                 f"user_{request.user.id}",
-                f"{export_record.export_name}.zip",
+                file_name,
             ),
             # Also try without user directory (in case of misconfiguration)
-            os.path.join(media_root, "exports", f"{export_record.export_name}.zip"),
+            os.path.join(media_root, "exports", file_name),
         ]
 
         # Convert all to absolute paths
@@ -405,7 +461,7 @@ def download_export(request, export_id):
 
         # Log the paths being checked
         logger.info(
-            f"Attempting to download export {export_id}: export_name={export_record.export_name}"
+            f"Attempting to download export {export_id} (part {part}): file_name={file_name}"
         )
         logger.info(f"MEDIA_ROOT: {settings.MEDIA_ROOT} (absolute: {media_root})")
         logger.info(f"Checking {len(possible_paths)} possible file locations...")
@@ -422,7 +478,7 @@ def download_export(request, export_id):
 
         if not file_path:
             # File not found anywhere - list what we checked
-            error_msg = f'Export file "{export_record.export_name}.zip" not found. The file may have been deleted or the export may have failed.'
+            error_msg = f'Export file "{file_name}" not found. The file may have been deleted or the export may have failed.'
             logger.error(
                 f"Export file not found after checking {len(possible_paths)} locations"
             )
@@ -455,6 +511,8 @@ def download_export(request, export_id):
                         "error": error_msg,
                         "debug_info": {
                             "export_name": export_record.export_name,
+                            "file_name": file_name,
+                            "part": part,
                             "user_id": request.user.id,
                             "checked_paths": possible_paths[
                                 :3
@@ -483,7 +541,7 @@ def download_export(request, export_id):
                 file_content = f.read()
                 response = HttpResponse(file_content, content_type="application/zip")
                 response["Content-Disposition"] = (
-                    f'attachment; filename="{export_record.export_name}.zip"'
+                    f'attachment; filename="{file_name}"'
                 )
                 response["Content-Length"] = len(file_content)
                 logger.info(

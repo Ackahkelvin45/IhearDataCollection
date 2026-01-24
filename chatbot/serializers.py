@@ -211,4 +211,3 @@ class DocumentUploadSerializer(serializers.Serializer):
             raise serializers.ValidationError(error_message)
 
         return value
-

@@ -18,7 +18,9 @@ class Document(models.Model):
     file = models.FileField(upload_to="chatbot/documents/")
     file_type = models.CharField(max_length=10, choices=FILE_TYPE_CHOICES)
     uploaded_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="chatbot_documents"
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="chatbot_documents",
     )
     uploaded_at = models.DateTimeField(auto_now_add=True)
     processed = models.BooleanField(default=False)
@@ -105,13 +107,17 @@ class ChatSession(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="chatbot_sessions"
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="chatbot_sessions",
     )
     title = models.CharField(max_length=255, default="New Chat")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=True)
-    settings = models.JSONField(default=dict, blank=True)  # Store session-specific settings
+    settings = models.JSONField(
+        default=dict, blank=True
+    )  # Store session-specific settings
     documents = models.ManyToManyField(
         Document, blank=True, related_name="chat_sessions"
     )  # Link to relevant documents
@@ -144,10 +150,9 @@ class Message(models.Model):
     content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     tokens_used = models.IntegerField(default=0)
-    response_time = models.FloatField(
-        default=0.0, help_text="Response time in seconds"
-    )
+    response_time = models.FloatField(default=0.0, help_text="Response time in seconds")
     sources = models.JSONField(default=list, blank=True)  # Store source documents
+    metadata = models.JSONField(default=dict, blank=True)  # Store conversation context and metadata
     chunks_referenced = models.ManyToManyField(
         DocumentChunk, blank=True, related_name="messages"
     )
