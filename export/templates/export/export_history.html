@@ -767,7 +767,7 @@
 
   function showSplitDownloads(exportId, exportName, splitCount, downloadUrls, fileSizes) {
     let downloadLinksHtml = '<div class="text-left">';
-    
+
     downloadUrls.forEach((url, idx) => {
       const partNum = idx + 1;
       const fileSize = fileSizes && fileSizes[idx] ? (fileSizes[idx] / 1024 / 1024).toFixed(2) : '?';
@@ -786,7 +786,7 @@
       `;
     });
     downloadLinksHtml += '</div>';
-    
+
     Swal.fire({
       title: 'Download Export Files',
       html: `

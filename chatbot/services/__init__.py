@@ -20,5 +20,5 @@ __all__ = [
     "get_question_routing",
     "DatasetService",
     "ChatbotService",
-    "process_chatbot_question"
+    "process_chatbot_question",
 ]

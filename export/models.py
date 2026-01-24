@@ -13,27 +13,49 @@ class ExportHistory(models.Model):
         ("cancelled", "Cancelled"),
     ]
 
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, help_text="User who initiated the export")
+    user = models.ForeignKey(
+        CustomUser, on_delete=models.CASCADE, help_text="User who initiated the export"
+    )
     export_name = models.CharField(max_length=255, help_text="Name of the export")
     task_id = models.CharField(max_length=255, blank=True, help_text="Celery task ID")
 
     # Export configuration
-    folder_structure = models.JSONField(help_text="Folder structure configuration (JSON)")
-    audio_structure_template = models.TextField(blank=True, help_text="Audio subfolder template")
-    split_count = models.IntegerField(default=1, help_text="Number of files to split the export into (1, 2, or 3)")
+    folder_structure = models.JSONField(
+        help_text="Folder structure configuration (JSON)"
+    )
+    audio_structure_template = models.TextField(
+        blank=True, help_text="Audio subfolder template"
+    )
+    split_count = models.IntegerField(
+        default=1, help_text="Number of files to split the export into (1, 2, or 3)"
+    )
 
     # Export results
-    download_url = models.TextField(blank=True, help_text="URL to download the ZIP file (or first file if split)")
-    file_size = models.BigIntegerField(null=True, help_text="Size of the ZIP file in bytes (or first file if split)")
-    total_files = models.IntegerField(default=0, help_text="Total number of audio files exported")
-    
+    download_url = models.TextField(
+        blank=True, help_text="URL to download the ZIP file (or first file if split)"
+    )
+    file_size = models.BigIntegerField(
+        null=True, help_text="Size of the ZIP file in bytes (or first file if split)"
+    )
+    total_files = models.IntegerField(
+        default=0, help_text="Total number of audio files exported"
+    )
+
     # Split file results (for exports split into multiple files)
-    download_urls = models.JSONField(blank=True, null=True, help_text="List of download URLs for split exports")
-    file_sizes = models.JSONField(blank=True, null=True, help_text="List of file sizes for split exports")
+    download_urls = models.JSONField(
+        blank=True, null=True, help_text="List of download URLs for split exports"
+    )
+    file_sizes = models.JSONField(
+        blank=True, null=True, help_text="List of file sizes for split exports"
+    )
 
     # Filters applied
-    category_ids = models.JSONField(blank=True, null=True, help_text="Selected category IDs")
-    applied_filters = models.JSONField(blank=True, null=True, help_text="Applied filters (JSON)")
+    category_ids = models.JSONField(
+        blank=True, null=True, help_text="Selected category IDs"
+    )
+    applied_filters = models.JSONField(
+        blank=True, null=True, help_text="Applied filters (JSON)"
+    )
 
     # Status and timing
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
@@ -41,7 +63,9 @@ class ExportHistory(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
 
     # Error tracking
-    error_message = models.TextField(blank=True, help_text="Error message if export failed")
+    error_message = models.TextField(
+        blank=True, help_text="Error message if export failed"
+    )
 
     class Meta:
         ordering = ["-created_at"]

@@ -122,7 +122,7 @@ def export_progress(request, task_id):
                     export_record.download_url
                     or f"/export/download/{export_record.id}/"
                 )
-                
+
                 # Check if this is a split export
                 response_data = {
                     "status": "completed",
@@ -131,12 +131,12 @@ def export_progress(request, task_id):
                     "total_files": export_record.total_files,
                     "split_count": export_record.split_count,
                 }
-                
+
                 # Include split file information if available
                 if export_record.split_count > 1 and export_record.download_urls:
                     response_data["download_urls"] = export_record.download_urls
                     response_data["file_sizes"] = export_record.file_sizes or []
-                
+
                 return JsonResponse(response_data)
             elif export_record.status == "failed":
                 return JsonResponse(
@@ -170,7 +170,10 @@ def export_progress(request, task_id):
                             "total_files": export_record.total_files,
                             "split_count": export_record.split_count,
                         }
-                        if export_record.split_count > 1 and export_record.download_urls:
+                        if (
+                            export_record.split_count > 1
+                            and export_record.download_urls
+                        ):
                             response_data["download_urls"] = export_record.download_urls
                             response_data["file_sizes"] = export_record.file_sizes or []
                         return JsonResponse(response_data)
@@ -317,7 +320,7 @@ def download_export(request, export_id):
             part = int(request.GET.get("part", 1))
         except (ValueError, TypeError):
             part = 1
-        
+
         # Validate part number
         if export_record.split_count > 1:
             if part < 1 or part > export_record.split_count:
@@ -354,8 +357,7 @@ def download_export(request, export_id):
 
         # Check if download_url is an S3 URL (starts with http:// or https://)
         is_s3_url = download_url and (
-            download_url.startswith("http://")
-            or download_url.startswith("https://")
+            download_url.startswith("http://") or download_url.startswith("https://")
         )
 
         # Log current state
@@ -540,9 +542,7 @@ def download_export(request, export_id):
             with open(file_path, "rb") as f:
                 file_content = f.read()
                 response = HttpResponse(file_content, content_type="application/zip")
-                response["Content-Disposition"] = (
-                    f'attachment; filename="{file_name}"'
-                )
+                response["Content-Disposition"] = f'attachment; filename="{file_name}"'
                 response["Content-Length"] = len(file_content)
                 logger.info(
                     f"Successfully serving file: {file_path} ({len(file_content)} bytes)"

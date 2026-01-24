@@ -29,7 +29,13 @@ logger = logging.getLogger(__name__)
     result_expires=300,  # Expire results after 5 minutes (300 seconds)
 )
 def export_with_audio_task(
-    self, export_history_id, folder_structure, category_ids, export_name, filters=None, split_count=1
+    self,
+    export_history_id,
+    folder_structure,
+    category_ids,
+    export_name,
+    filters=None,
+    split_count=1,
 ):
     """Celery task to create export with audio files"""
     from export.models import ExportHistory
@@ -143,10 +149,10 @@ def export_with_audio_task(
         self.update_state(
             state="PROGRESS", meta={"progress": 0, "current": 0, "total": total}
         )
-        
+
         # Get all dataset IDs and split into parts
-        all_dataset_ids = list(queryset.values_list('id', flat=True))
-        
+        all_dataset_ids = list(queryset.values_list("id", flat=True))
+
         # Calculate split boundaries
         if split_count == 1:
             dataset_splits = [all_dataset_ids]
@@ -159,7 +165,7 @@ def export_with_audio_task(
                 end_idx = min((i + 1) * split_size, len(all_dataset_ids))
                 if start_idx < len(all_dataset_ids):
                     dataset_splits.append(all_dataset_ids[start_idx:end_idx])
-            
+
         logger.info(f"Dataset split sizes: {[len(s) for s in dataset_splits]}")
 
         # ALL metadata columns
@@ -292,25 +298,27 @@ def export_with_audio_task(
         all_file_sizes = []
         all_download_urls = []
         processed = 0
-        
+
         for split_idx, split_dataset_ids in enumerate(dataset_splits):
             split_num = split_idx + 1
             split_total = len(dataset_splits)
-            
+
             # Generate file names with part suffix if split
             if split_count > 1:
                 part_export_name = f"{export_name}_part{split_num}of{split_total}"
             else:
                 part_export_name = export_name
-            
-            logger.info(f"Processing split {split_num}/{split_total}: {len(split_dataset_ids)} datasets")
-            
+
+            logger.info(
+                f"Processing split {split_num}/{split_total}: {len(split_dataset_ids)} datasets"
+            )
+
             # Create Excel workbook for this split
             wb, ws = create_workbook_with_headers()
-            
+
             # Track audio files for this split
             audio_files_to_zip = []
-            
+
             # Get datasets for this split
             split_queryset = NoiseDataset.objects.filter(
                 id__in=split_dataset_ids
@@ -325,7 +333,7 @@ def export_with_audio_task(
                 "microphone_type",
                 "time_of_day",
             )
-            
+
             # Process datasets in this split
             for dataset in split_queryset.iterator(chunk_size=100):
                 processed += 1
@@ -382,8 +390,12 @@ def export_with_audio_task(
                 # Get audio features and analysis (handle missing OneToOne relationships)
                 from .models import AudioFeature, NoiseAnalysis
 
-                audio_feature = AudioFeature.objects.filter(noise_dataset=dataset).first()
-                noise_analysis = NoiseAnalysis.objects.filter(noise_dataset=dataset).first()
+                audio_feature = AudioFeature.objects.filter(
+                    noise_dataset=dataset
+                ).first()
+                noise_analysis = NoiseAnalysis.objects.filter(
+                    noise_dataset=dataset
+                ).first()
 
                 # Add row to Excel with ALL metadata
                 row = [
@@ -440,7 +452,11 @@ def export_with_audio_task(
                     progress = int((processed / total) * 100)
                     self.update_state(
                         state="PROGRESS",
-                        meta={"progress": progress, "current": processed, "total": total},
+                        meta={
+                            "progress": progress,
+                            "current": processed,
+                            "total": total,
+                        },
                     )
 
             # Auto-adjust column widths
@@ -456,12 +472,12 @@ def export_with_audio_task(
             temp_files_created.append(zip_path)  # Track for cleanup
             all_zip_paths.append(zip_path)
             logger.info(f"Creating ZIP file at: {zip_path}")
-            
+
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
                 # 1. Add the Excel file at the configured excel_path inside the ZIP
-                excel_arcname = os.path.join(excel_path, f"{part_export_name}.xlsx").replace(
-                    "\\", "/"
-                )
+                excel_arcname = os.path.join(
+                    excel_path, f"{part_export_name}.xlsx"
+                ).replace("\\", "/")
                 zipf.write(excel_file_path, excel_arcname)
 
                 # 2. Stream audio files directly into the ZIP without creating temp copies
@@ -490,7 +506,9 @@ def export_with_audio_task(
                                 source_path = audio_field.path
                                 if os.path.exists(source_path):
                                     with open(source_path, "rb") as source_file:
-                                        with zipf.open(audio_zip_path, "w") as dest_file:
+                                        with zipf.open(
+                                            audio_zip_path, "w"
+                                        ) as dest_file:
                                             shutil.copyfileobj(source_file, dest_file)
                                     logger.debug(
                                         f"Fallback: streamed audio from local path for {noise_id} at {audio_zip_path}"
@@ -525,7 +543,7 @@ def export_with_audio_task(
             logger.info(
                 f"Export ZIP file {split_num}/{split_total} created successfully: {zip_path} ({file_size} bytes)"
             )
-        
+
         # Use the first file for backward compatibility with single file exports
         zip_path = all_zip_paths[0] if all_zip_paths else None
         file_size = all_file_sizes[0] if all_file_sizes else 0
@@ -555,8 +573,10 @@ def export_with_audio_task(
                 for idx, current_zip_path in enumerate(all_zip_paths):
                     current_file_name = os.path.basename(current_zip_path)
                     s3_relative_path = f"exports/user_{user.id}/{current_file_name}"
-                    
-                    logger.info(f"Uploading export ZIP {idx + 1}/{len(all_zip_paths)} to S3")
+
+                    logger.info(
+                        f"Uploading export ZIP {idx + 1}/{len(all_zip_paths)} to S3"
+                    )
                     logger.info(f"  - S3 relative path: {s3_relative_path}")
                     logger.info(f"  - Full S3 path will be: media/{s3_relative_path}")
                     logger.info(f"  - ZIP file size: {all_file_sizes[idx]} bytes")
@@ -564,7 +584,9 @@ def export_with_audio_task(
 
                     # Verify file exists before upload
                     if not os.path.exists(current_zip_path):
-                        raise Exception(f"ZIP file does not exist at {current_zip_path}")
+                        raise Exception(
+                            f"ZIP file does not exist at {current_zip_path}"
+                        )
 
                     with open(current_zip_path, "rb") as zip_file:
                         # Use Django's default storage to upload
@@ -572,8 +594,10 @@ def export_with_audio_task(
                         current_s3_path = default_storage.save(
                             s3_relative_path, File(zip_file, name=current_file_name)
                         )
-                        logger.info(f"Successfully uploaded to S3. Storage path: {current_s3_path}")
-                        
+                        logger.info(
+                            f"Successfully uploaded to S3. Storage path: {current_s3_path}"
+                        )
+
                         if idx == 0:
                             s3_path = current_s3_path  # Track first file for backward compatibility
 
@@ -598,9 +622,13 @@ def export_with_audio_task(
                             all_download_urls.append(constructed_url)
                             if idx == 0:
                                 download_url = constructed_url
-                            logger.info(f"Constructed S3 URL manually: {constructed_url}")
+                            logger.info(
+                                f"Constructed S3 URL manually: {constructed_url}"
+                            )
                         else:
-                            fallback_url = f"/export/download/{export_history.id}/?part={idx + 1}"
+                            fallback_url = (
+                                f"/export/download/{export_history.id}/?part={idx + 1}"
+                            )
                             all_download_urls.append(fallback_url)
                             if idx == 0:
                                 download_url = f"/export/download/{export_history.id}/"
@@ -611,13 +639,17 @@ def export_with_audio_task(
                     # Verify the file exists in S3
                     try:
                         if default_storage.exists(current_s3_path):
-                            logger.info(f"Verified file exists in S3: {current_s3_path}")
+                            logger.info(
+                                f"Verified file exists in S3: {current_s3_path}"
+                            )
                         else:
                             logger.error(
                                 f"File does not exist in S3 after upload: {current_s3_path}"
                             )
                     except Exception as verify_error:
-                        logger.warning(f"Could not verify file in S3: {str(verify_error)}")
+                        logger.warning(
+                            f"Could not verify file in S3: {str(verify_error)}"
+                        )
 
                 s3_upload_successful = True
 
@@ -630,12 +662,16 @@ def export_with_audio_task(
                 # Build local download URLs
                 all_download_urls = []
                 for idx in range(len(all_zip_paths)):
-                    all_download_urls.append(f"/export/download/{export_history.id}/?part={idx + 1}")
+                    all_download_urls.append(
+                        f"/export/download/{export_history.id}/?part={idx + 1}"
+                    )
         else:
             # Local storage - build download URLs
             for idx in range(len(all_zip_paths)):
                 if split_count > 1:
-                    all_download_urls.append(f"/export/download/{export_history.id}/?part={idx + 1}")
+                    all_download_urls.append(
+                        f"/export/download/{export_history.id}/?part={idx + 1}"
+                    )
                 else:
                     all_download_urls.append(f"/export/download/{export_history.id}/")
 
@@ -645,12 +681,12 @@ def export_with_audio_task(
         export_history.file_size = file_size
         export_history.total_files = total
         export_history.completed_at = timezone.now()
-        
+
         # Store split file information
         if split_count > 1:
             export_history.download_urls = all_download_urls
             export_history.file_sizes = all_file_sizes
-        
+
         export_history.save()
 
         logger.info(

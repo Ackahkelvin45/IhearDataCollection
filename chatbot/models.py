@@ -152,7 +152,9 @@ class Message(models.Model):
     tokens_used = models.IntegerField(default=0)
     response_time = models.FloatField(default=0.0, help_text="Response time in seconds")
     sources = models.JSONField(default=list, blank=True)  # Store source documents
-    metadata = models.JSONField(default=dict, blank=True)  # Store conversation context and metadata
+    metadata = models.JSONField(
+        default=dict, blank=True
+    )  # Store conversation context and metadata
     chunks_referenced = models.ManyToManyField(
         DocumentChunk, blank=True, related_name="messages"
     )

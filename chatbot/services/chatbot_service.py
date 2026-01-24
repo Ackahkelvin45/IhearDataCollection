@@ -68,7 +68,9 @@ class ChatbotService:
             routing_info = self._classify_with_context(question, enriched_context)
             intent = routing_info["intent"]
 
-            logger.info(f"Question classified as {intent}: {question} (Session: {session_id})")
+            logger.info(
+                f"Question classified as {intent}: {question} (Session: {session_id})"
+            )
 
             # Route to appropriate handler with enhanced context
             if intent == "NUMERIC":
@@ -96,7 +98,9 @@ class ChatbotService:
             )
 
             # Update conversation memory
-            self._update_conversation_memory(session_id, question, enhanced_answer, intent)
+            self._update_conversation_memory(
+                session_id, question, enhanced_answer, intent
+            )
 
             # Add comprehensive metadata
             result.update(
@@ -129,8 +133,14 @@ class ChatbotService:
                 "sources": [],
                 "processing_time": time.time() - start_time,
                 "method_used": "error",
-                "conversation_context": {"session_id": session_id, "error_occurred": True},
-                "follow_up_suggestions": ["Try rephrasing your question", "Start a new conversation"],
+                "conversation_context": {
+                    "session_id": session_id,
+                    "error_occurred": True,
+                },
+                "follow_up_suggestions": [
+                    "Try rephrasing your question",
+                    "Start a new conversation",
+                ],
                 "error": str(e),
             }
 
@@ -162,13 +172,19 @@ class ChatbotService:
         recent_topics = []
         if chat_history:
             # Analyze last few exchanges for context
-            recent_messages = chat_history[-3:] if len(chat_history) > 3 else chat_history
+            recent_messages = (
+                chat_history[-3:] if len(chat_history) > 3 else chat_history
+            )
             for user_msg, assistant_msg in recent_messages:
                 # Simple topic extraction (could be enhanced with NLP)
                 words = user_msg.lower().split()
-                if any(word in words for word in ["dataset", "data", "recording", "audio"]):
+                if any(
+                    word in words for word in ["dataset", "data", "recording", "audio"]
+                ):
                     recent_topics.append("data_analysis")
-                if any(word in words for word in ["quality", "improve", "better", "issue"]):
+                if any(
+                    word in words for word in ["quality", "improve", "better", "issue"]
+                ):
                     recent_topics.append("quality_improvement")
                 if any(word in words for word in ["how", "what", "why", "explain"]):
                     recent_topics.append("explanation")
@@ -193,7 +209,9 @@ class ChatbotService:
             }
         return self.conversation_memory[session_id]
 
-    def _classify_with_context(self, question: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    def _classify_with_context(
+        self, question: str, context: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Classify question intent with context awareness.
         """
@@ -239,7 +257,9 @@ class ChatbotService:
         if recent_topics and len(recent_topics) > 0:
             last_topic = recent_topics[-1]
             if "data_analysis" in recent_topics and "dataset" in answer.lower():
-                enhanced_answer += " This builds on our previous discussion about your data analysis."
+                enhanced_answer += (
+                    " This builds on our previous discussion about your data analysis."
+                )
 
         # Add helpful context about capabilities
         if "I detected this as a numeric query" in answer:
@@ -257,17 +277,21 @@ class ChatbotService:
 
         # Base suggestions based on intent
         if intent == "NUMERIC":
-            suggestions.extend([
-                "Would you like me to show you the breakdown by categories?",
-                "Want to see statistics about your recordings?",
-                "Should I analyze trends in your data?"
-            ])
+            suggestions.extend(
+                [
+                    "Would you like me to show you the breakdown by categories?",
+                    "Want to see statistics about your recordings?",
+                    "Should I analyze trends in your data?",
+                ]
+            )
         elif intent == "EXPLANATORY":
-            suggestions.extend([
-                "Would you like more details about this topic?",
-                "Can I help you understand the data better?",
-                "Want to explore related concepts?"
-            ])
+            suggestions.extend(
+                [
+                    "Would you like more details about this topic?",
+                    "Can I help you understand the data better?",
+                    "Want to explore related concepts?",
+                ]
+            )
 
         # Context-aware suggestions
         recent_topics = memory.get("topics", [])
@@ -294,10 +318,16 @@ class ChatbotService:
 
         # Extract topics from question
         question_lower = question.lower()
-        if any(word in question_lower for word in ["dataset", "data", "recording", "audio", "analysis"]):
+        if any(
+            word in question_lower
+            for word in ["dataset", "data", "recording", "audio", "analysis"]
+        ):
             if "data_analysis" not in memory["topics"]:
                 memory["topics"].append("data_analysis")
-        if any(word in question_lower for word in ["quality", "improve", "better", "issue", "problem"]):
+        if any(
+            word in question_lower
+            for word in ["quality", "improve", "better", "issue", "problem"]
+        ):
             if "quality_improvement" not in memory["topics"]:
                 memory["topics"].append("quality_improvement")
         if any(word in question_lower for word in ["explain", "why", "how", "what"]):
@@ -323,7 +353,9 @@ class ChatbotService:
             result = self.dataset_service.query_dataset(question, context)
 
             return {
-                "answer": result.get("answer", "I couldn't retrieve the requested data."),
+                "answer": result.get(
+                    "answer", "I couldn't retrieve the requested data."
+                ),
                 "sources": result.get("sources", []),
                 "data_used": result.get("data_used", {}),
                 "data_type": "numeric",
@@ -363,7 +395,9 @@ class ChatbotService:
 
         if "data_analysis" in recent_topics and len(chat_history) > 0:
             # Add context from recent conversation
-            enhanced_question = f"{question} (Continuing our discussion about data analysis)"
+            enhanced_question = (
+                f"{question} (Continuing our discussion about data analysis)"
+            )
 
         # Query using RAG with enhanced context
         result = self.rag_service.query(enhanced_question, chat_history=chat_history)

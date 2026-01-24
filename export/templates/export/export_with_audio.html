@@ -58,9 +58,9 @@
 
 
   /* Audio folder marker */
- 
 
-  
+
+
 
   /* Context menu styling */
   .jstree-contextmenu {
@@ -629,7 +629,7 @@
       <div class="form-group mt-6">
         <label class="mb-2 font-bold text-sm text-slate-700 dark:text-white/80">Split Export Into Multiple Files</label>
         <p class="text-xs text-gray-500 mb-3">Large exports can be split into smaller files for easier downloading. Each file will contain an equal portion of the data with its own Excel file and audio files.</p>
-        
+
         <div class="flex flex-wrap gap-3 mt-2">
           <label class="split-option cursor-pointer">
             <input type="radio" name="split_count" value="1" checked class="hidden peer">
@@ -638,7 +638,7 @@
               <div class="text-xs opacity-75">Single download</div>
             </div>
           </label>
-          
+
           <label class="split-option cursor-pointer">
             <input type="radio" name="split_count" value="2" class="hidden peer">
             <div class="peer-checked:bg-primary peer-checked:text-white peer-checked:border-primary px-4 py-3 rounded-lg border-2 border-gray-300 bg-white hover:border-primary transition-all duration-200 text-center min-w-[120px]">
@@ -646,7 +646,7 @@
               <div class="text-xs opacity-75">50% each</div>
             </div>
           </label>
-          
+
           <label class="split-option cursor-pointer">
             <input type="radio" name="split_count" value="3" class="hidden peer">
             <div class="peer-checked:bg-primary peer-checked:text-white peer-checked:border-primary px-4 py-3 rounded-lg border-2 border-gray-300 bg-white hover:border-primary transition-all duration-200 text-center min-w-[120px]">
@@ -655,8 +655,8 @@
             </div>
           </label>
         </div>
-        
-        <div id="split-info" class="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200 hidden">
+
+        <div style="margin-top: 10px;" id="split-info" class="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200 hidden">
           <div class="flex items-center text-blue-700">
             <i class="fas fa-info-circle mr-2"></i>
             <span id="split-info-text" class="text-sm"></span>
@@ -670,8 +670,8 @@
 
         <div  class="template-section">
           <label style="font-size: 16px;">Quick Folder Structure Templates:</label>
-          <button type="button" 
-          class="filter-btn  mr-2  inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-primary align-middle transition-all ease-in bg-transparent border border-primary border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-50 hover:border-blue-600 tracking-tight-rem" 
+          <button type="button"
+          class="filter-btn  mr-2  inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-primary align-middle transition-all ease-in bg-transparent border border-primary border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-50 hover:border-blue-600 tracking-tight-rem"
           onclick="loadTemplate('siblings')">Siblings (Same Level)</button>
           <button type="button"  class="filter-btn  mr-2  inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-primary align-middle transition-all ease-in bg-transparent border border-primary border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-50 hover:border-blue-600 tracking-tight-rem"  onclick="loadTemplate('nested')">Nested (Audio in Excel folder)</button>
           <button type="button" class="filter-btn  mr-2  inline-block px-6 py-2 mb-0 text-xs font-bold leading-normal text-center text-primary align-middle transition-all ease-in bg-transparent border border-primary border-solid rounded-lg shadow-none cursor-pointer hover:bg-blue-50 hover:border-blue-600 tracking-tight-rem"  onclick="loadTemplate('separate')">Separate (Different Parents)</button>
@@ -740,7 +740,7 @@
       <!-- Category Selection -->
       <div class="form-group">
         <label class="mb-2 font-bold text-base">Select Categories to Export</label>
-   
+
         <div class="category-selector">
           <div class="category-item">
             <input type="checkbox" name="categories" value="all" id="cat_all" checked>
@@ -778,7 +778,7 @@
         </button>
       </div>
       <!-- Export Button -->
-      
+
     </form>
           </div>
         </div>
@@ -1377,7 +1377,7 @@
       const splitInfo = document.getElementById('split-info');
       const splitInfoText = document.getElementById('split-info-text');
       const splitCount = parseInt(this.value);
-      
+
       if (splitCount > 1) {
         splitInfo.classList.remove('hidden');
         if (splitCount === 2) {
@@ -1483,12 +1483,12 @@
           setTimeout(() => {
             // Check if this is a split export
             const splitCount = data.split_count || 1;
-            
+
             if (splitCount > 1 && data.download_urls && data.download_urls.length > 1) {
               // Multiple files - show all download links
               let downloadLinksHtml = `<p class="mb-3">Successfully exported ${data.total_files} files into ${splitCount} parts</p>`;
               downloadLinksHtml += '<div class="text-left">';
-              
+
               const fileSizes = data.file_sizes || [];
               data.download_urls.forEach((url, idx) => {
                 const partNum = idx + 1;
@@ -1504,7 +1504,7 @@
                 `;
               });
               downloadLinksHtml += '</div>';
-              
+
               Swal.fire({
                 icon: 'success',
                 title: 'Export Complete!',

@@ -311,16 +311,19 @@ Expert Answer:
             if docs:
                 sources = []
                 for doc in docs[:3]:  # Limit to 3 sources for speed
-                    sources.append({
-                        "title": doc.metadata.get("title", "Document"),
-                        "content": doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content,
-                        "metadata": doc.metadata
-                    })
+                    sources.append(
+                        {
+                            "title": doc.metadata.get("title", "Document"),
+                            "content": (
+                                doc.page_content[:200] + "..."
+                                if len(doc.page_content) > 200
+                                else doc.page_content
+                            ),
+                            "metadata": doc.metadata,
+                        }
+                    )
 
-                yield {
-                    "type": "source",
-                    "sources": sources
-                }
+                yield {"type": "source", "sources": sources}
 
             # Create context from retrieved documents
             context = "\n\n".join([doc.page_content for doc in docs])
@@ -330,7 +333,7 @@ Expert Answer:
             formatted_prompt = prompt.format(
                 context=context,
                 chat_history=self._format_chat_history(chat_history or []),
-                question=question
+                question=question,
             )
 
             # Create streaming LLM with optimized settings for speed
@@ -349,32 +352,31 @@ Expert Answer:
             try:
                 # Stream the response using async iteration
                 for chunk in streaming_llm.stream(formatted_prompt):
-                    if hasattr(chunk, 'content') and chunk.content:
+                    if hasattr(chunk, "content") and chunk.content:
                         token = chunk.content
                         accumulated_response += token
 
                         # Yield each token immediately for real-time streaming
-                        yield {
-                            "type": "token",
-                            "content": token
-                        }
+                        yield {"type": "token", "content": token}
 
             except Exception as stream_error:
-                logger.warning(f"Streaming failed, falling back to regular call: {stream_error}")
+                logger.warning(
+                    f"Streaming failed, falling back to regular call: {stream_error}"
+                )
 
                 # Fallback to regular call if streaming fails
                 response = streaming_llm.invoke(formatted_prompt)
-                full_content = response.content if hasattr(response, 'content') else str(response)
+                full_content = (
+                    response.content if hasattr(response, "content") else str(response)
+                )
 
                 # Yield the full content as tokens for compatibility
                 words = full_content.split()
                 for word in words:
-                    yield {
-                        "type": "token",
-                        "content": word + " "
-                    }
+                    yield {"type": "token", "content": word + " "}
                     # Small delay to simulate streaming effect
                     import time
+
                     time.sleep(0.01)
 
                 accumulated_response = full_content
@@ -382,9 +384,11 @@ Expert Answer:
             # Yield completion with final data
             yield {
                 "type": "complete",
-                "tokens_used": len(accumulated_response.split()),  # Approximate word count
+                "tokens_used": len(
+                    accumulated_response.split()
+                ),  # Approximate word count
                 "full_response": accumulated_response,
-                "response_time": 0.1  # Placeholder
+                "response_time": 0.1,  # Placeholder
             }
 
         except Exception as e:

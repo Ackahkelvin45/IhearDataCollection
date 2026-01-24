@@ -13,21 +13,21 @@ logger = logging.getLogger(__name__)
 
 class DatasetService:
     """Hybrid service that routes questions to SQL or RAG based on intent"""
-    
+
     def __init__(self):
         self.intent_classifier = IntentClassifier()
         self.rag_service = None  # Initialize lazily
-    
+
     def query_dataset(
         self, question: str, context: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
         Main entry point for dataset queries
-        
+
         Args:
             question: User's natural language question
             context: Additional context (table name, filters, etc.)
-        
+
         Returns:
             {
                 'answer': str,
@@ -40,13 +40,13 @@ class DatasetService:
         import time
 
         start_time = time.time()
-        
+
         # Classify intent
         routing_info = self.intent_classifier.get_routing_info(question)
         intent = routing_info["intent"]
-        
+
         logger.info(f"Classified question as {intent}: {question}")
-        
+
         # Route to appropriate handler
         if intent == "NUMERIC":
             result = self._handle_numeric_query(question, context)
@@ -56,7 +56,7 @@ class DatasetService:
             result = self._handle_mixed_query(question, context)
         else:
             result = self._handle_explanatory_query(question, context)
-        
+
         # Add metadata
         result.update(
             {
@@ -66,15 +66,15 @@ class DatasetService:
                 "routing_reasoning": routing_info["reasoning"],
             }
         )
-        
+
         return result
-    
+
     def _handle_numeric_query(
         self, question: str, context: Dict = None
     ) -> Dict[str, Any]:
         """
         Handle numeric queries using SQL/database operations
-        
+
         This is where you'd implement:
         - SQL query generation
         - Pandas operations
@@ -134,7 +134,7 @@ class DatasetService:
             "animals",
             "sound",
             "sample",
-            "samples"
+            "samples",
         ]
 
         has_counting = any(keyword in question_lower for keyword in counting_keywords)
@@ -261,7 +261,7 @@ class DatasetService:
             answer = "You don't have any datasets yet. You can upload documents for chatbot analysis or start collecting audio data through the data collection interface."
         else:
             answer = " ".join(answer_parts)
-        
+
         return {
             "answer": answer,
             "data_used": {
@@ -499,9 +499,7 @@ class DatasetService:
             # MFCC information
             mfcc_count = AudioFeature.objects.exclude(mfccs__isnull=True).count()
             if mfcc_count > 0:
-                answer += (
-                    f"**MFCC Analysis:** Available for {mfcc_count} recordings\\n"
-                )
+                answer += f"**MFCC Analysis:** Available for {mfcc_count} recordings\\n"
                 answer += "• 13 Mel-Frequency Cepstral Coefficients extracted per recording\\n\\n"
 
             total_analyzed = AudioFeature.objects.count()
@@ -707,23 +705,42 @@ class DatasetService:
 
         # Dangerous keywords that are NEVER allowed
         dangerous_keywords = [
-            'INSERT', 'UPDATE', 'DELETE', 'DROP', 'CREATE', 'ALTER', 'TRUNCATE',
-            'EXEC', 'EXECUTE', 'MERGE', 'BULK', 'BACKUP', 'RESTORE',
-            'GRANT', 'REVOKE', 'DENY', 'COMMIT', 'ROLLBACK', 'SAVEPOINT',
-            'SHUTDOWN', 'KILL', 'DBCC', 'RECONFIGURE'
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "DROP",
+            "CREATE",
+            "ALTER",
+            "TRUNCATE",
+            "EXEC",
+            "EXECUTE",
+            "MERGE",
+            "BULK",
+            "BACKUP",
+            "RESTORE",
+            "GRANT",
+            "REVOKE",
+            "DENY",
+            "COMMIT",
+            "ROLLBACK",
+            "SAVEPOINT",
+            "SHUTDOWN",
+            "KILL",
+            "DBCC",
+            "RECONFIGURE",
         ]
 
         for keyword in dangerous_keywords:
-            if re.search(r'\b' + keyword + r'\b', sql_upper):
+            if re.search(r"\b" + keyword + r"\b", sql_upper):
                 return False, f"Dangerous keyword '{keyword}' not allowed"
 
         # Subqueries and complex operations that might be risky
         risky_patterns = [
-            r';\s*(SELECT|INSERT|UPDATE|DELETE)',  # Multiple statements
-            r'UNION\s+SELECT.*INTO',  # UNION with INTO
-            r'SELECT.*INTO\s+\w+',  # SELECT INTO
-            r'EXEC\s*\(',  # Dynamic execution
-            r'SP_',  # Stored procedures (potential risk)
+            r";\s*(SELECT|INSERT|UPDATE|DELETE)",  # Multiple statements
+            r"UNION\s+SELECT.*INTO",  # UNION with INTO
+            r"SELECT.*INTO\s+\w+",  # SELECT INTO
+            r"EXEC\s*\(",  # Dynamic execution
+            r"SP_",  # Stored procedures (potential risk)
         ]
 
         for pattern in risky_patterns:
@@ -732,8 +749,14 @@ class DatasetService:
 
         # Check for potentially dangerous functions
         dangerous_functions = [
-            'XP_CMDSHELL', 'SP_EXECUTESQL', 'OPENROWSET', 'OPENDATASOURCE',
-            'BULK INSERT', 'FORMAT', 'CONVERT', 'CAST'
+            "XP_CMDSHELL",
+            "SP_EXECUTESQL",
+            "OPENROWSET",
+            "OPENDATASOURCE",
+            "BULK INSERT",
+            "FORMAT",
+            "CONVERT",
+            "CAST",
         ]
 
         for func in dangerous_functions:
@@ -742,21 +765,59 @@ class DatasetService:
 
         # Allow only safe clauses and keywords
         allowed_keywords = [
-            'SELECT', 'FROM', 'WHERE', 'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'OUTER',
-            'ON', 'GROUP', 'BY', 'HAVING', 'ORDER', 'ASC', 'DESC', 'LIMIT', 'OFFSET',
-            'DISTINCT', 'AS', 'AND', 'OR', 'NOT', 'IN', 'EXISTS', 'BETWEEN', 'LIKE',
-            'COUNT', 'SUM', 'AVG', 'MAX', 'MIN', 'STDDEV', 'VARIANCE',
-            'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'COALESCE', 'NULLIF', 'IS', 'NULL'
+            "SELECT",
+            "FROM",
+            "WHERE",
+            "JOIN",
+            "INNER",
+            "LEFT",
+            "RIGHT",
+            "FULL",
+            "OUTER",
+            "ON",
+            "GROUP",
+            "BY",
+            "HAVING",
+            "ORDER",
+            "ASC",
+            "DESC",
+            "LIMIT",
+            "OFFSET",
+            "DISTINCT",
+            "AS",
+            "AND",
+            "OR",
+            "NOT",
+            "IN",
+            "EXISTS",
+            "BETWEEN",
+            "LIKE",
+            "COUNT",
+            "SUM",
+            "AVG",
+            "MAX",
+            "MIN",
+            "STDDEV",
+            "VARIANCE",
+            "CASE",
+            "WHEN",
+            "THEN",
+            "ELSE",
+            "END",
+            "COALESCE",
+            "NULLIF",
+            "IS",
+            "NULL",
         ]
 
         # Extract all words from the query
-        words = re.findall(r'\b\w+\b', sql_upper)
+        words = re.findall(r"\b\w+\b", sql_upper)
 
         # Check if all non-numeric words are in allowed list or are column/table names
         for word in words:
             if not word.isdigit() and word not in allowed_keywords:
                 # Allow alphanumeric words (potential column/table names)
-                if not re.match(r'^[A-Z_][A-Z0-9_]*$', word):
+                if not re.match(r"^[A-Z_][A-Z0-9_]*$", word):
                     return False, f"Potentially unsafe keyword: '{word}'"
 
         # Additional length check (prevent extremely long queries)
@@ -843,11 +904,17 @@ SQL QUERY:"""
         import json
 
         # Format the results as JSON for the LLM
-        results_json = json.dumps({
-            "columns": sql_results["columns"],
-            "rows": sql_results["rows"][:50],  # Limit to first 50 rows to avoid token limits
-            "total_rows": sql_results["row_count"]
-        }, indent=2, default=str)
+        results_json = json.dumps(
+            {
+                "columns": sql_results["columns"],
+                "rows": sql_results["rows"][
+                    :50
+                ],  # Limit to first 50 rows to avoid token limits
+                "total_rows": sql_results["row_count"],
+            },
+            indent=2,
+            default=str,
+        )
 
         prompt = f"""You are a helpful data analyst. A user asked: "{question}"
 
@@ -933,13 +1000,15 @@ Response:"""
             # Final security validation before execution
             is_safe, reason = self._validate_sql_security(sql_query)
             if not is_safe:
-                logger.error(f"SECURITY VIOLATION: Attempted to execute unsafe query: {reason}")
+                logger.error(
+                    f"SECURITY VIOLATION: Attempted to execute unsafe query: {reason}"
+                )
                 logger.error(f"BLOCKED QUERY: {sql_query}")
                 return {
                     "error": "Query execution blocked for security reasons",
                     "columns": [],
                     "rows": [],
-                    "row_count": 0
+                    "row_count": 0,
                 }
 
             # Log safe query execution
@@ -963,7 +1032,9 @@ Response:"""
                 # Limit result size for safety and performance
                 max_rows = 1000  # Reasonable limit for web responses
                 if len(rows) > max_rows:
-                    logger.warning(f"Query returned {len(rows)} rows, truncating to {max_rows}")
+                    logger.warning(
+                        f"Query returned {len(rows)} rows, truncating to {max_rows}"
+                    )
                     rows = rows[:max_rows]
 
                 # Convert to more readable format
@@ -977,7 +1048,9 @@ Response:"""
                             result_dict[f"col_{i}"] = value
                     results.append(result_dict)
 
-                logger.info(f"Query executed successfully, returned {len(results)} rows")
+                logger.info(
+                    f"Query executed successfully, returned {len(results)} rows"
+                )
                 return {"columns": columns, "rows": results, "row_count": len(results)}
 
         except Exception as e:
@@ -1040,26 +1113,26 @@ Response:"""
     ) -> Dict[str, Any]:
         """
         Handle explanatory queries using RAG
-        
+
         This routes to the existing RAG service for document-based questions
         """
         if not self.rag_service:
             self.rag_service = RAGService()
-        
+
         # Convert dataset context to RAG format
         # This would need to be implemented based on your data structure
         dataset_chunks = self._convert_dataset_to_chunks(context)
-        
+
         if dataset_chunks:
             # Add to RAG and query
             vector_ids = self.rag_service.add_documents(
                 texts=[chunk["content"] for chunk in dataset_chunks],
                 metadatas=[chunk["metadata"] for chunk in dataset_chunks],
             )
-            
+
             # Query using RAG
             answer = self.rag_service.query(question)
-            
+
             return {
                 "answer": answer,
                 "data_used": {"type": "rag_query", "chunks_used": len(dataset_chunks)},
@@ -1079,23 +1152,23 @@ Response:"""
     ) -> Dict[str, Any]:
         """
         Handle mixed queries that need both numeric data and explanation
-        
+
         This combines SQL results with RAG analysis
         """
         # First, get numeric data
         numeric_result = self._handle_numeric_query(question, context)
-        
+
         # Then, get explanatory analysis
         explanatory_result = self._handle_explanatory_query(
-            f"Analyze and explain: {question}. Numeric data: {numeric_result.get('answer', '')}", 
+            f"Analyze and explain: {question}. Numeric data: {numeric_result.get('answer', '')}",
             context,
         )
-        
+
         # Combine results
         combined_answer = (
             f"{numeric_result['answer']}\n\n{explanatory_result['answer']}"
         )
-        
+
         return {
             "answer": combined_answer,
             "data_used": {
@@ -1104,22 +1177,22 @@ Response:"""
             },
             "combined_analysis": True,
         }
-    
+
     def _convert_dataset_to_chunks(self, context: Dict = None) -> List[Dict[str, Any]]:
         """
         Convert dataset rows to RAG-compatible chunks
-        
+
         This is a placeholder - implement based on your data structure
         """
         # Example implementation for audio data
         # You'd query your actual database tables here
-        
+
         chunks = []
-        
+
         # Placeholder for demonstration
         if context and "table" in context:
             table_name = context["table"]
-            
+
             # This would be actual database queries
             if table_name == "audio_recordings":
                 chunks.append(
@@ -1128,21 +1201,21 @@ Response:"""
                         "metadata": {"source": "database", "table": table_name},
                     }
                 )
-        
+
         return chunks
-    
+
     def _generate_sql_placeholder(self, question: str) -> str:
         """Generate placeholder SQL for numeric queries"""
         # This would use LangChain SQL agent in production
         return f"-- SQL query for: {question}\nSELECT COUNT(*) FROM your_table WHERE condition;"
-    
+
     def get_available_tables(self) -> List[str]:
         """Get list of available database tables"""
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT table_name 
-                FROM information_schema.tables 
+                SELECT table_name
+                FROM information_schema.tables
                 WHERE table_schema = 'public'
                 AND table_name NOT LIKE 'django_%'
                 AND table_name NOT LIKE 'auth_%'
@@ -1150,7 +1223,7 @@ Response:"""
             )
             tables = [row[0] for row in cursor.fetchall()]
         return tables
-    
+
     def get_table_schema(self, table_name: str) -> Dict[str, Any]:
         """Get schema information for a table"""
         with connection.cursor() as cursor:
@@ -1164,19 +1237,19 @@ Response:"""
             """,
                 [table_name],
             )
-            
+
             columns = []
             for row in cursor.fetchall():
                 columns.append(
                     {"name": row[0], "type": row[1], "nullable": row[2] == "YES"}
                 )
-            
+
             return {
                 "table_name": table_name,
                 "columns": columns,
                 "row_count": self._get_row_count(table_name),
             }
-    
+
     def _get_row_count(self, table_name: str) -> int:
         """Get approximate row count for a table"""
         with connection.cursor() as cursor:
@@ -1189,10 +1262,21 @@ Response:"""
         test_cases = [
             # Safe queries
             ("SELECT COUNT(*) FROM users", True, "Basic SELECT"),
-            ("SELECT name, email FROM users WHERE active = 1", True, "SELECT with WHERE"),
-            ("SELECT COUNT(*) as total FROM recordings GROUP BY category", True, "SELECT with GROUP BY"),
-            ("SELECT u.name, COUNT(r.id) FROM users u LEFT JOIN recordings r ON u.id = r.user_id GROUP BY u.id", True, "Complex JOIN"),
-
+            (
+                "SELECT name, email FROM users WHERE active = 1",
+                True,
+                "SELECT with WHERE",
+            ),
+            (
+                "SELECT COUNT(*) as total FROM recordings GROUP BY category",
+                True,
+                "SELECT with GROUP BY",
+            ),
+            (
+                "SELECT u.name, COUNT(r.id) FROM users u LEFT JOIN recordings r ON u.id = r.user_id GROUP BY u.id",
+                True,
+                "Complex JOIN",
+            ),
             # Dangerous queries
             ("DELETE FROM users WHERE id = 1", False, "DELETE statement"),
             ("UPDATE users SET active = 0", False, "UPDATE statement"),
@@ -1203,23 +1287,33 @@ Response:"""
             ("SELECT * FROM users; DELETE FROM logs", False, "Multiple statements"),
             ("SELECT * FROM users INTO new_table", False, "SELECT INTO"),
             ("EXEC sp_help", False, "Stored procedure"),
-            ("SELECT * FROM users; SELECT * FROM xp_cmdshell('dir')", False, "System command"),
+            (
+                "SELECT * FROM users; SELECT * FROM xp_cmdshell('dir')",
+                False,
+                "System command",
+            ),
             ("SELECT FORMAT(GETDATE(), 'yyyy-MM-dd')", False, "Dangerous function"),
-            ("SELECT * FROM OPENROWSET('SQLNCLI', 'Server=server;Trusted_Connection=yes', 'SELECT * FROM table')", False, "OPENROWSET"),
+            (
+                "SELECT * FROM OPENROWSET('SQLNCLI', 'Server=server;Trusted_Connection=yes', 'SELECT * FROM table')",
+                False,
+                "OPENROWSET",
+            ),
         ]
 
         results = []
         for query, expected_safe, description in test_cases:
             is_safe, reason = self._validate_sql_security(query)
-            passed = (is_safe == expected_safe)
-            results.append({
-                'query': query[:50] + '...' if len(query) > 50 else query,
-                'expected_safe': expected_safe,
-                'actual_safe': is_safe,
-                'reason': reason,
-                'passed': passed,
-                'description': description
-            })
+            passed = is_safe == expected_safe
+            results.append(
+                {
+                    "query": query[:50] + "..." if len(query) > 50 else query,
+                    "expected_safe": expected_safe,
+                    "actual_safe": is_safe,
+                    "reason": reason,
+                    "passed": passed,
+                    "description": description,
+                }
+            )
 
         return results
 

@@ -239,12 +239,14 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
 
         # Add user information if authenticated
         if request.user.is_authenticated:
-            context.update({
-                "username": request.user.username,
-                "user_email": request.user.email,
-                "is_staff": request.user.is_staff,
-                "date_joined": request.user.date_joined.isoformat(),
-            })
+            context.update(
+                {
+                    "username": request.user.username,
+                    "user_email": request.user.email,
+                    "is_staff": request.user.is_staff,
+                    "date_joined": request.user.date_joined.isoformat(),
+                }
+            )
 
         # Create streaming response
         def stream_generator():
@@ -275,9 +277,11 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                             "intent": result.get("intent"),
                             "method_used": result.get("method_used"),
                             "conversation_context": result.get("conversation_context"),
-                            "follow_up_suggestions": result.get("follow_up_suggestions"),
+                            "follow_up_suggestions": result.get(
+                                "follow_up_suggestions"
+                            ),
                             "processing_time": result.get("processing_time"),
-                        }
+                        },
                     )
 
                     # Yield a single complete response
@@ -348,7 +352,9 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                     # Save assistant message after streaming completes with enhanced context
                     if accumulated_content:
                         # Get the full result from chatbot service for context
-                        full_result = chatbot_service.process_question(message_text, context)
+                        full_result = chatbot_service.process_question(
+                            message_text, context
+                        )
 
                         Message.objects.create(
                             session=session,
@@ -359,10 +365,14 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                             metadata={
                                 "intent": full_result.get("intent"),
                                 "method_used": full_result.get("method_used"),
-                                "conversation_context": full_result.get("conversation_context"),
-                                "follow_up_suggestions": full_result.get("follow_up_suggestions"),
+                                "conversation_context": full_result.get(
+                                    "conversation_context"
+                                ),
+                                "follow_up_suggestions": full_result.get(
+                                    "follow_up_suggestions"
+                                ),
                                 "processing_time": full_result.get("processing_time"),
-                            }
+                            },
                         )
 
                         # Update session timestamp
@@ -381,8 +391,7 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
         from django.http import StreamingHttpResponse
 
         response = StreamingHttpResponse(
-            stream_generator(),
-            content_type="text/event-stream"
+            stream_generator(), content_type="text/event-stream"
         )
         response["Cache-Control"] = "no-cache"
         response["X-Accel-Buffering"] = "no"

@@ -57,7 +57,9 @@ class StreamingService:
 
         except Exception as e:
             logger.error(f"Error in stream_response: {e}")
-            yield self.format_sse({"type": "error", "message": str(e)}, event="stream_error")
+            yield self.format_sse(
+                {"type": "error", "message": str(e)}, event="stream_error"
+            )
 
     async def astream_response(
         self, rag_service, question: str, chat_history: list = None
@@ -93,7 +95,9 @@ class StreamingService:
 
         except Exception as e:
             logger.error(f"Error in astream_response: {e}")
-            yield self.format_sse({"type": "error", "message": str(e)}, event="astream_error")
+            yield self.format_sse(
+                {"type": "error", "message": str(e)}, event="astream_error"
+            )
 
     def heartbeat(self) -> str:
         """Generate heartbeat message to keep connection alive"""
