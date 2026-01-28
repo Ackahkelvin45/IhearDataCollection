@@ -1,12 +1,11 @@
-// Chat Widget JavaScript
 (function() {
     'use strict';
 
     let currentSessionId = null;
     let isExpanded = false;
     let isStreaming = false;
+    let scrollPending = false;
 
-    // DOM Elements
     const widget = document.getElementById('chatWidget');
     const toggleBtn = document.getElementById('chatWidgetToggle');
     const minimizeBtn = document.getElementById('chatWidgetMinimize');
@@ -20,28 +19,21 @@
     const chatIcon = toggleBtn.querySelector('.chat-icon');
     const closeIcon = toggleBtn.querySelector('.close-icon');
 
-    // Initialize
     function init() {
         setupEventListeners();
         initializeSession();
     }
 
-    // Setup event listeners
     function setupEventListeners() {
-        // Toggle widget
         toggleBtn.addEventListener('click', toggleWidget);
         minimizeBtn.addEventListener('click', toggleWidget);
-
-        // Message form
         messageForm.addEventListener('submit', handleSendMessage);
 
-        // Auto-resize textarea
         messageInput.addEventListener('input', function() {
             this.style.height = 'auto';
             this.style.height = Math.min(this.scrollHeight, 100) + 'px';
         });
 
-        // Enter to send (Shift+Enter for new line)
         messageInput.addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -49,34 +41,20 @@
             }
         });
 
-        // Quick actions
-        document.querySelectorAll('.quick-action-btn').forEach(btn => {
-            btn.addEventListener('click', handleQuickAction);
-        });
+        document.querySelectorAll('.quick-action-btn').forEach(btn => btn.addEventListener('click', handleQuickAction));
+        document.querySelectorAll('.suggestion-btn').forEach(btn => btn.addEventListener('click', function() {
+            messageInput.value = this.dataset.question;
+            messageForm.dispatchEvent(new Event('submit'));
+        }));
 
-        // Suggestion buttons
-        document.querySelectorAll('.suggestion-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const question = this.dataset.question;
-                messageInput.value = question;
-                messageForm.dispatchEvent(new Event('submit'));
-            });
-        });
-
-        // File input
         fileInput.addEventListener('change', handleFileUpload);
 
-        // Open full page button
         const openFullPageBtn = document.getElementById('openFullPageBtn');
-        if (openFullPageBtn) {
-            openFullPageBtn.addEventListener('click', openFullPage);
-        }
+        if (openFullPageBtn) openFullPageBtn.addEventListener('click', openFullPage);
     }
 
-    // Toggle widget open/close
     function toggleWidget() {
         isExpanded = !isExpanded;
-
         if (isExpanded) {
             widgetWindow.classList.remove('hidden');
             chatIcon.classList.add('hidden');
@@ -89,18 +67,14 @@
         }
     }
 
-    // Initialize or create session
     async function initializeSession() {
         try {
-            // Try to get the most recent active session
             const response = await fetch('/chatbot/api/sessions/?page_size=1');
             const data = await response.json();
-
             if (data.results && data.results.length > 0) {
                 currentSessionId = data.results[0].id;
                 await loadMessages();
             } else {
-                // Create a new session
                 await createNewSession();
             }
         } catch (error) {
@@ -108,20 +82,13 @@
         }
     }
 
-    // Create new session
     async function createNewSession() {
         try {
             const response = await fetch('/chatbot/api/sessions/', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCSRFToken(),
-                },
-                body: JSON.stringify({
-                    title: 'Quick Chat ' + new Date().toLocaleString()
-                })
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
+                body: JSON.stringify({ title: 'Quick Chat ' + new Date().toLocaleString() })
             });
-
             const session = await response.json();
             currentSessionId = session.id;
             clearMessages();
@@ -131,88 +98,47 @@
         }
     }
 
-    // Load messages
     async function loadMessages() {
         if (!currentSessionId) return;
-
         try {
             const response = await fetch(`/chatbot/api/sessions/${currentSessionId}/messages/`);
             const data = await response.json();
             const messages = data.results || data;
-
             clearMessages();
-
-            if (messages.length === 0) {
-                // Show welcome message
-                return;
-            }
-
-            messages.forEach(msg => {
-                addMessageToUI(msg.role, msg.content, msg.sources);
-            });
-
+            messages.forEach(msg => addMessageToUI(msg.role, msg.content, msg.sources));
             scrollToBottom();
-        } catch (error) {
-            console.error('Error loading messages:', error);
-        }
+        } catch (error) { console.error('Error loading messages:', error); }
     }
 
-    // Handle send message
     async function handleSendMessage(e) {
         e.preventDefault();
-
-        if (!currentSessionId) {
-            await createNewSession();
-        }
-
+        if (!currentSessionId) await createNewSession();
         const message = messageInput.value.trim();
         if (!message) return;
 
-        // Add user message to UI
         addMessageToUI('user', message);
         messageInput.value = '';
         messageInput.style.height = 'auto';
-
-        // Disable input
         setInputState(false);
 
-        // Check if streaming is enabled
-        const useStreaming = streamToggle.checked;
+        if (streamToggle.checked) await sendMessageWithStreaming(message);
+        else await sendMessageWithoutStreaming(message);
 
-        if (useStreaming) {
-            await sendMessageWithStreaming(message);
-        } else {
-            await sendMessageWithoutStreaming(message);
-        }
-
-        // Re-enable input
         setInputState(true);
         messageInput.focus();
     }
 
-    // Send message without streaming
     async function sendMessageWithoutStreaming(message) {
-        // Show typing indicator
         showTypingIndicator();
-
         try {
             const response = await fetch(`/chatbot/api/sessions/${currentSessionId}/send_message/`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCSRFToken(),
-                },
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
                 body: JSON.stringify({ message })
             });
-
             const data = await response.json();
-
-            // Remove typing indicator
             removeTypingIndicator();
-
-            if (data.assistant_message) {
-                addMessageToUI('assistant', data.assistant_message.content, data.assistant_message.sources);
-            }
+            if (data.assistant_message) addMessageToUI('assistant', data.assistant_message.content, data.assistant_message.sources);
         } catch (error) {
             console.error('Error sending message:', error);
             removeTypingIndicator();
@@ -220,19 +146,13 @@
         }
     }
 
-    // Send message with streaming
     async function sendMessageWithStreaming(message) {
         isStreaming = true;
-
-        // Create streaming message bubble
         const messageId = 'stream-' + Date.now();
         const messageBubble = createStreamingBubble(messageId);
         messagesArea.appendChild(messageBubble);
         scrollToBottom();
-
         const contentDiv = messageBubble.querySelector('.message-content');
-
-        // Add streaming class for enhanced animations
         messageBubble.classList.add('streaming');
         let accumulatedContent = '';
         let sources = [];
@@ -240,13 +160,9 @@
         try {
             const response = await fetch(`/chatbot/api/sessions/${currentSessionId}/send_message_stream/`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCSRFToken(),
-                },
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
                 body: JSON.stringify({ message, stream: true })
             });
-
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
@@ -255,69 +171,52 @@
                 const { value, done } = await reader.read();
                 if (done) break;
 
-                // Decode chunk and add to buffer
                 buffer += decoder.decode(value, { stream: true });
-
-                // Process complete lines from buffer
                 const lines = buffer.split('\n');
-                buffer = lines.pop(); // Keep incomplete line in buffer
+                buffer = lines.pop();
 
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
                         try {
                             const data = JSON.parse(line.substring(6).trim());
-
                             if (data.type === 'token') {
-                                // Update content immediately for fastest streaming
                                 accumulatedContent += data.content;
-                                contentDiv.innerHTML = parseMarkdown(accumulatedContent);
-                                // Scroll to bottom for each token to show progress
-                                scrollToBottom();
-                            } else if (data.type === 'source') {
-                                sources.push(data);
-                            } else if (data.type === 'complete') {
-                                // Remove cursor and finalize
+                                contentDiv.appendChild(document.createTextNode(data.content));
+                                if (!scrollPending) {
+                                    scrollPending = true;
+                                    requestAnimationFrame(() => {
+                                        scrollToBottom();
+                                        scrollPending = false;
+                                    });
+                                }
+                            } else if (data.type === 'source') sources.push(data);
+                            else if (data.type === 'complete') {
                                 const cursor = messageBubble.querySelector('.streaming-cursor');
                                 if (cursor) cursor.remove();
-
-                                // Remove streaming class
                                 messageBubble.classList.remove('streaming');
-
-                                // Add sources if any
-                                if (sources.length > 0) {
-                                    addSourcesToMessage(messageBubble, sources);
-                                }
-
-                                // Final scroll to ensure everything is visible
+                                contentDiv.innerHTML = parseMarkdown(accumulatedContent);
+                                if (sources.length > 0) addSourcesToMessage(messageBubble, sources);
                                 scrollToBottom();
                             } else if (data.type === 'error') {
                                 contentDiv.textContent = 'Error: ' + data.message;
                                 const cursor = messageBubble.querySelector('.streaming-cursor');
                                 if (cursor) cursor.remove();
                             }
-                        } catch (e) {
-                            // Ignore parse errors for heartbeats and incomplete data
-                            if (!line.includes(': heartbeat')) {
-                                console.debug('Parse error (expected for streaming):', e);
-                            }
-                        }
+                        } catch (e) { if (!line.includes(': heartbeat')) console.debug('Parse error:', e); }
                     }
                 }
             }
 
-            // Handle any remaining buffer content
             if (buffer.trim()) {
                 try {
                     if (buffer.startsWith('data: ')) {
                         const data = JSON.parse(buffer.substring(6).trim());
                         if (data.type === 'token') {
                             accumulatedContent += data.content;
-                            contentDiv.textContent = accumulatedContent;
+                            contentDiv.appendChild(document.createTextNode(data.content));
                         }
                     }
-                } catch (e) {
-                    console.debug('Final buffer parse error:', e);
-                }
+                } catch (e) { console.debug('Final buffer parse error:', e); }
             }
         } catch (error) {
             console.error('Streaming error:', error);
@@ -329,61 +228,42 @@
         isStreaming = false;
     }
 
-    // Add message to UI
     function addMessageToUI(role, content, sources = []) {
         const messageBubble = document.createElement('div');
         messageBubble.className = `message-bubble ${role}`;
-
         const messageContent = document.createElement('div');
         messageContent.className = 'message-content';
         messageContent.innerHTML = parseMarkdown(content);
-
         messageBubble.appendChild(messageContent);
+        if (sources.length > 0) addSourcesToMessage(messageBubble, sources);
 
-        // Add sources if present
-        if (sources && sources.length > 0) {
-            addSourcesToMessage(messageBubble, sources);
-        }
-
-        // Remove welcome message if present
         const welcomeMsg = messagesArea.querySelector('.welcome-message');
-        if (welcomeMsg) {
-            welcomeMsg.remove();
-        }
+        if (welcomeMsg) welcomeMsg.remove();
 
         messagesArea.appendChild(messageBubble);
         scrollToBottom();
     }
 
-    // Create streaming bubble
     function createStreamingBubble(id) {
         const messageBubble = document.createElement('div');
         messageBubble.id = id;
         messageBubble.className = 'message-bubble assistant';
-
         const messageContent = document.createElement('div');
         messageContent.className = 'message-content';
-
         const cursor = document.createElement('span');
         cursor.className = 'streaming-cursor';
-
         messageContent.appendChild(cursor);
         messageBubble.appendChild(messageContent);
 
-        // Remove welcome message if present
         const welcomeMsg = messagesArea.querySelector('.welcome-message');
-        if (welcomeMsg) {
-            welcomeMsg.remove();
-        }
+        if (welcomeMsg) welcomeMsg.remove();
 
         return messageBubble;
     }
 
-    // Add sources to message
     function addSourcesToMessage(messageBubble, sources) {
         const sourcesDiv = document.createElement('div');
         sourcesDiv.className = 'message-sources';
-
         const title = document.createElement('div');
         title.className = 'message-sources-title';
         title.textContent = '📚 Sources:';
@@ -400,201 +280,34 @@
         messageContent.appendChild(sourcesDiv);
     }
 
-    // Show typing indicator
     function showTypingIndicator() {
         const indicator = document.createElement('div');
         indicator.className = 'message-bubble assistant';
         indicator.id = 'typing-indicator';
-
         const content = document.createElement('div');
         content.className = 'message-content';
-
         const typing = document.createElement('div');
         typing.className = 'typing-indicator';
         typing.innerHTML = '<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>';
-
         content.appendChild(typing);
         indicator.appendChild(content);
-
-        // Remove welcome message if present
         const welcomeMsg = messagesArea.querySelector('.welcome-message');
-        if (welcomeMsg) {
-            welcomeMsg.remove();
-        }
-
+        if (welcomeMsg) welcomeMsg.remove();
         messagesArea.appendChild(indicator);
         scrollToBottom();
     }
 
-    // Remove typing indicator
-    function removeTypingIndicator() {
-        const indicator = document.getElementById('typing-indicator');
-        if (indicator) {
-            indicator.remove();
-        }
-    }
+    function removeTypingIndicator() { const indicator = document.getElementById('typing-indicator'); if (indicator) indicator.remove(); }
+    function clearMessages() { messagesArea.innerHTML = ''; }
+    function setInputState(enabled) { messageInput.disabled = !enabled; sendBtn.disabled = !enabled; }
+    function scrollToBottom() { messagesArea.scrollTop = messagesArea.scrollHeight; }
+    function parseMarkdown(md) { return DOMPurify.sanitize(window.markdownit().render(md)); }
+    function getCSRFToken() { return document.querySelector('[name=csrfmiddlewaretoken]').value; }
+    function handleQuickAction(e) { const action = e.currentTarget.dataset.action; if (action === 'upload') fileInput.click(); else if (action === 'newchat') createNewSession(); }
+    function handleFileUpload(e) { console.log('Upload file:', e.target.files); e.target.value = ''; }
+    function openFullPage() { window.open('/chatbot/', '_blank'); }
+    function showError(msg) { const errorBubble = document.createElement('div'); errorBubble.className = 'message-bubble error'; errorBubble.textContent = msg; messagesArea.appendChild(errorBubble); scrollToBottom(); }
 
-    // Clear messages
-    function clearMessages() {
-        messagesArea.innerHTML = `
-            <div class="welcome-message">
+    init();
 
-                <h4 class="welcome-title">Welcome!</h4>
-                <p class="welcome-text">I'm your AI assistant. Ask me anything about your project.</p>
-            </div>
-        `;
-    }
-
-    // Handle quick actions
-    function handleQuickAction(e) {
-        const action = e.currentTarget.dataset.action;
-
-        if (action === 'upload') {
-            fileInput.click();
-        } else if (action === 'newchat') {
-            createNewSession();
-        }
-    }
-
-    // Handle file upload
-    async function handleFileUpload(e) {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('title', file.name);
-
-        try {
-            addMessageToUI('system', `Uploading ${file.name}...`);
-
-            const response = await fetch('/chatbot/api/documents/', {
-                method: 'POST',
-                headers: {
-                    'X-CSRFToken': getCSRFToken(),
-                },
-                body: formData
-            });
-
-            if (response.ok) {
-                addMessageToUI('system', `✓ Document uploaded successfully! Processing in background...`);
-            } else {
-                const error = await response.json();
-                showError('Upload failed: ' + (error.file?.[0] || 'Unknown error'));
-            }
-
-            // Clear file input
-            e.target.value = '';
-        } catch (error) {
-            console.error('Error uploading file:', error);
-            showError('Failed to upload document');
-        }
-    }
-
-    // Show error
-    function showError(message) {
-        addMessageToUI('system', '❌ ' + message);
-    }
-
-    // Set input state
-    function setInputState(enabled) {
-        messageInput.disabled = !enabled;
-        sendBtn.disabled = !enabled;
-    }
-
-    // Open full chatbot page with current session
-    function openFullPage() {
-        // Store the current session ID in sessionStorage if it exists
-        if (currentSessionId) {
-            sessionStorage.setItem('chatbotSessionId', currentSessionId);
-        }
-        // Navigate to the full chatbot page
-        window.location.href = '/chatbot/';
-    }
-
-    // Scroll to bottom
-    function scrollToBottom() {
-        messagesArea.scrollTop = messagesArea.scrollHeight;
-    }
-
-// Parse basic markdown to HTML
-function parseMarkdown(text) {
-    if (!text) return '';
-
-    // Escape HTML first to prevent XSS
-    let html = escapeHTML(text);
-
-    // Headers (h1 to h6)
-    html = html.replace(/^###### (.*$)/gm, '<h6>$1</h6>');
-    html = html.replace(/^##### (.*$)/gm, '<h5>$1</h5>');
-    html = html.replace(/^#### (.*$)/gm, '<h4>$1</h4>');
-    html = html.replace(/^### (.*$)/gm, '<h3>$1</h3>');
-    html = html.replace(/^## (.*$)/gm, '<h2>$1</h2>');
-    html = html.replace(/^# (.*$)/gm, '<h1>$1</h1>');
-
-    // Bold and italic (process in order: ***bold italic***, **bold**, *italic*)
-    html = html.replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>');
-    html = html.replace(/\*\*(.*?)\*\*\*/g, '<strong>$1</strong>');
-    html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
-
-    // Inline code
-    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-    // Code blocks
-    html = html.replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
-
-    // Links [text](url)
-    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-
-    // Unordered lists
-    html = html.replace(/^\* (.*$)/gm, '<li>$1</li>');
-    html = html.replace(/^\- (.*$)/gm, '<li>$1</li>');
-    html = html.replace(/^\+ (.*$)/gm, '<li>$1</li>');
-
-    // Ordered lists
-    html = html.replace(/^\d+\. (.*$)/gm, '<li>$1</li>');
-
-    // Wrap consecutive list items in ul/ol tags
-    html = html.replace(/(<li>.*<\/li>\n?)+/g, function(match) {
-        // Check if it's an ordered list (starts with numbers)
-        if (match.includes('1. ') || /^\d+\./.test(match)) {
-            return '<ol>' + match + '</ol>';
-        } else {
-            return '<ul>' + match + '</ul>';
-        }
-    });
-
-    // Line breaks (double space at end of line)
-    html = html.replace(/  \n/g, '<br>');
-
-    // Paragraphs (lines separated by double newlines)
-    html = html.replace(/\n\n/g, '</p><p>');
-    html = '<p>' + html + '</p>';
-
-    // Clean up empty paragraphs
-    html = html.replace(/<p><\/p>/g, '');
-    html = html.replace(/<p>\s*<br\s*\/?>\s*<\/p>/g, '');
-
-    return html;
-}
-
-// Escape HTML
-function escapeHTML(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-}
-
-// Get CSRF token
-function getCSRFToken() {
-    const token = document.querySelector('[name=csrfmiddlewaretoken]');
-    return token ? token.value : '';
-}
-
-    // Initialize when DOM is ready
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
-    } else {
-        init();
-    }
 })();

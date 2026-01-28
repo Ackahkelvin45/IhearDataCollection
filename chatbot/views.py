@@ -78,7 +78,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
         """Delete a document"""
         document = self.get_object()
 
-        # Delete vectors in background
+        # Delete vectors in background (lazy import to avoid startup issues)
+        from .tasks import delete_document_vectors_task
+
         delete_document_vectors_task.delay(str(document.id))
 
         document.delete()
@@ -297,6 +299,7 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                     streaming_service = StreamingService()
 
                     # Stream the RAG response with enhanced context
+                    # Optimized: accumulate data while streaming without blocking
                     accumulated_content = ""
                     accumulated_sources = []
                     tokens_used = 0
@@ -304,57 +307,40 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                     for sse_event in streaming_service.stream_response(
                         rag_service, message_text, chat_history
                     ):
+                        # Yield immediately - don't block on parsing
                         yield sse_event
 
-                        # Parse the event to accumulate data
-                        if '"type": "token"' in sse_event:
-                            import json
-
+                        # Fast parsing - only extract data line, minimal processing
+                        if sse_event.startswith("data:"):
                             try:
-                                data_line = [
-                                    line
-                                    for line in sse_event.split("\n")
-                                    if line.startswith("data:")
-                                ][0]
-                                data = json.loads(data_line.replace("data: ", ""))
-                                accumulated_content += data.get("content", "")
+                                import json
+                                # Extract JSON data directly (faster than split)
+                                json_start = sse_event.find('{')
+                                if json_start != -1:
+                                    json_str = sse_event[json_start:].strip()
+                                    if json_str.endswith('\n'):
+                                        json_str = json_str[:-1]
+                                    data = json.loads(json_str)
+                                    
+                                    event_type = data.get("type")
+                                    if event_type == "token":
+                                        accumulated_content += data.get("content", "")
+                                    elif event_type == "source":
+                                        accumulated_sources.append(data)
+                                    elif event_type == "complete":
+                                        tokens_used = data.get("tokens_used", 0)
                             except:
+                                # Ignore parse errors - don't slow down streaming
                                 pass
 
-                        elif '"type": "source"' in sse_event:
-                            import json
-
-                            try:
-                                data_line = [
-                                    line
-                                    for line in sse_event.split("\n")
-                                    if line.startswith("data:")
-                                ][0]
-                                data = json.loads(data_line.replace("data: ", ""))
-                                accumulated_sources.append(data)
-                            except:
-                                pass
-
-                        elif '"type": "complete"' in sse_event:
-                            import json
-
-                            try:
-                                data_line = [
-                                    line
-                                    for line in sse_event.split("\n")
-                                    if line.startswith("data:")
-                                ][0]
-                                data = json.loads(data_line.replace("data: ", ""))
-                                tokens_used = data.get("tokens_used", 0)
-                            except:
-                                pass
-
-                    # Save assistant message after streaming completes with enhanced context
+                    # Save assistant message after streaming completes
+                    # Optimized: Don't call process_question again - use data from streaming
                     if accumulated_content:
-                        # Get the full result from chatbot service for context
-                        full_result = chatbot_service.process_question(
-                            message_text, context
-                        )
+                        # Extract intent from accumulated sources if available
+                        intent = "EXPLANATORY"
+                        if accumulated_sources:
+                            # Check if sources indicate numeric query
+                            intent = accumulated_sources[0].get("intent", "EXPLANATORY")
 
                         Message.objects.create(
                             session=session,
@@ -363,15 +349,9 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                             sources=accumulated_sources,
                             tokens_used=tokens_used,
                             metadata={
-                                "intent": full_result.get("intent"),
-                                "method_used": full_result.get("method_used"),
-                                "conversation_context": full_result.get(
-                                    "conversation_context"
-                                ),
-                                "follow_up_suggestions": full_result.get(
-                                    "follow_up_suggestions"
-                                ),
-                                "processing_time": full_result.get("processing_time"),
+                                "intent": intent,
+                                "method_used": "rag_streaming",
+                                "streaming": True,
                             },
                         )
 

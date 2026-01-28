@@ -16,15 +16,14 @@
     <div id="chatWidgetWindow" class="chat-widget-window hidden">
         <!-- Header -->
         <div class="chat-widget-header">
-            <div class="flex items-center" >
+            <div class="flex items-center">
                 <div class="chat-avatar" style="position: relative;">
                    <img src="{% static 'assets/img/chatbot.jpeg' %}" alt="Ihear Assistant" class="w-10 h-10 rounded-full">
-
                    <div style="position: absolute; bottom: 0; right: 0; width: 10px; height: 10px; background-color: #00d553; border-radius: 50%;"></div>
                 </div>
                 <div class="mr-2.5" style="margin-left: 10px;">
-                    <h5 class="font-semibold text-white">Ihear Assiatant</h5>
-                    <p class="text-xs text-blue-100">Ask me anything aboutthe ihear project</p>
+                    <h5 class="font-semibold text-white">Ihear Assistant</h5>
+                    <p class="text-xs text-blue-100">Ask me anything about the ihear project</p>
                 </div>
             </div>
             <div class="flex items-center gap-2">
@@ -33,7 +32,7 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
                     </svg>
                 </button>
-                <button style="margin-left: 10px;"   id="chatWidgetMinimize" class="chat-widget-close" aria-label="Minimize chat">
+                <button style="margin-left: 10px;" id="chatWidgetMinimize" class="chat-widget-close" aria-label="Minimize chat">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
                     </svg>
@@ -60,7 +59,6 @@
         <!-- Messages Area -->
         <div id="widgetChatMessages" class="chat-widget-messages">
             <div class="welcome-message">
-
                 <h4 class="welcome-title">Welcome!</h4>
                 <p class="welcome-text">I'm your AI assistant. Upload documents and ask me questions about your project.</p>
                 <div class="welcome-suggestions">
@@ -108,4 +106,8 @@
 
 <!-- Load widget styles and scripts -->
 <link rel="stylesheet" href="{% static 'chatbot/css/widget.css' %}">
+<script src="https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js"></script>
 <script src="{% static 'chatbot/js/widget.js' %}"></script>
+
+

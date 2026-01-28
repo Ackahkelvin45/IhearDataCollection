@@ -16,6 +16,7 @@ class StreamingService:
     def format_sse(self, data: Dict[str, Any], event: str = "message") -> str:
         """
         Format data as Server-Sent Event
+        Optimized for speed - minimal string operations
 
         Args:
             data: Data to send
@@ -24,15 +25,16 @@ class StreamingService:
         Returns:
             Formatted SSE string
         """
-        msg = f"event: {event}\n"
-        msg += f"data: {json.dumps(data)}\n\n"
-        return msg
+        # Use faster JSON encoding with separators for compact output
+        json_data = json.dumps(data, separators=(',', ':'))
+        return f"event: {event}\ndata: {json_data}\n\n"
 
     def stream_response(
         self, rag_service, question: str, chat_history: list = None
     ) -> Generator[str, None, None]:
         """
         Stream RAG response as SSE with optimized performance
+        Maximum speed - yields immediately without any delays
 
         Args:
             rag_service: RAGService instance
@@ -43,17 +45,13 @@ class StreamingService:
             SSE formatted strings immediately
         """
         try:
-            # Get streaming generator from RAG service and yield immediately
-            sources = []
-
             for chunk in rag_service.query_stream(question, chat_history):
                 # Yield each chunk immediately for fastest streaming
-                if chunk["type"] in ["start", "token", "source", "complete", "error"]:
-                    yield self.format_sse(chunk, event=f"stream_{chunk['type']}")
-
-                    # Handle source accumulation for completion
-                    if chunk["type"] == "source":
-                        sources.append(chunk)
+                chunk_type = chunk.get("type")
+                if chunk_type in ["start", "token", "source", "complete", "error"]:
+                    # Keep SSE framing consistent (always include `event:` and `data:`).
+                    # Also rely on json.dumps (C-optimized) for escaping, instead of manual replaces.
+                    yield self.format_sse(chunk, event=f"stream_{chunk_type}")
 
         except Exception as e:
             logger.error(f"Error in stream_response: {e}")
@@ -66,6 +64,7 @@ class StreamingService:
     ) -> AsyncGenerator[str, None]:
         """
         Async stream RAG response as SSE for ASGI compatibility
+        Optimized for maximum speed - no artificial delays
 
         Args:
             rag_service: RAGService instance
@@ -79,8 +78,7 @@ class StreamingService:
             # Get streaming generator from RAG service and yield immediately
             sources = []
 
-            # Convert sync generator to async yielding
-            loop = asyncio.get_event_loop()
+            # Convert sync generator to async yielding - optimized for speed
             for chunk in rag_service.query_stream(question, chat_history):
                 # Yield each chunk immediately for fastest streaming
                 if chunk["type"] in ["start", "token", "source", "complete", "error"]:
@@ -90,8 +88,7 @@ class StreamingService:
                     if chunk["type"] == "source":
                         sources.append(chunk)
 
-                    # Small yield to prevent blocking
-                    await asyncio.sleep(0.001)
+                    # No artificial delay - yield immediately for fastest UX
 
         except Exception as e:
             logger.error(f"Error in astream_response: {e}")
