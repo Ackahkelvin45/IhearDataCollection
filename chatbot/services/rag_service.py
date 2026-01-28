@@ -90,11 +90,15 @@ class FastRAGService:
     # ------------------------------------------------------------------
 
     def _prompt(self) -> PromptTemplate:
-        template = """You are an expert AI assistant for **The I Hear Project**.
+        template = """You are a helpful and friendly AI assistant for **The I Hear Project** - a data collection and analysis platform focused on noise datasets and audio recordings.
 
-IMPORTANT: Use ONLY the information provided in the Context section below. If the Context is empty or doesn't contain relevant information, you MUST say that you don't have specific information about that topic in the uploaded documents, and suggest that the user upload relevant documents or ask about their datasets instead.
+Your role:
+- Be conversational and helpful for general greetings and casual conversation
+- When relevant documents are provided in the Context section, use them to give accurate, document-based answers
+- When no relevant documents are available for specific questions, politely explain that you don't have enough information yet and suggest uploading relevant documents
+- Maintain conversation context and remember what was discussed earlier
 
-Context from uploaded documents:
+Context from uploaded documents (if available):
 {context}
 
 Previous conversation:
@@ -104,12 +108,17 @@ User's question:
 {question}
 
 Instructions:
-- If the Context contains relevant information, use it to answer the question accurately
-- If the Context is empty or doesn't have relevant information, politely explain that you don't have specific information about this topic in the uploaded documents
-- Always be honest about what information you have access to
-- If you don't have relevant context, suggest the user upload documents or ask about their datasets
+1. **For conversational questions** (greetings like "hi", "how are you", "hello", "thanks", etc.): Respond naturally and warmly, then offer to help with The I Hear Project or their datasets.
 
-Answer clearly, practically, and concisely."""
+2. **If Context contains relevant information**: Use it to provide accurate, document-based answers. Cite the documents when helpful.
+
+3. **If Context is empty or not relevant for specific questions**: Politely say: "I don't have enough information about that topic in the uploaded documents yet. If you have relevant documents about [topic], please upload them and I'll be able to help you better. Alternatively, I can help you with questions about your datasets or general questions about The I Hear Project."
+
+4. **For project-specific questions without context**: Be honest that you need document context, but offer to help with what you can (like dataset queries).
+
+5. **Always maintain conversation flow**: Reference previous messages when relevant and keep the conversation natural.
+
+Answer clearly, helpfully, and in a friendly conversational tone. Be honest about your limitations."""
         return PromptTemplate(
             template=template,
             input_variables=["context", "chat_history", "question"],
@@ -169,8 +178,9 @@ Answer clearly, practically, and concisely."""
             context = "\n\n".join(d.page_content for d in docs)
             logger.info(f"Retrieved {len(docs)} documents for RAG query")
         else:
-            context = "[No relevant documents found in the uploaded documents. The vector store may be empty or no documents match this query.]"
-            logger.warning("No documents retrieved - RAG will work without context")
+            # Empty context - tell LLM to say it doesn't have enough information
+            context = "[No relevant documents found in uploaded documents. For specific questions, politely explain that you don't have enough information yet and suggest uploading relevant documents. For conversational questions like greetings, respond naturally.]"
+            logger.info("No documents retrieved - will suggest uploading documents for specific questions")
 
         history = self._format_chat_history(chat_history)
 
@@ -218,8 +228,9 @@ Answer clearly, practically, and concisely."""
                 })
             yield {"type": "source", "sources": sources}
         else:
-            context = "[No relevant documents found in the uploaded documents. The vector store may be empty or no documents match this query.]"
-            logger.warning("No documents retrieved for streaming - RAG will work without context")
+            # Empty context - tell LLM to say it doesn't have enough information for specific questions
+            context = "[No relevant documents found in uploaded documents. For specific questions, politely explain that you don't have enough information yet and suggest uploading relevant documents. For conversational questions like greetings, respond naturally.]"
+            logger.info("No documents retrieved for streaming - will suggest uploading documents for specific questions")
         
         history = self._format_chat_history(chat_history)
 
@@ -276,11 +287,19 @@ Answer clearly, practically, and concisely."""
     # ------------------------------------------------------------------
 
     def _format_chat_history(self, history: Optional[List[tuple]]) -> str:
+        """Format chat history for the prompt - include recent conversation for context"""
         if not history:
-            return "No previous conversation."
-        return "\n".join(
-            f"User: {h}\nAssistant: {a}" for h, a in history[-2:]
-        )
+            return "This is the start of the conversation."
+        
+        # Include last 4 exchanges (8 messages) for better context
+        recent_history = history[-4:] if len(history) > 4 else history
+        
+        formatted = []
+        for user_msg, assistant_msg in recent_history:
+            formatted.append(f"User: {user_msg}")
+            formatted.append(f"Assistant: {assistant_msg}")
+        
+        return "\n".join(formatted)
 
     def get_stats(self):
         """Get statistics about the vector store"""

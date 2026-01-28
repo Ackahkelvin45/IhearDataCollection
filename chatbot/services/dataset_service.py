@@ -116,6 +116,8 @@ class DatasetService:
             "datasets",
             "datssets",
             "datsset",
+            "datsets",  # Common typo
+            "datset",   # Common typo
             "document",
             "documents",
             "doc",
@@ -141,7 +143,8 @@ class DatasetService:
         has_statistics = any(
             keyword in question_lower for keyword in statistical_keywords
         )
-        has_dataset = any(keyword in question_lower for keyword in dataset_keywords)
+        # More flexible matching - check if any dataset keyword appears
+        has_dataset = any(keyword in question_lower for keyword in dataset_keywords) or "dataset" in question_lower
 
         # Check for statistical questions about audio features
         audio_features = [
@@ -160,12 +163,29 @@ class DatasetService:
             feature in question_lower for feature in audio_features
         )
 
-        if (
-            (has_counting and has_dataset)
-            or (has_statistics and has_dataset)
-            or (has_audio_features)
-        ):
+        # Check if this is a counting question about datasets (most common case)
+        if has_counting and (has_dataset or "dataset" in question_lower or "datasets" in question_lower or "datsets" in question_lower):
+            try:
+                from data.models import (
+                    Dataset as AudioDataset,
+                    NoiseDataset,
+                    AudioFeature,
+                    NoiseAnalysis,
+                )
 
+                # For "how many datasets" questions, always query the database
+                return self._handle_counting_questions(question_lower)
+
+            except Exception as e:
+                logger.error(f"Error in counting query: {e}", exc_info=True)
+                return {
+                    "answer": f"I encountered an error while checking your datasets: {str(e)}. Please try again or contact support.",
+                    "data_used": {"type": "error", "error": str(e)},
+                    "sources": [],
+                }
+
+        # Handle statistical/feature questions
+        if (has_statistics and has_dataset) or has_audio_features:
             try:
                 from data.models import (
                     Dataset as AudioDataset,
@@ -175,46 +195,126 @@ class DatasetService:
                 )
 
                 # First try LLM-powered SQL generation for complex queries
-                # This allows the AI to understand the schema and generate appropriate queries
-                if (
-                    len(question_lower.split()) > 3
-                ):  # Complex questions with more context
+                # Check if this is a complex computational question
+                is_complex_query = self._is_complex_computational_query(question_lower)
+                
+                if is_complex_query or len(question_lower.split()) > 3:
                     llm_result = self.handle_complex_database_query(question)
                     if (
                         llm_result
-                        and llm_result["data_used"]["type"] == "llm_generated_sql"
+                        and llm_result.get("data_used", {}).get("type") == "llm_generated_sql"
                     ):
                         return llm_result
 
                 # Fall back to rule-based statistical/feature analysis
-                if has_audio_features or has_statistics:
-                    # Statistical/feature analysis questions
-                    return self._handle_statistical_questions(
-                        question_lower, has_audio_features
-                    )
-                else:
-                    # Basic counting questions
-                    return self._handle_counting_questions()
+                return self._handle_statistical_questions(
+                    question_lower, has_audio_features
+                )
 
             except Exception as e:
+                logger.error(f"Error in statistical query: {e}", exc_info=True)
                 return {
-                    "answer": f"I encountered an error while checking your datasets: {str(e)}. Please try again or contact support.",
+                    "answer": f"I encountered an error while analyzing your data: {str(e)}. Please try again.",
                     "data_used": {"type": "error", "error": str(e)},
                     "sources": [],
                 }
 
-        # Handle other numeric questions with a helpful response
+        # For other numeric questions, try to query anyway if it's a counting question
+        if has_counting:
+            try:
+                return self._handle_counting_questions(question_lower)
+            except Exception as e:
+                logger.debug(f"Could not handle counting question: {e}")
+
+        # Try complex query handler as last resort for any numeric/computational question
+        try:
+            llm_result = self.handle_complex_database_query(question)
+            if (
+                llm_result
+                and llm_result.get("data_used", {}).get("type") == "llm_generated_sql"
+            ):
+                return llm_result
+        except Exception as e:
+            logger.debug(f"Complex query handler failed: {e}")
+
+        # Last resort: generic response
         return {
-            "answer": f"I detected this as a numeric query: '{question}'. For numeric questions, I would query the database directly to get accurate counts, averages, or filtered results. Currently, I'm set up to analyze documents and can tell you about your document collection, but database queries for other numeric data would be handled here.",
+            "answer": f"I detected this as a numeric/computational query: '{question}'. I'm attempting to query the database to get accurate results for you.",
             "data_used": {"type": "numeric_query", "method": "database"},
             "sql_equivalent": self._generate_sql_placeholder(question),
         }
+    
+    def _is_complex_computational_query(self, question_lower):
+        """Detect if a question requires complex computational analysis"""
+        import re
+        
+        # Keywords that indicate complex computations
+        complex_keywords = [
+            # Aggregations and statistics
+            "average", "mean", "median", "sum", "total", "aggregate", "statistics",
+            "distribution", "percentile", "quartile", "standard deviation", "variance",
+            # Comparisons
+            "compare", "comparison", "versus", "vs", "difference", "ratio", "percentage",
+            # Grouping and categorization
+            "group by", "grouped", "by category", "by region", "by type", "breakdown",
+            "distribution", "split", "categorized",
+            # Trends and patterns
+            "trend", "pattern", "over time", "per month", "per year", "per day",
+            "growth", "increase", "decrease", "change",
+            # Complex filters
+            "where", "filter", "filtered", "excluding", "including", "between",
+            "greater than", "less than", "above", "below",
+            # Joins and relationships
+            "with", "including", "related", "associated", "linked",
+            # Ranking and sorting
+            "top", "bottom", "highest", "lowest", "rank", "ranking", "sorted",
+            # Calculations
+            "calculate", "computation", "compute", "formula", "equation",
+            # Complex questions
+            "how many", "what is", "which", "show me", "list", "find",
+            # Multiple conditions
+            "and", "or", "both", "either", "neither",
+        ]
+        
+        # Check for multiple complex keywords (indicates complexity)
+        keyword_count = sum(1 for keyword in complex_keywords if keyword in question_lower)
+        
+        # Check for mathematical operations or comparisons
+        has_math = bool(re.search(r'\d+\s*[+\-*/]\s*\d+', question_lower))
+        has_comparison = bool(re.search(r'(greater|less|more|fewer|higher|lower|above|below)\s+than', question_lower))
+        
+        # Check for aggregation functions
+        has_aggregation = bool(re.search(r'\b(count|sum|avg|average|max|min|total)\b', question_lower))
+        
+        # Check for grouping indicators
+        has_grouping = bool(re.search(r'\b(by|group|per|each|for each)\b', question_lower))
+        
+        # Complex if:
+        # - Has 2+ complex keywords, OR
+        # - Has math/comparison + aggregation, OR
+        # - Has grouping + aggregation, OR
+        # - Question is longer than 8 words (likely complex)
+        is_complex = (
+            keyword_count >= 2 or
+            (has_math or has_comparison) and has_aggregation or
+            has_grouping and has_aggregation or
+            len(question_lower.split()) > 8
+        )
+        
+        return is_complex
 
-    def _handle_counting_questions(self):
+    def _handle_counting_questions(self, question: str = ""):
         """Handle basic counting questions about datasets"""
         from data.models import Dataset as AudioDataset, NoiseDataset
         from chatbot.models import Document
         from django.db.models import Sum
+
+        question_lower = question.lower() if question else ""
+        
+        # Determine what the user is asking about
+        asking_about_noise = any(word in question_lower for word in ["noise", "recording", "audio", "sound"])
+        asking_about_docs = any(word in question_lower for word in ["document", "doc", "file", "upload"])
+        asking_about_all = not asking_about_noise and not asking_about_docs
 
         # 1. Document datasets (RAG chatbot documents)
         total_docs = Document.objects.count()
@@ -227,40 +327,47 @@ class DatasetService:
             or 0
         )
 
-        # 2. Audio datasets (data collection datasets)
+        # 2. Audio/noise datasets (data collection datasets)
         total_audio_datasets = AudioDataset.objects.count()
         total_noise_records = NoiseDataset.objects.count()
 
-        # Build comprehensive answer
+        # Build answer based on what user is asking about
         answer_parts = []
 
-        # Document datasets (RAG)
-        if total_docs > 0:
-            doc_info = (
-                f"You have {total_docs} document datasets uploaded for chatbot analysis"
-            )
-            if processed_docs > 0:
-                doc_info += f" ({processed_docs} processed with {total_chunks} text chunks for querying"
-            if unprocessed_docs > 0:
-                doc_info += f", {unprocessed_docs} still processing"
-            doc_info += ")."
-            answer_parts.append(doc_info)
-
-        # Audio datasets (data collection)
-        if total_audio_datasets > 0 or total_noise_records > 0:
-            audio_info = f"You also have {total_audio_datasets} audio dataset types "
+        if asking_about_noise or asking_about_all:
+            # User is asking about noise/audio datasets or all datasets
             if total_noise_records > 0:
-                audio_info += (
-                    f"with {total_noise_records} individual noise recordings collected"
-                )
-            audio_info += "."
-            answer_parts.append(audio_info)
+                answer_parts.append(f"You have **{total_noise_records:,}** noise datasets available.")
+                if total_audio_datasets > 0:
+                    answer_parts.append(f"These are organized into {total_audio_datasets} dataset types.")
+            elif asking_about_noise:
+                answer_parts.append("You don't have any noise datasets yet. You can start collecting audio data through the data collection interface.")
 
-        # If no datasets found
-        if total_docs == 0 and total_audio_datasets == 0 and total_noise_records == 0:
+        if asking_about_docs or asking_about_all:
+            # User is asking about documents or all datasets
+            if total_docs > 0:
+                doc_info = f"You have **{total_docs}** document(s) uploaded for chatbot analysis"
+                if processed_docs > 0:
+                    doc_info += f" ({processed_docs} processed with {total_chunks:,} text chunks"
+                if unprocessed_docs > 0:
+                    doc_info += f", {unprocessed_docs} still processing"
+                doc_info += ")."
+                answer_parts.append(doc_info)
+            elif asking_about_docs:
+                answer_parts.append("You don't have any documents uploaded yet. You can upload documents through the chatbot interface.")
+
+        # If asking about all and no datasets found
+        if asking_about_all and total_docs == 0 and total_audio_datasets == 0 and total_noise_records == 0:
             answer = "You don't have any datasets yet. You can upload documents for chatbot analysis or start collecting audio data through the data collection interface."
-        else:
+        elif answer_parts:
             answer = " ".join(answer_parts)
+        else:
+            # Fallback
+            total_all = total_noise_records + total_docs
+            if total_all > 0:
+                answer = f"You have **{total_all:,}** total datasets ({total_noise_records:,} noise datasets and {total_docs} documents)."
+            else:
+                answer = "You don't have any datasets yet."
 
         return {
             "answer": answer,
@@ -763,93 +870,111 @@ class DatasetService:
             if func.upper() in sql_upper:
                 return False, f"Potentially dangerous function '{func}' not allowed"
 
-        # Allow only safe clauses and keywords
+        # Allow only safe clauses and keywords (expanded for complex queries)
         allowed_keywords = [
-            "SELECT",
-            "FROM",
-            "WHERE",
-            "JOIN",
-            "INNER",
-            "LEFT",
-            "RIGHT",
-            "FULL",
-            "OUTER",
-            "ON",
-            "GROUP",
-            "BY",
-            "HAVING",
-            "ORDER",
-            "ASC",
-            "DESC",
-            "LIMIT",
-            "OFFSET",
-            "DISTINCT",
-            "AS",
-            "AND",
-            "OR",
-            "NOT",
-            "IN",
-            "EXISTS",
-            "BETWEEN",
-            "LIKE",
-            "COUNT",
-            "SUM",
-            "AVG",
-            "MAX",
-            "MIN",
-            "STDDEV",
-            "VARIANCE",
-            "CASE",
-            "WHEN",
-            "THEN",
-            "ELSE",
-            "END",
-            "COALESCE",
-            "NULLIF",
-            "IS",
-            "NULL",
+            # Basic SQL
+            "SELECT", "FROM", "WHERE", "AS", "AND", "OR", "NOT", "IN", "EXISTS", "BETWEEN", "LIKE", "ILIKE",
+            # Joins
+            "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "OUTER", "ON", "USING",
+            # Grouping and ordering
+            "GROUP", "BY", "HAVING", "ORDER", "ASC", "DESC", "NULLS", "FIRST", "LAST",
+            # Aggregations
+            "COUNT", "SUM", "AVG", "MAX", "MIN", "STDDEV", "STDDEV_POP", "STDDEV_SAMP", 
+            "VARIANCE", "VAR_POP", "VAR_SAMP", "ARRAY_AGG", "STRING_AGG",
+            # Conditional logic
+            "CASE", "WHEN", "THEN", "ELSE", "END", "COALESCE", "NULLIF", "IS", "NULL",
+            # Set operations
+            "UNION", "INTERSECT", "EXCEPT", "ALL",
+            # CTEs and subqueries
+            "WITH", "RECURSIVE",
+            # Window functions
+            "OVER", "PARTITION", "ROWS", "RANGE", "UNBOUNDED", "PRECEDING", "FOLLOWING", "CURRENT", "ROW",
+            "ROW_NUMBER", "RANK", "DENSE_RANK", "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE",
+            # Limits and distinct
+            "LIMIT", "OFFSET", "DISTINCT", "ON",
+            # String functions
+            "CONCAT", "SUBSTRING", "UPPER", "LOWER", "TRIM", "LTRIM", "RTRIM", "LENGTH", "POSITION",
+            # Date/time functions
+            "DATE_TRUNC", "EXTRACT", "AGE", "NOW", "CURRENT_DATE", "CURRENT_TIME", "CURRENT_TIMESTAMP",
+            # Math functions
+            "ABS", "ROUND", "FLOOR", "CEIL", "CEILING", "TRUNC", "MOD", "POWER", "SQRT",
+            # Type casting
+            "CAST", "::",
+            # Comparison
+            "=", "!=", "<>", "<", ">", "<=", ">=",
         ]
 
-        # Extract all words from the query
+        # Extract all words from the query (but be more lenient for complex queries)
         words = re.findall(r"\b\w+\b", sql_upper)
 
         # Check if all non-numeric words are in allowed list or are column/table names
+        # Allow common table/column naming patterns
         for word in words:
             if not word.isdigit() and word not in allowed_keywords:
                 # Allow alphanumeric words (potential column/table names)
+                # Also allow common SQL function names that might be in lowercase
                 if not re.match(r"^[A-Z_][A-Z0-9_]*$", word):
-                    return False, f"Potentially unsafe keyword: '{word}'"
+                    # Check if it's a common PostgreSQL function (case-insensitive)
+                    common_functions = [
+                        "DATE_TRUNC", "EXTRACT", "AGE", "NOW", "CURRENT_DATE", 
+                        "CURRENT_TIME", "CURRENT_TIMESTAMP", "CONCAT", "SUBSTRING",
+                        "UPPER", "LOWER", "TRIM", "LENGTH", "POSITION", "ABS",
+                        "ROUND", "FLOOR", "CEIL", "CEILING", "TRUNC", "MOD", 
+                        "POWER", "SQRT", "ROW_NUMBER", "RANK", "DENSE_RANK",
+                        "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE", "ARRAY_AGG",
+                        "STRING_AGG", "STDDEV_POP", "STDDEV_SAMP", "VAR_POP", "VAR_SAMP"
+                    ]
+                    if word.upper() not in common_functions:
+                        # Still allow if it looks like a valid identifier (table/column name)
+                        if not re.match(r"^[A-Z0-9_]+$", word):
+                            return False, f"Potentially unsafe keyword: '{word}'"
 
-        # Additional length check (prevent extremely long queries)
-        if len(sql_query) > 2000:
-            return False, "Query too long (max 2000 characters)"
+        # Additional length check (allow longer queries for complex computations)
+        if len(sql_query) > 5000:
+            return False, "Query too long (max 5000 characters)"
 
         return True, "Query is safe"
 
-    def _generate_sql_query(self, question_lower, schema_info):
-        """Generate SQL query using LLM with database schema awareness"""
+    def _generate_sql_query_enhanced(self, question, schema_info):
+        """Generate complex SQL queries using LLM with enhanced capabilities"""
         from langchain_openai import ChatOpenAI
-        from langchain.prompts import PromptTemplate
         from django.conf import settings
 
-        # Create schema description for the prompt
+        question_lower = question.lower()
         schema_description = self._format_schema_for_prompt(schema_info)
 
-        system_prompt = f"""You are a SQL expert that generates safe, accurate SQL queries based on natural language questions.
+        # Enhanced prompt for complex queries
+        system_prompt = f"""You are an expert SQL query generator specializing in complex data analysis queries for audio/noise datasets.
 
 DATABASE SCHEMA:
 {schema_description}
 
-STRICT SECURITY REQUIREMENTS:
-1. Generate ONLY SELECT queries - NEVER use INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, or any other data modification statements
-2. Use ONLY tables and columns that exist in the schema above
-3. Use proper JOINs for relationships when needed
-4. Use appropriate aggregations (COUNT, AVG, SUM, etc.) when requested
-5. Return only SELECT statements - no explanations, no comments
-6. If the question cannot be answered with the available schema, return "UNABLE_TO_ANSWER"
-7. Keep queries simple and safe
+CAPABILITIES - You can generate:
+1. **Aggregations**: COUNT, SUM, AVG, MIN, MAX, STDDEV, VARIANCE
+2. **Grouping**: GROUP BY with multiple columns, HAVING clauses
+3. **Joins**: INNER, LEFT, RIGHT joins across related tables
+4. **Subqueries**: Correlated and non-correlated subqueries
+5. **CTEs (Common Table Expressions)**: WITH clauses for complex multi-step queries
+6. **Window Functions**: ROW_NUMBER(), RANK(), DENSE_RANK(), LAG(), LEAD(), SUM() OVER()
+7. **Filtering**: WHERE with multiple conditions, IN, EXISTS, BETWEEN, LIKE, ILIKE
+8. **Sorting**: ORDER BY with multiple columns, NULLS FIRST/LAST
+9. **Set Operations**: UNION, INTERSECT, EXCEPT (when safe)
+10. **Date/Time Functions**: DATE_TRUNC, EXTRACT, AGE, etc.
+11. **String Functions**: CONCAT, SUBSTRING, UPPER, LOWER, TRIM
+12. **Case Statements**: CASE WHEN for conditional logic
 
-QUESTION: {question_lower}
+STRICT SECURITY REQUIREMENTS:
+1. Generate ONLY SELECT queries - NEVER use INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, TRUNCATE, or any data modification
+2. Use ONLY tables and columns that exist in the schema above
+3. Use proper JOINs for relationships (data_noisedataset.id = data_audiofeature.noise_dataset_id, etc.)
+4. For complex questions, use CTEs (WITH clauses) to break down the logic
+5. Use appropriate aggregations and groupings based on the question
+6. Return ONLY the SQL query - no explanations, no markdown, no comments
+7. If the question cannot be answered with the available schema, return "UNABLE_TO_ANSWER"
+8. Always use table aliases for readability (nd, af, na, cat, reg, etc.)
+9. Limit results to reasonable sizes (use LIMIT when appropriate)
+
+QUESTION: {question}
 
 SQL QUERY:"""
 
@@ -858,6 +983,7 @@ SQL QUERY:"""
                 model_name=settings.OPENAI_MODEL,
                 openai_api_key=settings.OPENAI_API_KEY,
                 temperature=0.1,  # Low temperature for consistent SQL generation
+                max_tokens=2000,  # Allow longer queries for complex computations
             )
 
             response = llm.invoke(system_prompt)
@@ -879,57 +1005,127 @@ SQL QUERY:"""
                         sql_query.replace("```sql", "").replace("```", "").strip()
                     )
 
+            # Remove any leading/trailing whitespace and newlines
+            sql_query = sql_query.strip()
+
             # Enhanced security validation
-            if not sql_query or "UNABLE_TO_ANSWER" in sql_query:
+            if not sql_query or "UNABLE_TO_ANSWER" in sql_query.upper():
+                logger.warning("LLM returned UNABLE_TO_ANSWER or empty query")
                 return None
 
             # Use comprehensive security validation
             is_safe, reason = self._validate_sql_security(sql_query)
             if not is_safe:
                 logger.warning(f"Unsafe SQL query rejected: {reason}")
-                logger.warning(f"Rejected query: {sql_query}")
+                logger.warning(f"Rejected query: {sql_query[:200]}...")
                 return None
 
-            logger.info(f"Generated safe SQL query: {sql_query}")
+            logger.info(f"Generated safe SQL query: {sql_query[:100]}...")
             return sql_query
 
         except Exception as e:
-            logger.error(f"Error generating SQL query: {e}")
+            logger.error(f"Error generating SQL query: {e}", exc_info=True)
             return None
 
-    def _format_results_with_llm(self, question, sql_results):
-        """Use LLM to format SQL results into natural language response"""
+    def _format_results_with_llm_enhanced(self, question, sql_results):
+        """Enhanced LLM formatting with better analysis and insights"""
         from langchain_openai import ChatOpenAI
         from django.conf import settings
         import json
 
         # Format the results as JSON for the LLM
+        # Include more rows for complex analysis (up to 100)
+        max_rows_to_show = min(100, sql_results["row_count"])
+        
         results_json = json.dumps(
             {
                 "columns": sql_results["columns"],
-                "rows": sql_results["rows"][
-                    :50
-                ],  # Limit to first 50 rows to avoid token limits
+                "rows": sql_results["rows"][:max_rows_to_show],
                 "total_rows": sql_results["row_count"],
+                "showing_rows": max_rows_to_show,
             },
             indent=2,
             default=str,
         )
 
-        prompt = f"""You are a helpful data analyst. A user asked: "{question}"
+        prompt = f"""You are an expert data analyst helping users understand their audio/noise dataset analysis results.
 
-Here are the database query results:
+USER QUESTION: "{question}"
+
+QUERY RESULTS:
 {results_json}
 
-Please provide a natural, conversational response that:
-1. Directly answers the user's question using the data
-2. Presents the information in a clear, readable format
-3. Uses appropriate formatting (bold key values, lists where helpful)
-4. Includes relevant context and insights if applicable
-5. If there are many results, summarize and show key examples
-6. Be conversational and helpful, not robotic
+Please provide a comprehensive, natural response that:
+1. **Directly answers** the user's question using the actual data from the results
+2. **Highlights key findings** - identify patterns, trends, outliers, or interesting insights
+3. **Uses clear formatting**:
+   - Use **bold** for important numbers and key values
+   - Use bullet points (•) for lists
+   - Use tables or structured formatting when showing multiple values
+   - Use markdown formatting appropriately
+4. **Provides context**: Explain what the numbers mean in practical terms
+5. **Handles large datasets**: If there are many results, summarize key patterns and show representative examples
+6. **Statistical insights**: If appropriate, mention averages, ranges, distributions, or comparisons
+7. **Be conversational**: Write naturally, as if explaining to a colleague, not robotically
+
+IMPORTANT:
+- Use the actual data values from the results
+- Don't make up numbers or statistics
+- If the question asks for computation/analysis, show the computed results clearly
+- For complex queries, break down the answer into clear sections if helpful
 
 Response:"""
+
+        try:
+            llm = ChatOpenAI(
+                model_name=settings.OPENAI_MODEL,
+                openai_api_key=settings.OPENAI_API_KEY,
+                temperature=0.3,  # Slightly creative for natural responses
+                max_tokens=2000,  # Allow longer responses for complex analysis
+            )
+
+            response = llm.invoke(prompt)
+            formatted_answer = response.content.strip()
+
+            # Add a note if results were truncated
+            if sql_results["row_count"] > max_rows_to_show:
+                formatted_answer += f"\n\n*Note: Showing {max_rows_to_show} of {sql_results['row_count']} total results.*"
+
+            return formatted_answer
+
+        except Exception as e:
+            logger.error(f"Error formatting results with LLM: {e}")
+            # Fallback to basic formatting
+            return self._format_results_basic(question, sql_results)
+    
+    def _format_results_basic(self, question, sql_results):
+        """Basic fallback formatting without LLM"""
+        if sql_results["row_count"] == 0:
+            return "No results found."
+        
+        answer = f"Found {sql_results['row_count']} result(s):\n\n"
+        
+        # Show column headers
+        if sql_results["columns"]:
+            answer += " | ".join(sql_results["columns"]) + "\n"
+            answer += "-" * (len(" | ".join(sql_results["columns"]))) + "\n"
+        
+        # Show first 10 rows
+        for i, row in enumerate(sql_results["rows"][:10]):
+            if isinstance(row, dict):
+                values = [str(row.get(col, "")) for col in sql_results["columns"]]
+            else:
+                values = [str(v) for v in row]
+            answer += " | ".join(values) + "\n"
+        
+        if sql_results["row_count"] > 10:
+            answer += f"\n... and {sql_results['row_count'] - 10} more results."
+        
+        return answer
+
+    def _format_results_with_llm(self, question, sql_results):
+        """Use LLM to format SQL results into natural language response"""
+        return self._format_results_with_llm_enhanced(question, sql_results)
 
         try:
             llm = ChatOpenAI(
@@ -954,45 +1150,154 @@ Response:"""
                 return f"Found {len(rows)} results with {len(columns)} columns. The data includes: {', '.join(columns[:3])}{'...' if len(columns) > 3 else ''}"
 
     def _format_schema_for_prompt(self, schema_info):
-        """Format schema information for LLM prompt"""
+        """Format schema information for LLM prompt with enhanced context"""
         formatted = []
+        
+        # Add header with key information
+        formatted.append("=" * 80)
+        formatted.append("DATABASE SCHEMA FOR AUDIO/NOISE DATASET ANALYSIS")
+        formatted.append("=" * 80)
+        formatted.append("")
 
-        for table_name, table_info in schema_info["tables"].items():
-            formatted.append(f"TABLE: {table_name} ({table_info['model_name']})")
-            formatted.append(f"Description: {table_info['description']}")
-            formatted.append("Columns:")
+        # Group tables by domain for better understanding
+        core_tables = []
+        data_tables = []
+        chatbot_tables = []
+        
+        for table_name in schema_info["tables"].keys():
+            if table_name.startswith("core_"):
+                core_tables.append(table_name)
+            elif table_name.startswith("data_"):
+                data_tables.append(table_name)
+            elif table_name.startswith("chatbot_"):
+                chatbot_tables.append(table_name)
+            else:
+                data_tables.append(table_name)
 
-            for col_name, col_info in table_info["fields"].items():
-                col_type = col_info["type"]
-                nullable = "NULL" if col_info["nullable"] else "NOT NULL"
-
-                if "max_length" in col_info:
-                    col_type += f"({col_info['max_length']})"
-
-                if "choices" in col_info:
-                    choices_str = ", ".join([f"'{c}'" for c in col_info["choices"][:3]])
-                    if len(col_info["choices"]) > 3:
-                        choices_str += "..."
-                    col_type += f" CHOICES: [{choices_str}]"
-
-                if "foreign_key_to" in col_info:
-                    col_type += f" → {col_info['foreign_key_to']}"
-
-                if "array_size" in col_info:
-                    col_type += f"[{col_info['array_size']}]"
-
-                formatted.append(f"  - {col_name}: {col_type} {nullable}")
-
+        # Format core reference tables first
+        if core_tables:
+            formatted.append("📋 CORE REFERENCE TABLES (Categories, Regions, Communities, etc.):")
             formatted.append("")
+            for table_name in sorted(core_tables):
+                table_info = schema_info["tables"][table_name]
+                formatted.extend(self._format_table_info(table_name, table_info))
+                formatted.append("")
 
+        # Format main data tables
+        if data_tables:
+            formatted.append("📊 MAIN DATA TABLES (Noise Datasets, Audio Features, Analysis):")
+            formatted.append("")
+            for table_name in sorted(data_tables):
+                table_info = schema_info["tables"][table_name]
+                formatted.extend(self._format_table_info(table_name, table_info))
+                formatted.append("")
+
+        # Format chatbot tables
+        if chatbot_tables:
+            formatted.append("💬 CHATBOT TABLES (Documents, Messages):")
+            formatted.append("")
+            for table_name in sorted(chatbot_tables):
+                table_info = schema_info["tables"][table_name]
+                formatted.extend(self._format_table_info(table_name, table_info))
+                formatted.append("")
+
+        # Add relationship information with more context
         if schema_info["relationships"]:
-            formatted.append("RELATIONSHIPS:")
+            formatted.append("=" * 80)
+            formatted.append("KEY RELATIONSHIPS (for JOINs):")
+            formatted.append("=" * 80)
+            formatted.append("")
+            
+            # Group relationships by table
+            rels_by_table = {}
             for rel in schema_info["relationships"]:
-                formatted.append(
-                    f"  - {rel['from_table']}.{rel['from_field']} → {rel['to_table']}"
-                )
+                from_table = rel['from_table']
+                if from_table not in rels_by_table:
+                    rels_by_table[from_table] = []
+                rels_by_table[from_table].append(rel)
+            
+            for table_name in sorted(rels_by_table.keys()):
+                formatted.append(f"Table: {table_name}")
+                for rel in rels_by_table[table_name]:
+                    formatted.append(
+                        f"  • {rel['from_field']} → {rel['to_table']} (Foreign Key)"
+                    )
+                formatted.append("")
+
+        # Add common query patterns
+        formatted.append("=" * 80)
+        formatted.append("COMMON QUERY PATTERNS:")
+        formatted.append("=" * 80)
+        formatted.append("")
+        formatted.append("1. Join noise datasets with audio features:")
+        formatted.append("   data_noisedataset nd JOIN data_audiofeature af ON nd.id = af.noise_dataset_id")
+        formatted.append("")
+        formatted.append("2. Join with categories:")
+        formatted.append("   data_noisedataset nd JOIN core_category cat ON nd.category_id = cat.id")
+        formatted.append("")
+        formatted.append("3. Join with regions:")
+        formatted.append("   data_noisedataset nd JOIN core_region reg ON nd.region_id = reg.id")
+        formatted.append("")
+        formatted.append("4. Aggregate by category:")
+        formatted.append("   SELECT cat.name, COUNT(*) FROM data_noisedataset nd")
+        formatted.append("   JOIN core_category cat ON nd.category_id = cat.id GROUP BY cat.name")
+        formatted.append("")
 
         return "\n".join(formatted)
+    
+    def _format_table_info(self, table_name, table_info):
+        """Format individual table information"""
+        formatted = []
+        formatted.append(f"TABLE: {table_name}")
+        formatted.append(f"Model: {table_info['model_name']}")
+        if table_info.get('description'):
+            formatted.append(f"Description: {table_info['description']}")
+        formatted.append("Columns:")
+        
+        # Sort columns: primary keys first, then foreign keys, then others
+        pk_cols = []
+        fk_cols = []
+        other_cols = []
+        
+        for col_name, col_info in table_info["fields"].items():
+            if "id" in col_name.lower() and col_name.lower().endswith("id"):
+                if col_name.lower() == "id":
+                    pk_cols.append((col_name, col_info))
+                else:
+                    fk_cols.append((col_name, col_info))
+            else:
+                other_cols.append((col_name, col_info))
+        
+        all_cols = pk_cols + fk_cols + other_cols
+        
+        for col_name, col_info in all_cols:
+            col_type = col_info["type"]
+            nullable = "NULL" if col_info["nullable"] else "NOT NULL"
+            
+            # Add type details
+            if "max_length" in col_info:
+                col_type += f"({col_info['max_length']})"
+            
+            if "choices" in col_info:
+                choices_str = ", ".join([f"'{c}'" for c in col_info["choices"][:5]])
+                if len(col_info["choices"]) > 5:
+                    choices_str += f" ... ({len(col_info['choices'])} total)"
+                col_type += f" CHOICES: [{choices_str}]"
+            
+            # Mark foreign keys clearly
+            if "foreign_key_to" in col_info:
+                col_type += f" → FK to {col_info['foreign_key_to']}"
+            
+            if "array_size" in col_info:
+                col_type += f"[{col_info['array_size']}]"
+            
+            # Mark primary keys
+            if col_name.lower() == "id":
+                formatted.append(f"  - {col_name}: {col_type} {nullable} [PRIMARY KEY]")
+            else:
+                formatted.append(f"  - {col_name}: {col_type} {nullable}")
+        
+        return formatted
 
     def _execute_safe_sql(self, sql_query):
         """Execute SQL query safely and return results with multiple security layers"""
@@ -1058,27 +1363,101 @@ Response:"""
             logger.error(f"Failed query: {sql_query}")
             return {"error": str(e), "columns": [], "rows": [], "row_count": 0}
 
-    def _analyze_sql_results(self, question_lower, sql_results):
-        """Analyze SQL results and generate human-readable answer using LLM"""
+    def _analyze_sql_results_enhanced(self, question, sql_results):
+        """Enhanced analysis of SQL results with better formatting and insights"""
         if "error" in sql_results:
-            return f"I encountered an error while querying the database: {sql_results['error']}"
+            return f"I encountered an error while querying the database: {sql_results['error']}. Please try rephrasing your question."
 
         if sql_results["row_count"] == 0:
-            return "No data was found matching your query."
+            return "No data was found matching your query. You might want to check your filters or try a different question."
 
-        # Use LLM to format the results naturally based on context
-        return self._format_results_with_llm(question_lower, sql_results)
+        # Use enhanced LLM formatting with better context
+        return self._format_results_with_llm_enhanced(question, sql_results)
+    
+    def _analyze_sql_results(self, question_lower, sql_results):
+        """Analyze SQL results and generate human-readable answer using LLM"""
+        return self._analyze_sql_results_enhanced(question_lower, sql_results)
 
     def handle_complex_database_query(self, question):
-        """Handle complex database queries using LLM-generated SQL"""
+        """Handle complex database queries using LLM-generated SQL with advanced capabilities"""
         question_lower = question.lower()
 
         try:
-            # Get database schema
+            # First, try using the sophisticated TextToSQLAgent from data_insights if available
+            try:
+                from data_insights.workflows.sql_agent import TextToSQLAgent
+                from data_insights.workflows.prompt import SQL_SYSTEM_TEMPLATE
+                from langchain_openai import ChatOpenAI
+                from django.conf import settings
+                
+                # Define allowed tables for complex queries
+                allowed_tables = [
+                    "data_noisedataset",
+                    "data_audiofeature", 
+                    "data_noiseanalysis",
+                    "core_category",
+                    "core_region",
+                    "core_community",
+                    "core_class",
+                    "core_subclass",
+                    "chatbot_document",
+                    "chatbot_documentchunk",
+                ]
+                
+                # Create TextToSQLAgent for sophisticated SQL generation
+                llm = ChatOpenAI(
+                    model_name=settings.OPENAI_MODEL,
+                    openai_api_key=settings.OPENAI_API_KEY,
+                    temperature=0.1,
+                )
+                
+                agent = TextToSQLAgent(
+                    llm=llm,
+                    system_prompt=SQL_SYSTEM_TEMPLATE,
+                    include_tables=allowed_tables,
+                    ai_answer=True,  # Let LLM format the answer
+                    top_k=100,
+                )
+                
+                # Compile workflow
+                workflow = agent.compile_workflow()
+                
+                # Execute query using the agent
+                from data_insights.workflows.schema import PostgresSQLInput
+                from langchain_core.messages import HumanMessage
+                
+                initial_state = {
+                    "messages": [HumanMessage(content=question)],
+                    "n_trials": 0,
+                }
+                
+                result = workflow.invoke(initial_state)
+                
+                # Extract answer from agent response
+                if result and "messages" in result:
+                    last_message = result["messages"][-1]
+                    if hasattr(last_message, "content"):
+                        answer = last_message.content
+                        
+                        return {
+                            "answer": answer,
+                            "data_used": {
+                                "type": "llm_generated_sql",
+                                "method": "text_to_sql_agent",
+                                "agent_used": True,
+                            },
+                            "sources": [],
+                        }
+            except ImportError:
+                logger.debug("TextToSQLAgent not available, using basic SQL generation")
+            except Exception as agent_error:
+                logger.warning(f"TextToSQLAgent failed, falling back to basic SQL: {agent_error}")
+
+            # Fallback to enhanced basic SQL generation
             schema_info = self._get_database_schema()
 
-            # Generate SQL using LLM
-            sql_query = self._generate_sql_query(question_lower, schema_info)
+            # Generate SQL using enhanced LLM prompt
+            sql_query = self._generate_sql_query_enhanced(question, schema_info)
 
             if not sql_query:
                 # Fall back to existing statistical methods
@@ -1089,14 +1468,14 @@ Response:"""
             # Execute the query safely
             sql_results = self._execute_safe_sql(sql_query)
 
-            # Analyze and format results
-            answer = self._analyze_sql_results(question_lower, sql_results)
+            # Analyze and format results with enhanced analysis
+            answer = self._analyze_sql_results_enhanced(question, sql_results)
 
             return {
                 "answer": answer,
                 "data_used": {
                     "type": "llm_generated_sql",
-                    "method": "dynamic_query",
+                    "method": "enhanced_dynamic_query",
                     "sql_query": sql_query,
                     "query_results": sql_results,
                 },
@@ -1104,7 +1483,7 @@ Response:"""
             }
 
         except Exception as e:
-            logger.error(f"Error in complex database query: {e}")
+            logger.error(f"Error in complex database query: {e}", exc_info=True)
             # Fall back to existing methods
             return self._handle_numeric_query(question)
 
