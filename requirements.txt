@@ -64,6 +64,7 @@ drf-spectacular==0.28.0
 durationpy==0.10
 et_xmlfile==2.0.0
 executing==2.2.0
+faiss-cpu==1.13.2
 fastjsonschema==2.21.1
 ffmpeg-python==0.2.0
 filelock==3.18.0
@@ -276,5 +277,3 @@ whitenoise==6.9.0
 yarl==1.20.1
 zipp==3.23.0
 zstandard==0.23.0
-faiss-cpu==1.9.0.post1
-daphne==4.1.2
