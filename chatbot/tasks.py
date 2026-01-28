@@ -173,19 +173,26 @@ def process_document_task(self, document_id: str):
         logger.info(f"Created {len(chunk_objects)} chunks")
 
         # ===============================
-        # VECTOR STORE (TEMP DISABLED)
+        # ADD TO VECTOR STORE FOR RAG
         # ===============================
-        # rag_service = RAGService()
-        # vector_ids = rag_service.add_documents(chunk_texts, chunk_metadatas)
-
-        vector_ids = list(range(len(chunk_texts)))  # dummy IDs for now
-
-        chunks = DocumentChunk.objects.filter(document=document).order_by("chunk_index")
-
-        for chunk, vector_id in zip(chunks, vector_ids):
-            chunk.vector_id = vector_id
-
-        DocumentChunk.objects.bulk_update(chunks, ["vector_id"])
+        try:
+            from .services import RAGService
+            
+            rag_service = RAGService()
+            logger.info(f"Adding {len(chunk_texts)} chunks to vector store for document {document_id}")
+            rag_service.add_documents(chunk_texts, chunk_metadatas)
+            logger.info(f"Successfully added document {document_id} to vector store")
+            
+            # Update vector_ids for chunks (optional, for tracking)
+            chunks = DocumentChunk.objects.filter(document=document).order_by("chunk_index")
+            # Note: FAISS doesn't return vector IDs, so we'll just mark them as indexed
+            for chunk in chunks:
+                if not chunk.vector_id:
+                    chunk.vector_id = f"indexed_{chunk.chunk_index}"
+            DocumentChunk.objects.bulk_update(chunks, ["vector_id"])
+        except Exception as e:
+            logger.error(f"Failed to add document {document_id} to vector store: {e}")
+            # Don't fail the whole task - document is still processed and chunks are saved
 
         # ===============================
         # FINALIZE DOCUMENT

@@ -164,8 +164,8 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
         chat_history = self._get_chat_history(session, exclude_last=True)
 
         # Intelligent routing based on question intent
+        start_time = time.time()
         try:
-            start_time = time.time()
             from .services import IntentClassifier, RAGService, DatasetService
 
             # Classify the question intent
@@ -185,14 +185,23 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
 
             response_time = time.time() - start_time
 
+            # Ensure we have valid result data
+            answer = result.get("answer", "I couldn't generate a response. Please try again.")
+            tokens_used = result.get("tokens_used", 0) or len(answer.split())
+            sources = result.get("sources", [])
+
             # Save assistant message
             assistant_message = Message.objects.create(
                 session=session,
                 role="assistant",
-                content=result["answer"],
-                sources=result["sources"],
-                tokens_used=result.get("tokens_used", 0),
+                content=answer,
+                sources=sources,
+                tokens_used=tokens_used,
                 response_time=response_time,
+                metadata={
+                    "intent": intent,
+                    "method_used": "database_query" if intent == "NUMERIC" else "rag",
+                },
             )
 
             # Update session timestamp
@@ -207,10 +216,40 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
             )
 
         except Exception as e:
-            logger.error(f"Error in send_message: {e}")
-            return Response(
-                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            logger.error(f"Error in send_message: {e}", exc_info=True)
+            response_time = time.time() - start_time
+            
+            # Save error message as assistant response so it's tracked
+            error_message = f"I encountered an error while processing your question: {str(e)}. Please try again."
+            try:
+                assistant_message = Message.objects.create(
+                    session=session,
+                    role="assistant",
+                    content=error_message,
+                    sources=[],
+                    tokens_used=len(error_message.split()),
+                    response_time=response_time,
+                    metadata={
+                        "intent": "error",
+                        "method_used": "error",
+                        "error": str(e),
+                    },
+                )
+                session.save()
+                
+                return Response(
+                    {
+                        "user_message": MessageSerializer(user_message).data,
+                        "assistant_message": MessageSerializer(assistant_message).data,
+                        "error": str(e),
+                    },
+                    status=status.HTTP_200_OK,  # Return 200 so frontend can display the error message
+                )
+            except Exception as save_error:
+                logger.error(f"Failed to save error message: {save_error}")
+                return Response(
+                    {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
 
     @action(detail=True, methods=["post"])
     def send_message_stream(self, request, pk=None):
@@ -252,6 +291,9 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
 
         # Create streaming response
         def stream_generator():
+            start_time = time.time()
+            assistant_message_saved = False
+            
             try:
                 from .services import (
                     ChatbotService,
@@ -263,10 +305,12 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                 # Process question with full context awareness
                 result = chatbot_service.process_question(message_text, context)
                 intent = result.get("intent", "EXPLANATORY")
+                response_time = time.time() - start_time
 
                 if intent == "NUMERIC":
                     # For numeric questions, return immediate result (no streaming needed)
                     answer = result.get("answer", "I processed your numeric query.")
+                    tokens_used = result.get("tokens_used", 0) or len(answer.split())
 
                     # Save the assistant message immediately for numeric responses
                     Message.objects.create(
@@ -274,7 +318,8 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                         role="assistant",
                         content=answer,
                         sources=result.get("sources", []),
-                        tokens_used=result.get("tokens_used", 0),
+                        tokens_used=tokens_used,
+                        response_time=response_time,
                         metadata={
                             "intent": result.get("intent"),
                             "method_used": result.get("method_used"),
@@ -282,15 +327,19 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                             "follow_up_suggestions": result.get(
                                 "follow_up_suggestions"
                             ),
-                            "processing_time": result.get("processing_time"),
+                            "processing_time": result.get("processing_time", response_time),
                         },
                     )
+                    assistant_message_saved = True
 
                     # Yield a single complete response
                     yield f'data: {{"type": "start"}}\n\n'
                     yield f"data: {{\"type\": \"token\", \"content\": \"{answer.replace(chr(10), '\\\\n').replace('\"', '\\\\\"')}\"}}\n\n"
                     yield f"data: {{\"type\": \"source\", \"sources\": {result.get('sources', [])}, \"intent\": \"{intent}\", \"method\": \"{result.get('method_used', 'database')}\", \"follow_up_suggestions\": {result.get('follow_up_suggestions', [])}}}\n\n"
-                    yield f"data: {{\"type\": \"end\", \"tokens_used\": {result.get('tokens_used', 0)}, \"response_time\": {result.get('processing_time', 0):.2f}, \"conversation_context\": {result.get('conversation_context', {})}}}\n\n"
+                    yield f"data: {{\"type\": \"complete\", \"tokens_used\": {tokens_used}, \"response_time\": {response_time:.2f}}}\n\n"
+                    
+                    # Update session timestamp
+                    session.save()
                     return
 
                 else:
@@ -303,6 +352,7 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                     accumulated_content = ""
                     accumulated_sources = []
                     tokens_used = 0
+                    stream_start_time = time.time()
 
                     for sse_event in streaming_service.stream_response(
                         rag_service, message_text, chat_history
@@ -326,42 +376,80 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                                     if event_type == "token":
                                         accumulated_content += data.get("content", "")
                                     elif event_type == "source":
-                                        accumulated_sources.append(data)
+                                        # Handle source data properly
+                                        if isinstance(data, dict) and "sources" in data:
+                                            accumulated_sources = data.get("sources", [])
+                                        else:
+                                            accumulated_sources.append(data)
                                     elif event_type == "complete":
-                                        tokens_used = data.get("tokens_used", 0)
-                            except:
-                                # Ignore parse errors - don't slow down streaming
-                                pass
+                                        tokens_used = data.get("tokens_used", 0) or len(accumulated_content.split())
+                            except Exception as parse_error:
+                                # Log parse errors but don't stop streaming
+                                logger.debug(f"SSE parse error (non-critical): {parse_error}")
 
-                    # Save assistant message after streaming completes
-                    # Optimized: Don't call process_question again - use data from streaming
-                    if accumulated_content:
-                        # Extract intent from accumulated sources if available
-                        intent = "EXPLANATORY"
-                        if accumulated_sources:
-                            # Check if sources indicate numeric query
-                            intent = accumulated_sources[0].get("intent", "EXPLANATORY")
+                    # Calculate response time
+                    response_time = time.time() - start_time
 
+                    # Always save assistant message, even if content is empty (to track errors)
+                    if not accumulated_content.strip():
+                        accumulated_content = "I apologize, but I couldn't generate a response. Please try again or rephrase your question."
+                        logger.warning(f"Empty response generated for question: {message_text[:50]}")
+
+                    # Extract intent from accumulated sources if available
+                    intent = "EXPLANATORY"
+                    if accumulated_sources and isinstance(accumulated_sources, list) and len(accumulated_sources) > 0:
+                        first_source = accumulated_sources[0] if isinstance(accumulated_sources[0], dict) else {}
+                        intent = first_source.get("intent", "EXPLANATORY")
+
+                    # Ensure tokens_used is set
+                    if not tokens_used:
+                        tokens_used = len(accumulated_content.split())
+
+                    Message.objects.create(
+                        session=session,
+                        role="assistant",
+                        content=accumulated_content,
+                        sources=accumulated_sources if isinstance(accumulated_sources, list) else [],
+                        tokens_used=tokens_used,
+                        response_time=response_time,
+                        metadata={
+                            "intent": intent,
+                            "method_used": "rag_streaming",
+                            "streaming": True,
+                        },
+                    )
+                    assistant_message_saved = True
+
+                    # Update session timestamp
+                    session.save()
+
+            except Exception as e:
+                logger.error(f"Error in async streaming: {e}", exc_info=True)
+                response_time = time.time() - start_time
+                
+                # Save error message as assistant response so it's tracked
+                if not assistant_message_saved:
+                    error_message = f"I encountered an error while processing your question: {str(e)}. Please try again."
+                    try:
                         Message.objects.create(
                             session=session,
                             role="assistant",
-                            content=accumulated_content,
-                            sources=accumulated_sources,
-                            tokens_used=tokens_used,
+                            content=error_message,
+                            sources=[],
+                            tokens_used=len(error_message.split()),
+                            response_time=response_time,
                             metadata={
-                                "intent": intent,
-                                "method_used": "rag_streaming",
+                                "intent": "error",
+                                "method_used": "error",
+                                "error": str(e),
                                 "streaming": True,
                             },
                         )
-
-                        # Update session timestamp
                         session.save()
-
-            except Exception as e:
-                logger.error(f"Error in async streaming: {e}")
+                    except Exception as save_error:
+                        logger.error(f"Failed to save error message: {save_error}")
+                
                 from .services import StreamingService
-
                 streaming_service = StreamingService()
                 yield streaming_service.format_sse(
                     {"type": "error", "message": str(e)}, event="error"
@@ -373,8 +461,12 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
         response = StreamingHttpResponse(
             stream_generator(), content_type="text/event-stream"
         )
-        response["Cache-Control"] = "no-cache"
-        response["X-Accel-Buffering"] = "no"
+        # Critical headers for proper SSE streaming
+        response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response["Pragma"] = "no-cache"
+        response["Expires"] = "0"
+        response["X-Accel-Buffering"] = "no"  # Disable Nginx buffering
+        response["Connection"] = "keep-alive"
         return response
 
     @action(detail=True, methods=["get"])

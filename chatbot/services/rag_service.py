@@ -90,20 +90,26 @@ class FastRAGService:
     # ------------------------------------------------------------------
 
     def _prompt(self) -> PromptTemplate:
-        template = """
-You are an expert AI assistant for **The I Hear Project**.
+        template = """You are an expert AI assistant for **The I Hear Project**.
 
-Context:
+IMPORTANT: Use ONLY the information provided in the Context section below. If the Context is empty or doesn't contain relevant information, you MUST say that you don't have specific information about that topic in the uploaded documents, and suggest that the user upload relevant documents or ask about their datasets instead.
+
+Context from uploaded documents:
 {context}
 
-Chat History:
+Previous conversation:
 {chat_history}
 
-Question:
+User's question:
 {question}
 
-Answer clearly, practically, and concisely.
-"""
+Instructions:
+- If the Context contains relevant information, use it to answer the question accurately
+- If the Context is empty or doesn't have relevant information, politely explain that you don't have specific information about this topic in the uploaded documents
+- Always be honest about what information you have access to
+- If you don't have relevant context, suggest the user upload documents or ask about their datasets
+
+Answer clearly, practically, and concisely."""
         return PromptTemplate(
             template=template,
             input_variables=["context", "chat_history", "question"],
@@ -119,17 +125,31 @@ Answer clearly, practically, and concisely.
         if cached:
             return cached
 
-        retriever = self.vectorstore.as_retriever(
-            search_type="similarity_score_threshold",
-            search_kwargs={
-                "k": self.config["RAG"]["TOP_K_RESULTS"],
-                "score_threshold": 0.25,
-            },
-        )
+        # Check if vector store has any documents
+        total_vectors = self.vectorstore.index.ntotal
+        if total_vectors == 0:
+            logger.warning("Vector store is empty - no documents available for RAG")
+            return []
 
-        docs = retriever.invoke(question)
-        cache.set(cache_key, docs, 300)
-        return docs
+        try:
+            retriever = self.vectorstore.as_retriever(
+                search_type="similarity_score_threshold",
+                search_kwargs={
+                    "k": self.config["RAG"]["TOP_K_RESULTS"],
+                    "score_threshold": 0.25,
+                },
+            )
+
+            docs = retriever.invoke(question)
+            
+            if not docs:
+                logger.info(f"No relevant documents found for question: {question[:50]}...")
+            
+            cache.set(cache_key, docs, 300)
+            return docs
+        except Exception as e:
+            logger.error(f"Error retrieving documents: {e}")
+            return []
 
     # ------------------------------------------------------------------
     # Query (FAST)
@@ -144,7 +164,14 @@ Answer clearly, practically, and concisely.
         start = time.time()
         docs = self._retrieve(question)
 
-        context = "\n\n".join(d.page_content for d in docs)
+        # Build context from retrieved documents
+        if docs:
+            context = "\n\n".join(d.page_content for d in docs)
+            logger.info(f"Retrieved {len(docs)} documents for RAG query")
+        else:
+            context = "[No relevant documents found in the uploaded documents. The vector store may be empty or no documents match this query.]"
+            logger.warning("No documents retrieved - RAG will work without context")
+
         history = self._format_chat_history(chat_history)
 
         prompt = self._prompt().format(
@@ -157,8 +184,9 @@ Answer clearly, practically, and concisely.
 
         return {
             "answer": response.content,
-            "sources": [d.metadata for d in docs],
+            "sources": [d.metadata for d in docs] if docs else [],
             "response_time": time.time() - start,
+            "tokens_used": len(response.content.split()) if hasattr(response, 'content') else 0,
         }
 
     # ------------------------------------------------------------------
@@ -174,7 +202,25 @@ Answer clearly, practically, and concisely.
         yield {"type": "start"}
 
         docs = self._retrieve(question)
-        context = "\n\n".join(d.page_content for d in docs)
+        
+        # Build context from retrieved documents and prepare sources
+        sources = []
+        if docs:
+            context = "\n\n".join(d.page_content for d in docs)
+            logger.info(f"Retrieved {len(docs)} documents for streaming RAG query")
+            
+            # Yield sources immediately for fast feedback
+            for doc in docs[:3]:  # Limit to 3 sources
+                sources.append({
+                    "title": doc.metadata.get("title", "Document"),
+                    "content": doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content,
+                    "metadata": doc.metadata,
+                })
+            yield {"type": "source", "sources": sources}
+        else:
+            context = "[No relevant documents found in the uploaded documents. The vector store may be empty or no documents match this query.]"
+            logger.warning("No documents retrieved for streaming - RAG will work without context")
+        
         history = self._format_chat_history(chat_history)
 
         prompt = self._prompt().format(
@@ -192,17 +238,38 @@ Answer clearly, practically, and concisely.
         )
 
         full_response = ""
+        tokens_used = 0
 
-        for chunk in streaming_llm.stream(prompt):
-            if chunk.content:
-                full_response += chunk.content
-                yield {"type": "token", "content": chunk.content}
-
-        yield {
-            "type": "complete",
-            "full_response": full_response,
-            "tokens_used": len(full_response.split()),
-        }
+        try:
+            for chunk in streaming_llm.stream(prompt):
+                if hasattr(chunk, "content") and chunk.content:
+                    full_response += chunk.content
+                    yield {"type": "token", "content": chunk.content}
+            
+            # Calculate tokens used (approximate word count)
+            tokens_used = len(full_response.split()) if full_response else 0
+            
+            # Yield completion with all metadata
+            yield {
+                "type": "complete",
+                "full_response": full_response,
+                "tokens_used": tokens_used,
+                "sources": sources,
+            }
+        except Exception as stream_error:
+            logger.error(f"Error during LLM streaming: {stream_error}")
+            # Yield error but also yield what we have so far
+            if full_response:
+                yield {
+                    "type": "complete",
+                    "full_response": full_response,
+                    "tokens_used": len(full_response.split()),
+                    "sources": sources,
+                }
+            yield {
+                "type": "error",
+                "message": str(stream_error),
+            }
 
     # ------------------------------------------------------------------
     # Utils
@@ -216,10 +283,32 @@ Answer clearly, practically, and concisely.
         )
 
     def get_stats(self):
+        """Get statistics about the vector store"""
+        total_vectors = self.vectorstore.index.ntotal
         return {
-            "total_vectors": self.vectorstore.index.ntotal,
+            "total_vectors": total_vectors,
             "embedding_model": self.config["EMBEDDINGS"]["MODEL"],
+            "has_documents": total_vectors > 0,
+            "vector_store_path": self.vector_store_path,
         }
+    
+    def check_vector_store_health(self) -> Dict[str, Any]:
+        """Check if vector store is properly initialized and has documents"""
+        try:
+            total_vectors = self.vectorstore.index.ntotal
+            return {
+                "healthy": True,
+                "total_vectors": total_vectors,
+                "has_documents": total_vectors > 0,
+                "message": f"Vector store has {total_vectors} documents" if total_vectors > 0 else "Vector store is empty - no documents indexed",
+            }
+        except Exception as e:
+            logger.error(f"Vector store health check failed: {e}")
+            return {
+                "healthy": False,
+                "error": str(e),
+                "message": "Vector store health check failed",
+            }
 
 
 class RAGService(FastRAGService):

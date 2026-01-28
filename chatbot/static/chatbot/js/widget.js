@@ -156,6 +156,45 @@
         messageBubble.classList.add('streaming');
         let accumulatedContent = '';
         let sources = [];
+        let scrollPending = false;
+        
+        // Debounced markdown rendering - render every 200ms or after 10 tokens
+        let renderTimeout = null;
+        let tokenCount = 0;
+        const renderMarkdown = () => {
+            if (accumulatedContent) {
+                // Remove cursor temporarily for rendering
+                const cursor = messageBubble.querySelector('.streaming-cursor');
+                const cursorText = cursor ? cursor.textContent : '';
+                if (cursor) cursor.remove();
+                
+                // Render markdown
+                contentDiv.innerHTML = parseMarkdown(accumulatedContent);
+                
+                // Re-add cursor at the end
+                if (isStreaming) {
+                    const newCursor = document.createElement('span');
+                    newCursor.className = 'streaming-cursor';
+                    contentDiv.appendChild(newCursor);
+                }
+                
+                if (!scrollPending) {
+                    scrollPending = true;
+                    requestAnimationFrame(() => {
+                        scrollToBottom();
+                        scrollPending = false;
+                    });
+                }
+            }
+        };
+        
+        const scheduleMarkdownRender = () => {
+            // Clear existing timeout
+            if (renderTimeout) clearTimeout(renderTimeout);
+            
+            // Very short debounce (50ms) for near-instant rendering while still batching DOM updates
+            renderTimeout = setTimeout(renderMarkdown, 50);
+        };
 
         try {
             const response = await fetch(`/chatbot/api/sessions/${currentSessionId}/send_message_stream/`, {
@@ -163,6 +202,11 @@
                 headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
                 body: JSON.stringify({ message, stream: true })
             });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
@@ -171,58 +215,158 @@
                 const { value, done } = await reader.read();
                 if (done) break;
 
+                // Decode chunk immediately
                 buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop();
-
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        try {
-                            const data = JSON.parse(line.substring(6).trim());
-                            if (data.type === 'token') {
-                                accumulatedContent += data.content;
-                                contentDiv.appendChild(document.createTextNode(data.content));
-                                if (!scrollPending) {
-                                    scrollPending = true;
-                                    requestAnimationFrame(() => {
-                                        scrollToBottom();
-                                        scrollPending = false;
-                                    });
+                
+                // Process all complete SSE messages (separated by \n\n)
+                let messageEnd;
+                while ((messageEnd = buffer.indexOf('\n\n')) !== -1) {
+                    const message = buffer.substring(0, messageEnd);
+                    buffer = buffer.substring(messageEnd + 2);
+                    
+                    if (!message.trim()) continue;
+                    
+                    // Parse SSE message format:
+                    // event: stream_token
+                    // data: {"type":"token","content":"Hello"}
+                    let currentEvent = null;
+                    let currentData = null;
+                    const lines = message.split('\n');
+                    
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (trimmed.startsWith('event: ')) {
+                            currentEvent = trimmed.substring(7).trim();
+                        } else if (trimmed.startsWith('data: ')) {
+                            try {
+                                const jsonStr = trimmed.substring(6).trim();
+                                if (jsonStr) {
+                                    currentData = JSON.parse(jsonStr);
                                 }
-                            } else if (data.type === 'source') sources.push(data);
-                            else if (data.type === 'complete') {
-                                const cursor = messageBubble.querySelector('.streaming-cursor');
-                                if (cursor) cursor.remove();
-                                messageBubble.classList.remove('streaming');
-                                contentDiv.innerHTML = parseMarkdown(accumulatedContent);
-                                if (sources.length > 0) addSourcesToMessage(messageBubble, sources);
-                                scrollToBottom();
-                            } else if (data.type === 'error') {
-                                contentDiv.textContent = 'Error: ' + data.message;
-                                const cursor = messageBubble.querySelector('.streaming-cursor');
-                                if (cursor) cursor.remove();
+                            } catch (e) {
+                                // Skip heartbeat and other non-JSON data
+                                if (!trimmed.includes('heartbeat')) {
+                                    console.debug('Failed to parse SSE data:', trimmed, e);
+                                }
                             }
-                        } catch (e) { if (!line.includes(': heartbeat')) console.debug('Parse error:', e); }
+                        }
+                    }
+                    
+                    // Process the parsed event and data IMMEDIATELY
+                    if (currentData) {
+                        if (currentData.type === 'token') {
+                            const token = currentData.content || '';
+                            if (token) {
+                                accumulatedContent += token;
+                                tokenCount++;
+                                
+                                // Render immediately every token for true streaming feel
+                                // But debounce markdown parsing slightly
+                                if (tokenCount % 2 === 0) {
+                                    // Render every 2 tokens
+                                    renderMarkdown();
+                                } else {
+                                    // Schedule render for single tokens (debounced)
+                                    scheduleMarkdownRender();
+                                }
+                            }
+                        } else if (currentData.type === 'source') {
+                            if (Array.isArray(currentData.sources)) {
+                                sources = currentData.sources;
+                            } else {
+                                sources.push(currentData);
+                            }
+                        } else if (currentData.type === 'complete') {
+                            // Clear any pending render timeout
+                            if (renderTimeout) {
+                                clearTimeout(renderTimeout);
+                                renderTimeout = null;
+                            }
+                            
+                            // Final markdown render
+                            const cursor = messageBubble.querySelector('.streaming-cursor');
+                            if (cursor) cursor.remove();
+                            messageBubble.classList.remove('streaming');
+                            contentDiv.innerHTML = parseMarkdown(accumulatedContent);
+                            
+                            if (sources.length > 0) addSourcesToMessage(messageBubble, sources);
+                            scrollToBottom();
+                        } else if (currentData.type === 'error') {
+                            if (renderTimeout) {
+                                clearTimeout(renderTimeout);
+                                renderTimeout = null;
+                            }
+                            const cursor = messageBubble.querySelector('.streaming-cursor');
+                            if (cursor) cursor.remove();
+                            messageBubble.classList.remove('streaming');
+                            contentDiv.innerHTML = parseMarkdown('Error: ' + (currentData.message || 'Unknown error'));
+                        }
                     }
                 }
             }
+            
+            // Process any remaining buffer content
+            if (buffer.trim()) {
+                // Try to parse remaining buffer as SSE message
+                let currentEvent = null;
+                let currentData = null;
+                const lines = buffer.split('\n');
+                
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (trimmed.startsWith('event: ')) {
+                        currentEvent = trimmed.substring(7).trim();
+                    } else if (trimmed.startsWith('data: ')) {
+                        try {
+                            const jsonStr = trimmed.substring(6).trim();
+                            if (jsonStr) {
+                                currentData = JSON.parse(jsonStr);
+                            }
+                        } catch (e) {
+                            // Ignore parse errors for incomplete data
+                        }
+                    }
+                }
+                
+                if (currentData && currentData.type === 'token') {
+                    accumulatedContent += currentData.content || '';
+                    renderMarkdown();
+                }
+            }
 
+            // Handle any remaining buffer content
             if (buffer.trim()) {
                 try {
                     if (buffer.startsWith('data: ')) {
                         const data = JSON.parse(buffer.substring(6).trim());
                         if (data.type === 'token') {
                             accumulatedContent += data.content;
-                            contentDiv.appendChild(document.createTextNode(data.content));
+                            scheduleMarkdownRender();
+                        } else if (data.type === 'complete') {
+                            if (renderTimeout) clearTimeout(renderTimeout);
+                            const cursor = messageBubble.querySelector('.streaming-cursor');
+                            if (cursor) cursor.remove();
+                            messageBubble.classList.remove('streaming');
+                            contentDiv.innerHTML = parseMarkdown(accumulatedContent);
+                            if (sources.length > 0) addSourcesToMessage(messageBubble, sources);
+                            scrollToBottom();
                         }
                     }
                 } catch (e) { console.debug('Final buffer parse error:', e); }
             }
+            
+            // Final render if still streaming (safety net)
+            if (isStreaming && accumulatedContent) {
+                if (renderTimeout) clearTimeout(renderTimeout);
+                renderMarkdown();
+            }
         } catch (error) {
             console.error('Streaming error:', error);
-            contentDiv.textContent = 'Connection failed. Please try again.';
+            if (renderTimeout) clearTimeout(renderTimeout);
             const cursor = messageBubble.querySelector('.streaming-cursor');
             if (cursor) cursor.remove();
+            messageBubble.classList.remove('streaming');
+            contentDiv.innerHTML = parseMarkdown('Connection failed. Please try again.');
         }
 
         isStreaming = false;
@@ -301,7 +445,39 @@
     function clearMessages() { messagesArea.innerHTML = ''; }
     function setInputState(enabled) { messageInput.disabled = !enabled; sendBtn.disabled = !enabled; }
     function scrollToBottom() { messagesArea.scrollTop = messagesArea.scrollHeight; }
-    function parseMarkdown(md) { return DOMPurify.sanitize(window.markdownit().render(md)); }
+    
+    // Initialize markdown parser once (singleton)
+    let mdParser = null;
+    function getMarkdownParser() {
+        if (!mdParser && window.markdownit) {
+            mdParser = window.markdownit({
+                html: false,
+                linkify: true,
+                breaks: true,
+                typographer: true,
+            });
+        }
+        return mdParser;
+    }
+    
+    function parseMarkdown(md) {
+        if (!md) return '';
+        
+        // Use singleton parser
+        const parser = getMarkdownParser();
+        if (!parser) {
+            // Fallback if markdown-it not loaded
+            return md.replace(/\n/g, '<br>');
+        }
+        
+        try {
+            const rendered = parser.render(md);
+            return window.DOMPurify ? window.DOMPurify.sanitize(rendered) : rendered;
+        } catch (e) {
+            console.warn('Markdown parsing error:', e);
+            return md.replace(/\n/g, '<br>');
+        }
+    }
     function getCSRFToken() { return document.querySelector('[name=csrfmiddlewaretoken]').value; }
     function handleQuickAction(e) { const action = e.currentTarget.dataset.action; if (action === 'upload') fileInput.click(); else if (action === 'newchat') createNewSession(); }
     function handleFileUpload(e) { console.log('Upload file:', e.target.files); e.target.value = ''; }
