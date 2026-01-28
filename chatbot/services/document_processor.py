@@ -85,41 +85,67 @@ class DocumentProcessor:
 
         try:
             with open(file_path, "rb") as file:
-                pdf_reader = PyPDF2.PdfReader(file)
-                metadata["total_pages"] = len(pdf_reader.pages)
+                # Use strict=False to handle some corrupted PDFs, but still catch major errors
+                try:
+                    pdf_reader = PyPDF2.PdfReader(file, strict=False)
+                except PyPDF2.errors.PdfReadError as e:
+                    error_msg = f"PDF file is corrupted or incomplete: {str(e)}"
+                    logger.error(f"Error reading PDF {file_path}: {error_msg}")
+                    raise ValueError(error_msg) from e
+
+                try:
+                    metadata["total_pages"] = len(pdf_reader.pages)
+                except Exception as e:
+                    logger.warning(f"Could not determine page count: {e}")
+                    metadata["total_pages"] = 0
 
                 for page_num, page in enumerate(pdf_reader.pages, 1):
-                    # Extract text
-                    page_text = page.extract_text()
-                    text += f"\n\n--- Page {page_num} ---\n\n{page_text}"
+                    try:
+                        # Extract text
+                        page_text = page.extract_text()
+                        if page_text:
+                            text += f"\n\n--- Page {page_num} ---\n\n{page_text}"
 
-                    # Extract images if OCR is enabled
-                    if self.enable_ocr:
-                        try:
-                            # Extract images from page
-                            if "/XObject" in page["/Resources"]:
-                                x_objects = page["/Resources"]["/XObject"].get_object()
+                        # Extract images if OCR is enabled
+                        if self.enable_ocr:
+                            try:
+                                # Extract images from page
+                                if "/XObject" in page.get("/Resources", {}):
+                                    x_objects = page["/Resources"]["/XObject"].get_object()
 
-                                for obj in x_objects:
-                                    if x_objects[obj]["/Subtype"] == "/Image":
-                                        images_data.append(
-                                            {
-                                                "page": page_num,
-                                                "object_name": obj,
-                                            }
-                                        )
-                        except Exception as e:
-                            logger.warning(
-                                f"Could not extract images from page {page_num}: {e}"
-                            )
+                                    for obj in x_objects:
+                                        if x_objects[obj].get("/Subtype") == "/Image":
+                                            images_data.append(
+                                                {
+                                                    "page": page_num,
+                                                    "object_name": obj,
+                                                }
+                                            )
+                            except Exception as e:
+                                logger.warning(
+                                    f"Could not extract images from page {page_num}: {e}"
+                                )
+                    except Exception as e:
+                        logger.warning(
+                            f"Error processing page {page_num} of PDF {file_path}: {e}"
+                        )
+                        # Continue with other pages
+                        continue
 
             metadata["images_found"] = len(images_data)
             metadata["images"] = images_data
 
+            if not text.strip():
+                logger.warning(f"No text extracted from PDF {file_path}")
+
             return text, metadata
 
+        except PyPDF2.errors.PdfReadError as e:
+            error_msg = f"PDF file is corrupted or incomplete: {str(e)}"
+            logger.error(f"Error processing PDF {file_path}: {error_msg}")
+            raise ValueError(error_msg) from e
         except Exception as e:
-            logger.error(f"Error processing PDF: {e}")
+            logger.error(f"Error processing PDF {file_path}: {e}", exc_info=True)
             raise
 
     def _extract_from_docx(self, file_path: str) -> Tuple[str, Dict[str, Any]]:

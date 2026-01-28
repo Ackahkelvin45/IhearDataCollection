@@ -4,6 +4,7 @@ import logging
 
 from celery import shared_task
 from django.utils import timezone
+import PyPDF2
 
 from .models import (
     Document,
@@ -23,6 +24,7 @@ def process_document_task(self, document_id: str):
     Args:
         document_id: UUID of the document to process
     """
+    temp_path = None
     try:
         document = Document.objects.get(id=document_id)
         document.processing_started_at = timezone.now()
@@ -30,14 +32,41 @@ def process_document_task(self, document_id: str):
 
         logger.info(f"Processing document {document_id}: {document.title}")
 
+        # ===============================
+        # VALIDATE FILE EXISTS
+        # ===============================
+        if not document.file:
+            error_msg = "Document file is missing"
+            logger.error(f"{error_msg} for document {document_id}")
+            document.error_message = error_msg
+            document.save(update_fields=["error_message"])
+            return {"success": False, "error": error_msg}
+
         doc_processor = DocumentProcessor()
 
         # ===============================
         # READ FILE FROM DJANGO STORAGE
         # ===============================
         logger.info(f"Reading file content for document {document_id}")
-        file_content = document.file.read()
-        logger.info(f"File content read successfully, size: {len(file_content)} bytes")
+        try:
+            # Reset file pointer to beginning
+            document.file.seek(0)
+            file_content = document.file.read()
+            logger.info(f"File content read successfully, size: {len(file_content)} bytes")
+            
+            # Validate file is not empty
+            if len(file_content) == 0:
+                error_msg = "Document file is empty"
+                logger.error(f"{error_msg} for document {document_id}")
+                document.error_message = error_msg
+                document.save(update_fields=["error_message"])
+                return {"success": False, "error": error_msg}
+        except Exception as e:
+            error_msg = f"Failed to read document file: {str(e)}"
+            logger.error(f"{error_msg} for document {document_id}")
+            document.error_message = error_msg
+            document.save(update_fields=["error_message"])
+            return {"success": False, "error": error_msg}
 
         # ===============================
         # CREATE TEMP FILE FOR PROCESSOR
@@ -46,10 +75,44 @@ def process_document_task(self, document_id: str):
         temp_path = os.path.join("/tmp", temp_filename)
 
         logger.info(f"Creating temp file at {temp_path}")
-        with open(temp_path, "wb") as temp_file:
-            temp_file.write(file_content)
+        try:
+            with open(temp_path, "wb") as temp_file:
+                temp_file.write(file_content)
+            logger.info("Temp file created successfully")
+        except Exception as e:
+            error_msg = f"Failed to create temporary file: {str(e)}"
+            logger.error(f"{error_msg} for document {document_id}")
+            document.error_message = error_msg
+            document.save(update_fields=["error_message"])
+            return {"success": False, "error": error_msg}
 
-        logger.info("Temp file created successfully")
+        # ===============================
+        # VALIDATE PDF FILE (if PDF)
+        # ===============================
+        if document.file_type == "pdf":
+            try:
+                # Quick validation: try to read PDF structure
+                with open(temp_path, "rb") as test_file:
+                    test_reader = PyPDF2.PdfReader(test_file, strict=False)
+                    # Just check if we can read the PDF structure
+                    _ = len(test_reader.pages)
+                logger.info("PDF file validation passed")
+            except PyPDF2.errors.PdfReadError as pdf_error:
+                error_msg = f"PDF file is corrupted or incomplete: {str(pdf_error)}"
+                logger.error(f"{error_msg} for document {document_id}")
+                document.error_message = error_msg
+                document.save(update_fields=["error_message"])
+                # Clean up temp file
+                if temp_path and os.path.exists(temp_path):
+                    try:
+                        os.unlink(temp_path)
+                    except Exception:
+                        pass
+                # Don't retry for corrupted PDFs
+                return {"success": False, "error": error_msg}
+            except Exception as e:
+                # Other PDF errors - log but continue
+                logger.warning(f"PDF validation warning for document {document_id}: {e}")
 
         # ===============================
         # PROCESS DOCUMENT
@@ -65,8 +128,12 @@ def process_document_task(self, document_id: str):
         # ===============================
         # CLEAN UP TEMP FILE
         # ===============================
-        os.unlink(temp_path)
-        logger.info("Temp file cleaned up")
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+                logger.info("Temp file cleaned up")
+            except Exception as e:
+                logger.warning(f"Failed to clean up temp file {temp_path}: {e}")
 
         # ===============================
         # UPDATE DOCUMENT METADATA
@@ -145,22 +212,63 @@ def process_document_task(self, document_id: str):
 
     except Document.DoesNotExist:
         logger.error(f"Document {document_id} not found")
+        # Clean up temp file if it exists
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except Exception:
+                pass
         raise
 
+    except PyPDF2.errors.PdfReadError as pdf_error:
+        # PDF corruption errors - don't retry
+        error_msg = f"PDF file is corrupted or incomplete: {str(pdf_error)}"
+        logger.error(f"{error_msg} for document {document_id}")
+        
+        # Clean up temp file
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except Exception:
+                pass
+        
+        try:
+            document = Document.objects.get(id=document_id)
+            document.error_message = error_msg
+            document.save(update_fields=["error_message"])
+        except Exception:
+            pass
+        
+        # Don't retry for corrupted PDFs
+        return {"success": False, "error": error_msg}
+
     except Exception as e:
-        logger.error(f"Error processing document {document_id}: {e}")
+        logger.error(f"Error processing document {document_id}: {e}", exc_info=True)
+
+        # Clean up temp file
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except Exception:
+                pass
 
         try:
             document = Document.objects.get(id=document_id)
-            document.error_message = str(e)
+            document.error_message = f"Processing failed: {str(e)}"
             document.save(update_fields=["error_message"])
         except Exception:
             pass
 
-        raise self.retry(
-            exc=e,
-            countdown=60 * (self.request.retries + 1),
-        )
+        # Only retry if we haven't exceeded max retries and it's not a file corruption error
+        if self.request.retries < self.max_retries:
+            raise self.retry(
+                exc=e,
+                countdown=60 * (self.request.retries + 1),
+            )
+        else:
+            # Max retries exceeded
+            logger.error(f"Max retries exceeded for document {document_id}")
+            return {"success": False, "error": f"Processing failed after {self.max_retries} retries: {str(e)}"}
 
 
 @shared_task
