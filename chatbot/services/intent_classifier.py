@@ -1,208 +1,141 @@
+import hashlib
+import json
+import re
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any
+
 from django.conf import settings
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
+# Canonical intents; validate LLM output against this
+ALLOWED_INTENTS = {"NUMERIC", "EXPLANATORY", "MIXED"}
+DEFAULT_INTENT = "EXPLANATORY"
+
+# Cache: avoid re-calling LLM for same question + context in a short window
+INTENT_CACHE_PREFIX = "chatbot:intent:"
+INTENT_CACHE_TTL = 60 * 10  # 10 minutes
+
+# Fallback keywords (word-boundary match to avoid "show" matching "how")
+NUMERIC_KEYWORDS = [
+    "how many", "count", "total", "number of", "average", "sum", "maximum", "minimum",
+    "how much", "statistics", "dataset", "datasets", "recordings", "documents",
+]
+EXPLANATORY_KEYWORDS = ["what is", "explain", "tell me about", "who", "why", "when", "where", "how does"]
+
 
 class IntentClassifier:
-    """Classify user questions into different intent types for routing"""
+    """Classify user questions into NUMERIC, EXPLANATORY, or MIXED for routing."""
 
-    # Keywords that indicate numeric/exact queries
-    NUMERIC_KEYWORDS = [
-        # Counting
-        "how many",
-        "count",
-        "total",
-        "sum",
-        "number of",
-        # Aggregation
-        "average",
-        "mean",
-        "median",
-        "max",
-        "min",
-        "maximum",
-        "minimum",
-        "highest",
-        "lowest",
-        "top",
-        "bottom",
-        "most",
-        "least",
-        # Filtering/Grouping
-        "group by",
-        "filter",
-        "where",
-        "sort by",
-        "order by",
-        # Time-based
-        "in month",
-        "in year",
-        "per month",
-        "per year",
-        "daily",
-        "weekly",
-        "monthly",
-        # Comparisons
-        "compare",
-        "vs",
-        "versus",
-        "difference between",
-        # Statistics
-        "percentage",
-        "percent",
-        "ratio",
-        "rate",
-        "frequency",
-        # Specific data operations
-        "list all",
-        "show me",
-        "find",
-        "search for",
-    ]
+    def __init__(self):
+        self._llm = None
 
-    # Keywords that indicate explanatory queries
-    EXPLANATORY_KEYWORDS = [
-        # Analysis/Understanding
-        "why",
-        "explain",
-        "analyze",
-        "understand",
-        "tell me about",
-        "what happened",
-        "how did",
-        "what caused",
-        "reason for",
-        # Patterns/Trends
-        "trend",
-        "pattern",
-        "insight",
-        "observation",
-        "finding",
-        "correlation",
-        "relationship",
-        "connection",
-        # Recommendations/Advice
-        "recommend",
-        "suggest",
-        "should",
-        "advice",
-        "best practice",
-        # Qualitative
-        "describe",
-        "summary",
-        "overview",
-        "breakdown",
-        # Complex analysis
-        "impact of",
-        "effect of",
-        "influence of",
-        "role of",
-    ]
+    def _get_llm(self):
+        if self._llm is None:
+            from langchain_openai import ChatOpenAI
+            self._llm = ChatOpenAI(
+                model_name=settings.OPENAI_MODEL,
+                openai_api_key=settings.OPENAI_API_KEY,
+                temperature=0,
+                max_tokens=150,
+            )
+        return self._llm
 
-    # Keywords that indicate mixed queries (both numeric and explanatory)
-    MIXED_KEYWORDS = [
-        "and why",
-        "but why",
-        "explain why",
-        "tell me why",
-        "what's the reason",
-        "why is it",
-        "why are they",
-    ]
+    def classify(self, question: str, context: Dict = None) -> Dict[str, Any]:
+        """
+        Classify intent using LLM with optional context (conversation_length, recent_topics, last_intent).
+        Results are cached by (question_hash + last_intent) for INTENT_CACHE_TTL.
+        Falls back to keyword-based classification if LLM fails.
+        """
+        context = context or {}
+        question_lower = (question or "").strip().lower()
+        if not question_lower:
+            return {"intent": DEFAULT_INTENT, "confidence": 0.5, "reasoning": "Empty question"}
+
+        # Cache key: same question + same last_intent → reuse result
+        last_intent = context.get("last_intent") or ""
+        cache_key = f"{INTENT_CACHE_PREFIX}{hashlib.md5((question_lower + last_intent).encode()).hexdigest()}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        # Try LLM classification first
+        try:
+            intents_list = ", ".join(sorted(ALLOWED_INTENTS))
+            prompt = f"""Classify the user question into exactly one intent.
+
+Question: {question[:500]}
+
+Context (optional): conversation_length={context.get('conversation_length', 0)}, last_intent={context.get('last_intent')}
+
+Allowed intents only: {intents_list}
+- NUMERIC: counts, totals, averages, statistics, "how many", database-style queries
+- EXPLANATORY: explanations, "what is", "tell me about", document-based or conversational
+- MIXED: clearly needs both a number and an explanation
+
+Return JSON only, no markdown:
+{{"intent": "NUMERIC" or "EXPLANATORY" or "MIXED", "confidence": 0.0-1.0, "reasoning": "one short phrase"}}"""
+
+            llm = self._get_llm()
+            response = llm.invoke(prompt)
+            text = (response.content if hasattr(response, "content") else str(response)).strip()
+            # Strip markdown code block if present
+            if text.startswith("```"):
+                text = re.sub(r"^```\w*\n?", "", text).strip()
+                text = re.sub(r"\n?```\s*$", "", text).strip()
+            data = json.loads(text)
+            intent = (data.get("intent") or DEFAULT_INTENT).upper().strip()
+            if intent not in ALLOWED_INTENTS:
+                intent = DEFAULT_INTENT
+            confidence = _safe_confidence(data.get("confidence", 0.8))
+            result = {
+                "intent": intent,
+                "confidence": confidence,
+                "reasoning": str(data.get("reasoning", ""))[:200],
+            }
+            cache.set(cache_key, result, INTENT_CACHE_TTL)
+            return result
+        except Exception as e:
+            logger.debug("Intent LLM fallback: %s", e)
+
+        # Keyword-based fallback (not cached; cheap)
+        return self._classify_by_keywords(question_lower)
+
+    def _classify_by_keywords(self, question_lower: str) -> Dict[str, Any]:
+        # Word-boundary match so "show" doesn't match "how", etc.
+        has_numeric = any(re.search(rf"\b{re.escape(k)}\b", question_lower) for k in NUMERIC_KEYWORDS)
+        has_explanatory = any(re.search(rf"\b{re.escape(k)}\b", question_lower) for k in EXPLANATORY_KEYWORDS)
+        if has_numeric and has_explanatory:
+            return {"intent": "MIXED", "confidence": 0.7, "reasoning": "keywords: both numeric and explanatory"}
+        if has_numeric:
+            return {"intent": "NUMERIC", "confidence": 0.8, "reasoning": "keywords: numeric"}
+        return {"intent": "EXPLANATORY", "confidence": 0.8, "reasoning": "keywords: explanatory or default"}
+
+    def get_routing_info(self, question: str, context: Dict = None) -> Dict[str, Any]:
+        """API used by views and DatasetService: same shape as classify()."""
+        return self.classify(question, context or {})
 
     def classify_intent(self, question: str) -> str:
-        """
-        Classify the intent of a question
-
-        Returns:
-            'NUMERIC' - for counting, filtering, aggregation queries
-            'EXPLANATORY' - for analysis, patterns, explanations
-            'MIXED' - for questions needing both numbers and explanation
-        """
-        question_lower = question.lower().strip()
-
-        # Check for mixed intent first (contains both numeric and explanatory elements)
-        has_numeric = any(
-            keyword in question_lower for keyword in self.NUMERIC_KEYWORDS
-        )
-        has_explanatory = any(
-            keyword in question_lower for keyword in self.EXPLANATORY_KEYWORDS
-        )
-        has_mixed = any(keyword in question_lower for keyword in self.MIXED_KEYWORDS)
-
-        # Explicit mixed indicators
-        if has_mixed:
-            return "MIXED"
-
-        # Questions that have both numeric and explanatory elements
-        if has_numeric and has_explanatory:
-            return "MIXED"
-
-        # Pure numeric queries
-        if has_numeric:
-            return "NUMERIC"
-
-        # Pure explanatory queries
-        if has_explanatory:
-            return "EXPLANATORY"
-
-        # Default to explanatory for ambiguous cases
-        return "EXPLANATORY"
-
-    def get_routing_info(self, question: str) -> Dict[str, Any]:
-        """
-        Get complete routing information for a question
-
-        Returns:
-            {
-                'intent': 'NUMERIC'|'EXPLANATORY'|'MIXED',
-                'confidence': float,
-                'reasoning': str,
-                'suggested_tools': list
-            }
-        """
-        intent = self.classify_intent(question)
-
-        routing_info = {
-            "intent": intent,
-            "confidence": 0.8,  # Simplified confidence score
-            "reasoning": self._get_reasoning(intent, question),
-            "suggested_tools": self._get_suggested_tools(intent),
-        }
-
-        return routing_info
-
-    def _get_reasoning(self, intent: str, question: str) -> str:
-        """Generate reasoning for the classification"""
-        if intent == "NUMERIC":
-            return f"Question contains numeric operations like counting, averaging, or filtering: '{question}'"
-        elif intent == "EXPLANATORY":
-            return f"Question seeks explanation, analysis, or patterns: '{question}'"
-        elif intent == "MIXED":
-            return f"Question requires both specific data and explanatory analysis: '{question}'"
-        return f"Defaulted to explanatory analysis for: '{question}'"
-
-    def _get_suggested_tools(self, intent: str) -> list:
-        """Get suggested tools for the intent"""
-        if intent == "NUMERIC":
-            return ["SQL", "Pandas", "Database Query"]
-        elif intent == "EXPLANATORY":
-            return ["RAG", "Document Analysis", "Pattern Recognition"]
-        elif intent == "MIXED":
-            return ["SQL + RAG", "Database + Analysis", "Hybrid Query"]
-        return ["RAG", "General Analysis"]
+        """Return only the intent string (for dataset_service / helpers)."""
+        return self.get_routing_info(question).get("intent", DEFAULT_INTENT)
 
 
-# Convenience function for easy use
+def get_question_routing(question: str, context: Dict = None) -> Dict[str, Any]:
+    """Standalone helper: classify and return routing info."""
+    classifier = IntentClassifier()
+    return classifier.classify(question, context or {})
+
+
+def _safe_confidence(value: Any) -> float:
+    """Parse confidence from LLM (may be str like 'high') and clamp to [0, 1]."""
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError):
+        confidence = 0.8
+    return max(0.0, min(confidence, 1.0))
+
+
 def classify_question_intent(question: str) -> str:
-    """Quick function to classify question intent"""
-    classifier = IntentClassifier()
-    return classifier.classify_intent(question)
-
-
-def get_question_routing(question: str) -> Dict[str, Any]:
-    """Quick function to get routing information"""
-    classifier = IntentClassifier()
-    return classifier.get_routing_info(question)
+    """Return only the intent string (used by __init__ and callers)."""
+    return IntentClassifier().classify_intent(question)

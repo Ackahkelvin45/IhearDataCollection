@@ -43,7 +43,9 @@ class DatasetService:
 
         # Classify intent
         routing_info = self.intent_classifier.get_routing_info(question)
-        intent = routing_info["intent"]
+        intent = routing_info.get("intent", "EXPLANATORY")
+        if intent not in ("NUMERIC", "EXPLANATORY", "MIXED"):
+            intent = "EXPLANATORY"
 
         logger.info(f"Classified question as {intent}: {question}")
 
@@ -57,13 +59,18 @@ class DatasetService:
         else:
             result = self._handle_explanatory_query(question, context)
 
-        # Add metadata
+        # Add metadata (safe access for confidence/reasoning)
+        try:
+            conf = float(routing_info.get("confidence", 0.8))
+            conf = max(0.0, min(conf, 1.0))
+        except (TypeError, ValueError):
+            conf = 0.8
         result.update(
             {
                 "intent": intent,
-                "confidence": routing_info["confidence"],
+                "confidence": conf,
                 "processing_time": time.time() - start_time,
-                "routing_reasoning": routing_info["reasoning"],
+                "routing_reasoning": routing_info.get("reasoning", "") or "",
             }
         )
 

@@ -36,6 +36,7 @@ services:
       - ./static:/code/static
       - ./media:/code/media
       - shared_uploads:/shared_uploads
+      - vector_store_data:/code/vector_store
     env_file: &env_file ./.env
     depends_on:
       - db
@@ -126,6 +127,7 @@ services:
       - ./static:/code/static
       - ./media:/code/media
       - shared_uploads:/shared_uploads
+      - vector_store_data:/code/vector_store
     depends_on:
       - db
       - redis
@@ -136,3 +138,4 @@ volumes:
   redis_data:
   chromadb_data:
   shared_uploads:
+  vector_store_data:

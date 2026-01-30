@@ -71,7 +71,7 @@ class DocumentChunk(models.Model):
     )
     chunk_index = models.IntegerField()
     content = models.TextField()
-    vector_id = models.CharField(max_length=255, blank=True)  # ChromaDB ID
+    vector_id = models.CharField(max_length=255, blank=True)  # FAISS/index tracking
     metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

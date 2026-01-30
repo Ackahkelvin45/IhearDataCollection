@@ -10,6 +10,7 @@ from django.core.cache import cache
 
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
+from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.prompts import PromptTemplate
@@ -38,10 +39,11 @@ class FastRAGService:
             temperature=0.7,
         )
 
-        # Vector store
-        self.vector_store_path = os.path.join(settings.BASE_DIR, "vector_store")
+        # Vector store: same path as document processing (Celery) for add_documents
+        self.vector_store_path = settings.FAISS_VECTOR_STORE_PATH
         os.makedirs(self.vector_store_path, exist_ok=True)
         self.vectorstore = self._load_or_create_vectorstore()
+        self._vectorstore_mtime = self._get_vectorstore_mtime()
 
         # Text splitter
         self.text_splitter = RecursiveCharacterTextSplitter(
@@ -63,19 +65,88 @@ class FastRAGService:
                     self.embeddings,
                     allow_dangerous_deserialization=True,
                 )
-            except Exception:
-                logger.warning("Failed to load FAISS index, rebuilding")
+            except Exception as e:
+                logger.warning("Failed to load FAISS index, rebuilding: %s", e)
 
         index = faiss.IndexFlatL2(EMBEDDING_DIM)
-        return FAISS(
+        self.vectorstore = FAISS(
             embedding_function=self.embeddings,
             index=index,
-            docstore={},
+            docstore=InMemoryDocstore(),
             index_to_docstore_id={},
         )
+        # If index failed to load but we have chunks in DB, rebuild from DB
+        self._rebuild_vectorstore_from_db()
+        return self.vectorstore
 
     def save_vectorstore(self):
         self.vectorstore.save_local(self.vector_store_path)
+
+    def _rebuild_vectorstore_from_db(self) -> None:
+        """
+        Rebuild the FAISS index from DocumentChunk table when the on-disk index
+        is missing or failed to load. Ensures RAG works when documents exist in DB.
+        """
+        from django.apps import apps
+        DocumentChunk = apps.get_model("chatbot", "DocumentChunk")
+
+        chunks = (
+            DocumentChunk.objects.select_related("document")
+            .order_by("document_id", "chunk_index")
+        )
+        if not chunks.exists():
+            logger.info("No DocumentChunk rows in DB - keeping empty vector store")
+            return
+
+        texts = []
+        metadatas = []
+        for ch in chunks:
+            texts.append(ch.content)
+            metadatas.append({
+                "doc_id": str(ch.document_id),
+                "title": ch.document.title,
+                "chunk_index": ch.chunk_index,
+                "total_chunks": ch.document.total_chunks,
+                **(ch.metadata or {}),
+            })
+
+        index = faiss.IndexFlatL2(EMBEDDING_DIM)
+        self.vectorstore = FAISS(
+            embedding_function=self.embeddings,
+            index=index,
+            docstore=InMemoryDocstore(),
+            index_to_docstore_id={},
+        )
+        self.vectorstore.add_texts(texts, metadatas)
+        self.save_vectorstore()
+        self._vectorstore_mtime = self._get_vectorstore_mtime()
+        logger.info(
+            "Rebuilt FAISS vector store from DB: %s chunks from DocumentChunk",
+            len(texts),
+        )
+
+    def _get_vectorstore_mtime(self) -> float:
+        """Return mtime of index file on disk (0 if missing). Used to detect Celery updates."""
+        path = os.path.join(self.vector_store_path, "index.faiss")
+        try:
+            return os.path.getmtime(path)
+        except OSError:
+            return 0.0
+
+    def _reload_if_updated(self) -> None:
+        """If Celery (or another process) wrote a new index to shared volume, reload it."""
+        mtime = self._get_vectorstore_mtime()
+        if mtime > 0 and mtime > getattr(self, "_vectorstore_mtime", 0):
+            try:
+                self.vectorstore = FAISS.load_local(
+                    self.vector_store_path,
+                    self.embeddings,
+                    allow_dangerous_deserialization=True,
+                )
+                self._vectorstore_mtime = mtime
+                logger.info("Reloaded RAG vector store from disk (index updated)")
+            except Exception as e:
+                logger.warning("Could not reload vector store: %s", e)
 
     # ------------------------------------------------------------------
     # Documents
@@ -84,6 +155,55 @@ class FastRAGService:
     def add_documents(self, texts: List[str], metadatas: List[Dict[str, Any]]):
         self.vectorstore.add_texts(texts, metadatas)
         self.save_vectorstore()
+
+    def delete_document(self, document_id: str) -> None:
+        """
+        Remove a document's chunks from the FAISS index by rebuilding the index
+        without that document. FAISS does not support per-vector delete.
+        """
+        from django.apps import apps
+        DocumentChunk = apps.get_model("chatbot", "DocumentChunk")
+
+        # Build texts/metadatas for all chunks that are NOT from this document
+        chunks = DocumentChunk.objects.exclude(document_id=document_id).select_related("document").order_by("document_id", "chunk_index")
+        if not chunks.exists():
+            # No other documents: save empty index
+            index = faiss.IndexFlatL2(EMBEDDING_DIM)
+            self.vectorstore = FAISS(
+                embedding_function=self.embeddings,
+                index=index,
+                docstore=InMemoryDocstore(),
+                index_to_docstore_id={},
+            )
+            self.save_vectorstore()
+            self._vectorstore_mtime = self._get_vectorstore_mtime()
+            logger.info(f"Removed document {document_id} from vector store; index is now empty")
+            return
+
+        texts = []
+        metadatas = []
+        for ch in chunks:
+            texts.append(ch.content)
+            metadatas.append({
+                "doc_id": str(ch.document_id),
+                "title": ch.document.title,
+                "chunk_index": ch.chunk_index,
+                "total_chunks": ch.document.total_chunks,
+                **(ch.metadata or {}),
+            })
+
+        # Rebuild index from remaining chunks
+        index = faiss.IndexFlatL2(EMBEDDING_DIM)
+        self.vectorstore = FAISS(
+            embedding_function=self.embeddings,
+            index=index,
+            docstore=InMemoryDocstore(),
+            index_to_docstore_id={},
+        )
+        self.vectorstore.add_texts(texts, metadatas)
+        self.save_vectorstore()
+        self._vectorstore_mtime = self._get_vectorstore_mtime()
+        logger.info(f"Removed document {document_id} from vector store; rebuilt index with {len(texts)} chunks")
 
     # ------------------------------------------------------------------
     # Prompt
@@ -129,13 +249,19 @@ Answer clearly, helpfully, and in a friendly conversational tone. Be honest abou
     # ------------------------------------------------------------------
 
     def _retrieve(self, question: str) -> List[Document]:
+        # Reload from disk if Celery (or another worker) updated the index on shared volume
+        self._reload_if_updated()
+
         cache_key = f"retrieval:{hashlib.md5(question.encode()).hexdigest()}"
         cached = cache.get(cache_key)
         if cached:
             return cached
 
-        # Check if vector store has any documents
+        # Check if vector store has any documents; if empty, try rebuilding from DB
         total_vectors = self.vectorstore.index.ntotal
+        if total_vectors == 0:
+            self._rebuild_vectorstore_from_db()
+            total_vectors = self.vectorstore.index.ntotal
         if total_vectors == 0:
             logger.warning("Vector store is empty - no documents available for RAG")
             return []

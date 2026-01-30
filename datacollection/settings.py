@@ -501,19 +501,10 @@ CELERY_WORKER_MAX_MEMORY_PER_CHILD = 500000  # Restart if >500MB
 # Can be overridden via env var SHARED_UPLOADS_DIR
 SHARED_UPLOADS_DIR = os.getenv("SHARED_UPLOADS_DIR", "/shared_uploads")
 
-# CHATBOT configuration - defined early to avoid parsing issues
+# CHATBOT configuration - RAG uses FAISS only (fast, no Chroma)
 CHATBOT = {
-    "VECTOR_DB": {
-        "PATH": "/code/chroma_db",
-        "COLLECTION_NAME": "project_documents",
-        "USE_POSTGRESQL": True,
-        "POSTGRESQL_CONNECTION": {
-            "host": "db",
-            "port": 5432,
-            "dbname": "iheardatadb",
-            "user": "postgres",
-            "password": "admin",
-        },
+    "FAISS_VECTOR_STORE": {
+        "PATH": "vector_store",  # relative to BASE_DIR; shared volume in Docker
     },
     "EMBEDDINGS": {
         "MODEL": "text-embedding-3-small",
@@ -537,6 +528,12 @@ CHATBOT = {
     },
 }
 
+# Single canonical path for FAISS vector store: used by document processing (Celery)
+# and retrieval (web). Override with FAISS_VECTOR_STORE_PATH for absolute path (e.g. Docker).
+FAISS_VECTOR_STORE_PATH = os.getenv(
+    "FAISS_VECTOR_STORE_PATH",
+    os.path.join(BASE_DIR, CHATBOT["FAISS_VECTOR_STORE"]["PATH"]),
+)
 
 # open ai
 

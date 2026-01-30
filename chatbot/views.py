@@ -8,6 +8,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import StreamingHttpResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
+import asyncio
 import time
 import logging
 from pathlib import Path
@@ -24,7 +25,7 @@ from .serializers import (
     DocumentUploadSerializer,
 )
 
-# Services are imported lazily to avoid ChromaDB import issues
+# Services are imported lazily; RAG uses FAISS only (no Chroma)
 # from .tasks import process_document_task, delete_document_vectors_task
 
 logger = logging.getLogger(__name__)
@@ -171,7 +172,7 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
             # Classify the question intent
             intent_classifier = IntentClassifier()
             routing_info = intent_classifier.get_routing_info(message_text)
-            intent = routing_info["intent"]
+            intent = routing_info.get("intent", "EXPLANATORY")
 
             # Route based on intent
             if intent == "NUMERIC":
@@ -332,11 +333,18 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                     )
                     assistant_message_saved = True
 
-                    # Yield a single complete response
-                    yield f'data: {{"type": "start"}}\n\n'
-                    yield f"data: {{\"type\": \"token\", \"content\": \"{answer.replace(chr(10), '\\\\n').replace('\"', '\\\\\"')}\"}}\n\n"
-                    yield f"data: {{\"type\": \"source\", \"sources\": {result.get('sources', [])}, \"intent\": \"{intent}\", \"method\": \"{result.get('method_used', 'database')}\", \"follow_up_suggestions\": {result.get('follow_up_suggestions', [])}}}\n\n"
-                    yield f"data: {{\"type\": \"complete\", \"tokens_used\": {tokens_used}, \"response_time\": {response_time:.2f}}}\n\n"
+                    # Yield a single complete response (use json.dumps to avoid escaping issues)
+                    import json as _json
+                    yield "data: " + _json.dumps({"type": "start"}) + "\n\n"
+                    yield "data: " + _json.dumps({"type": "token", "content": answer}) + "\n\n"
+                    yield "data: " + _json.dumps({
+                        "type": "source",
+                        "sources": result.get("sources", []),
+                        "intent": intent,
+                        "method": result.get("method_used", "database"),
+                        "follow_up_suggestions": result.get("follow_up_suggestions", []),
+                    }) + "\n\n"
+                    yield "data: " + _json.dumps({"type": "complete", "tokens_used": tokens_used, "response_time": response_time}) + "\n\n"
                     
                     # Update session timestamp
                     session.save()
@@ -360,32 +368,29 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                         # Yield immediately - don't block on parsing
                         yield sse_event
 
-                        # Fast parsing - only extract data line, minimal processing
-                        if sse_event.startswith("data:"):
-                            try:
-                                import json
-                                # Extract JSON data directly (faster than split)
-                                json_start = sse_event.find('{')
-                                if json_start != -1:
-                                    json_str = sse_event[json_start:].strip()
-                                    if json_str.endswith('\n'):
-                                        json_str = json_str[:-1]
-                                    data = json.loads(json_str)
-                                    
-                                    event_type = data.get("type")
-                                    if event_type == "token":
-                                        accumulated_content += data.get("content", "")
-                                    elif event_type == "source":
-                                        # Handle source data properly
-                                        if isinstance(data, dict) and "sources" in data:
-                                            accumulated_sources = data.get("sources", [])
-                                        else:
-                                            accumulated_sources.append(data)
-                                    elif event_type == "complete":
-                                        tokens_used = data.get("tokens_used", 0) or len(accumulated_content.split())
-                            except Exception as parse_error:
-                                # Log parse errors but don't stop streaming
-                                logger.debug(f"SSE parse error (non-critical): {parse_error}")
+                        # Parse SSE: format is "event: stream_X\ndata: {...}\n\n" - extract data line
+                        data_line = None
+                        for line in sse_event.split("\n"):
+                            if line.startswith("data:"):
+                                data_line = line[5:].strip()
+                                break
+                        if not data_line:
+                            continue
+                        try:
+                            import json
+                            data = json.loads(data_line)
+                            event_type = data.get("type")
+                            if event_type == "token":
+                                accumulated_content += data.get("content", "")
+                            elif event_type == "source":
+                                if isinstance(data, dict) and "sources" in data:
+                                    accumulated_sources = data.get("sources", [])
+                                else:
+                                    accumulated_sources.append(data)
+                            elif event_type == "complete":
+                                tokens_used = data.get("tokens_used", 0) or len(accumulated_content.split())
+                        except Exception as parse_error:
+                            logger.debug(f"SSE parse error (non-critical): {parse_error}")
 
                     # Calculate response time
                     response_time = time.time() - start_time
@@ -395,11 +400,8 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                         accumulated_content = "I apologize, but I couldn't generate a response. Please try again or rephrase your question."
                         logger.warning(f"Empty response generated for question: {message_text[:50]}")
 
-                    # Extract intent from accumulated sources if available
+                    # We are in the explanatory/streaming RAG branch
                     intent = "EXPLANATORY"
-                    if accumulated_sources and isinstance(accumulated_sources, list) and len(accumulated_sources) > 0:
-                        first_source = accumulated_sources[0] if isinstance(accumulated_sources[0], dict) else {}
-                        intent = first_source.get("intent", "EXPLANATORY")
 
                     # Ensure tokens_used is set
                     if not tokens_used:
@@ -455,11 +457,25 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                     {"type": "error", "message": str(e)}, event="error"
                 )
 
-        # Return ASGI-compatible streaming response
-        from django.http import StreamingHttpResponse
+        # Wrap sync generator in async iterator so ASGI doesn't warn and block
+        _sentinel = object()
+        def _feed_queue(sync_gen, q):
+            for item in sync_gen:
+                q.put_nowait(item)
+            q.put_nowait(_sentinel)
+
+        async def async_stream():
+            q = asyncio.Queue()
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(None, lambda: _feed_queue(stream_generator(), q))
+            while True:
+                item = await q.get()
+                if item is _sentinel:
+                    break
+                yield item
 
         response = StreamingHttpResponse(
-            stream_generator(), content_type="text/event-stream"
+            async_stream(), content_type="text/event-stream"
         )
         # Critical headers for proper SSE streaming
         response["Cache-Control"] = "no-cache, no-store, must-revalidate"
