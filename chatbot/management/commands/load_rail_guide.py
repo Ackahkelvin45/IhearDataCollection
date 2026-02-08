@@ -64,6 +64,8 @@ class Command(BaseCommand):
         try:
             with open(guide_path, "r", encoding="utf-8") as f:
                 content = f.read()
+            # PostgreSQL text fields cannot contain NUL bytes
+            content = content.replace("\x00", "")
         except Exception as e:
             self.stderr.write(self.style.ERROR(f"Failed to read {guide_path}: {e}"))
             return

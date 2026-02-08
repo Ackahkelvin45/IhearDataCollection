@@ -70,6 +70,9 @@ class DocumentProcessor:
             else:
                 raise ValueError(f"Unsupported file format: {ext}")
 
+            # PostgreSQL text fields cannot contain NUL bytes
+            text = text.replace("\x00", "")
+
             metadata["total_characters"] = len(text)
             return text, metadata
 

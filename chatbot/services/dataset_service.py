@@ -1511,18 +1511,18 @@ Response:"""
 
         if dataset_chunks:
             # Add to RAG and query
-            vector_ids = self.rag_service.add_documents(
+            self.rag_service.add_documents(
                 texts=[chunk["content"] for chunk in dataset_chunks],
                 metadatas=[chunk["metadata"] for chunk in dataset_chunks],
             )
 
             # Query using RAG
-            answer = self.rag_service.query(question)
+            rag_result = self.rag_service.query(question)
 
             return {
-                "answer": answer,
+                "answer": rag_result.get("answer", ""),
+                "sources": rag_result.get("sources", []),
                 "data_used": {"type": "rag_query", "chunks_used": len(dataset_chunks)},
-                "vector_ids": vector_ids,
             }
         else:
             return {

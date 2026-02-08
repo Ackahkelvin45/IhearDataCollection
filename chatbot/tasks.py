@@ -16,6 +16,13 @@ from .services import DocumentProcessor, RAGService
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_for_postgres(text: str) -> str:
+    """Remove NUL bytes - PostgreSQL text fields cannot contain them."""
+    if not isinstance(text, str):
+        return str(text) if text else ""
+    return text.replace("\x00", "")
+
+
 @shared_task(bind=True, max_retries=3)
 def process_document_task(self, document_id: str):
     """
@@ -150,15 +157,16 @@ def process_document_task(self, document_id: str):
         chunk_metadatas = []
 
         for chunk_data in result["chunks"]:
+            content = _sanitize_for_postgres(chunk_data["content"])
             chunk = DocumentChunk(
                 document=document,
                 chunk_index=chunk_data["chunk_index"],
-                content=chunk_data["content"],
+                content=content,
                 metadata=chunk_data.get("metadata", {}),
             )
             chunk_objects.append(chunk)
 
-            chunk_texts.append(chunk_data["content"])
+            chunk_texts.append(content)
             chunk_metadatas.append(
                 {
                     "doc_id": str(document_id),
