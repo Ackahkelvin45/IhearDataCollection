@@ -751,6 +751,16 @@ class UnifiedAudioDataChat {
                 this.updateMessageStatus(assistantMessage.id, 'completed');
                 this.hideToolActivity(assistantMessage.id);
 
+                if (data && data.visualization) {
+                    assistantMessage.visualizations = assistantMessage.visualizations || [];
+                    assistantMessage.visualizations.push(data.visualization);
+                    this.addVisualizationToMessage(
+                        assistantMessage.id,
+                        data.visualization,
+                        assistantMessage.toolResponses
+                    );
+                }
+
                 // Refresh sessions list asynchronously to avoid blocking
                 setTimeout(() => this.loadSessions(), 100);
                 break;
@@ -925,15 +935,26 @@ class UnifiedAudioDataChat {
                     return;
                 }
                 const chartId = `chart-${messageId}-${Date.now()}`;
+                const tableData = visualizationData?.frontend_data?.table;
+                const tableHtml = this.buildTableHtml(tableData);
+                const hasTable = !!tableHtml;
                 const vizDiv = document.createElement('div');
                 vizDiv.className = 'visualization mb-6 p-4 bg-gradient-to-r from-green-600 to-lime-400 rounded-lg ';
+                const layoutStyle = hasTable ? "display:flex; gap:12px; flex-wrap:wrap;" : "";
+                const chartWrapStyle = hasTable ? "flex:1; min-width:260px;" : "";
+                const tableWrapStyle = hasTable ? "flex:1; min-width:260px;" : "";
                 vizDiv.innerHTML = `
                     <div class="flex items-center mb-3">
                         <div class="w-3 h-3 bg-blue-500 rounded-full mr-2"></div>
                         <h4 class="font-semibold text-white text-gray-800"> ${visualizationData.visualization_name || 'Data Visualization'}</h4>
                     </div>
-                    <div class="chart-container bg-white p-4 rounded-lg shadow-sm">
-                        <canvas id="${chartId}" width="400" height="200"></canvas>
+                    <div style="${layoutStyle}">
+                        <div style="${chartWrapStyle}">
+                            <div class="chart-container bg-white p-4 rounded-lg shadow-sm">
+                                <canvas id="${chartId}" width="400" height="200"></canvas>
+                            </div>
+                        </div>
+                        ${hasTable ? `<div style="${tableWrapStyle}">${tableHtml}</div>` : ''}
                     </div>
                     <div class="mt-3   text-base  text-white text-gray-600">
                         <p>${visualizationData.frontend_data?.description || visualizationData.recommendation?.reasoning || 'Interactive chart based on your audio data'}</p>
@@ -956,7 +977,7 @@ class UnifiedAudioDataChat {
 
         try {
             const frontendData = visualizationData.frontend_data;
-            const chartType = frontendData.type;
+            const chartType = this.normalizeChartType(frontendData.type);
 
             // Extract actual data from the tool responses
             const actualData = this.extractChartData(visualizationData, toolResponses);
@@ -1294,8 +1315,40 @@ class UnifiedAudioDataChat {
         }
     }
 
+    normalizeChartType(chartType) {
+        if (!chartType) return 'bar_chart';
+        const normalized = String(chartType).toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+        const mapping = {
+            'pie chart': 'pie_chart',
+            'pie': 'pie_chart',
+            'bar chart': 'bar_chart',
+            'bar': 'bar_chart',
+            'line chart': 'line_chart',
+            'line': 'line_chart',
+            'box plot': 'box_plot',
+            'boxplot': 'box_plot',
+            'scatter plot': 'scatter_plot',
+            'scatter': 'scatter_plot',
+            'area chart': 'area_chart',
+            'area': 'area_chart',
+            'heat map': 'heatmap',
+            'heatmap': 'heatmap'
+        };
+        return mapping[normalized] || normalized.replace(' ', '_');
+    }
+
     extractChartData(visualizationData, toolResponses = []) {
         console.log('Extracting chart data from:', visualizationData, 'Tool responses:', toolResponses);
+
+        // Prefer explicit data shipped from backend
+        if (visualizationData?.frontend_data?.labels && visualizationData?.frontend_data?.data) {
+            return {
+                labels: visualizationData.frontend_data.labels,
+                data: visualizationData.frontend_data.data,
+                colors: visualizationData.frontend_data.colors || this.generateColors(visualizationData.frontend_data.labels.length),
+                title: visualizationData.frontend_data.title || visualizationData.frontend_data.name || 'Results'
+            };
+        }
 
         // Try to extract actual data from tool responses
         let extractedData = null;
@@ -1344,6 +1397,35 @@ class UnifiedAudioDataChat {
             // Handle array responses (like region counts)
             else if (Array.isArray(toolResponse)) {
                 try {
+                    if (toolResponse.length > 0 && typeof toolResponse[0] === 'object') {
+                        const firstRow = toolResponse[0];
+                        const keys = Object.keys(firstRow);
+                        const numericKeys = keys.filter(k => toolResponse.some(r => typeof r?.[k] === 'number'));
+                        const labelKeys = keys.filter(k => !numericKeys.includes(k));
+                        if (numericKeys.length) {
+                            const preferredNumeric = ['mean_db', 'max_db', 'min_db', 'avg', 'average', 'count', 'total', 'value', 'level', 'decibel'];
+                            let valueKey = numericKeys[0];
+                            preferredNumeric.forEach(pref => {
+                                const match = numericKeys.find(k => k.toLowerCase().includes(pref));
+                                if (match) valueKey = match;
+                            });
+                            const preferredLabels = ['name', 'dataset', 'noise_id', 'region', 'community', 'category', 'class', 'subclass', 'recording_device', 'device'];
+                            let labelKey = labelKeys[0] || keys[0];
+                            preferredLabels.forEach(pref => {
+                                const match = labelKeys.find(k => k.toLowerCase().includes(pref));
+                                if (match) labelKey = match;
+                            });
+
+                            const rows = toolResponse.slice(0, 12);
+                            extractedData = {
+                                labels: rows.map((r, idx) => String(r[labelKey] ?? `Row ${idx + 1}`)),
+                                data: rows.map(r => Number(r[valueKey] ?? 0)),
+                                colors: this.generateColors(rows.length),
+                                title: visualizationData?.frontend_data?.title || 'Results'
+                            };
+                            break;
+                        }
+                    }
                     if (toolResponse.length > 0 && toolResponse[0].region_name) {
                         // Extract region data from array format
                         const labels = toolResponse.map(item => item.region_name);
@@ -1515,6 +1597,30 @@ class UnifiedAudioDataChat {
             '#4BC0C0', '#FF6384', '#36A2EB', '#FFCE56'
         ];
         return colors.slice(0, count);
+    }
+
+    buildTableHtml(tableData) {
+        if (!tableData || !Array.isArray(tableData.columns) || !Array.isArray(tableData.rows) || tableData.rows.length === 0) {
+            return '';
+        }
+        const columns = tableData.columns;
+        const rows = tableData.rows;
+        const header = columns.map(col => `<th style="text-align:left; padding:6px 8px; border-bottom:1px solid #e5e7eb; font-size:12px; color:#374151;">${this.escapeHtml(String(col))}</th>`).join('');
+        const body = rows.map(row => {
+            const cells = columns.map(col => `<td style="padding:6px 8px; border-bottom:1px solid #f3f4f6; font-size:12px; color:#111827;">${this.escapeHtml(String(row?.[col] ?? ''))}</td>`).join('');
+            return `<tr>${cells}</tr>`;
+        }).join('');
+        return `
+            <div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:10px; overflow:hidden; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+                <div style="padding:8px 10px; font-weight:600; font-size:12px; color:#374151; border-bottom:1px solid #e5e7eb;">Top Results</div>
+                <div style="max-height:260px; overflow:auto;">
+                    <table style="width:100%; border-collapse:collapse;">
+                        <thead><tr>${header}</tr></thead>
+                        <tbody>${body}</tbody>
+                    </table>
+                </div>
+            </div>
+        `;
     }
 
     calculateMedian(sortedArray) {

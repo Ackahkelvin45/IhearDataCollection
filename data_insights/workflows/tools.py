@@ -1469,7 +1469,10 @@ class VisualizationAnalysisTool(BaseTool):
                 recommendation, query_analysis, query
             )
 
-            chart_type = final_recommendation["recommended_chart"]
+            chart_type = self._normalize_chart_type(
+                final_recommendation["recommended_chart"]
+            )
+            final_recommendation["recommended_chart"] = chart_type
             chart_template = self._generate_chart_template(chart_type)
 
             return {
@@ -1649,8 +1652,11 @@ class VisualizationAnalysisTool(BaseTool):
     ) -> Dict[str, Any]:
         """Validate and potentially override LLM recommendation based on query analysis"""
 
-        llm_chart = recommendation.get("recommended_chart", "bar_chart")
+        llm_chart = self._normalize_chart_type(
+            recommendation.get("recommended_chart", "bar_chart")
+        )
         suggested_chart = query_analysis["suggested_type"]
+        suggested_chart = self._normalize_chart_type(suggested_chart)
 
         # Override pie chart if it's not truly a distribution query
         if llm_chart == "pie_chart" and query_analysis["query_type"] != "distribution":
@@ -1675,7 +1681,7 @@ class VisualizationAnalysisTool(BaseTool):
             logger.info(f"Overriding {llm_chart} for temporal query: {query}")
             chart_type = "area_chart" if "cumulative" in query.lower() else "line_chart"
             return {
-                "recommended_chart": chart_type,
+                "recommended_chart": self._normalize_chart_type(chart_type),
                 "reasoning": f"Changed to {chart_type} because this query involves temporal data which is best shown with time-based charts",
                 "data_requirements": ["time", "value"],
                 "confidence": "high",
@@ -1702,6 +1708,32 @@ class VisualizationAnalysisTool(BaseTool):
         # If LLM recommendation is good, use it
         return recommendation
 
+    def _normalize_chart_type(self, chart_type: str) -> str:
+        """Normalize chart type strings from LLM responses."""
+        if not chart_type:
+            return "bar_chart"
+        chart = chart_type.strip().lower()
+        chart = chart.replace("-", " ").replace("_", " ")
+        chart = " ".join(chart.split())
+
+        mapping = {
+            "pie chart": "pie_chart",
+            "pie": "pie_chart",
+            "bar chart": "bar_chart",
+            "bar": "bar_chart",
+            "line chart": "line_chart",
+            "line": "line_chart",
+            "box plot": "box_plot",
+            "boxplot": "box_plot",
+            "scatter plot": "scatter_plot",
+            "scatter": "scatter_plot",
+            "area chart": "area_chart",
+            "area": "area_chart",
+            "heatmap": "heatmap",
+            "heat map": "heatmap",
+        }
+        return mapping.get(chart, chart.replace(" ", "_"))
+
     def _parse_visualization_recommendation(
         self, llm_response: str, query: str
     ) -> Dict[str, Any]:
@@ -1719,6 +1751,9 @@ class VisualizationAnalysisTool(BaseTool):
                 try:
                     parsed_json = json.loads(json_match.group())
                     if "recommended_chart" in parsed_json:
+                        parsed_json["recommended_chart"] = self._normalize_chart_type(
+                            parsed_json["recommended_chart"]
+                        )
                         logger.info(
                             f"Successfully parsed LLM recommendation: {parsed_json['recommended_chart']}"
                         )
@@ -1897,6 +1932,7 @@ class VisualizationAnalysisTool(BaseTool):
 
     def _generate_chart_template(self, chart_type: str) -> Dict[str, Any]:
         """Generate chart template based on chart type"""
+        chart_type = self._normalize_chart_type(chart_type)
         templates = {
             "pie_chart": {
                 "type": "pie",
@@ -2078,6 +2114,7 @@ class VisualizationAnalysisTool(BaseTool):
 
     def _get_visualization_name(self, chart_type: str) -> str:
         """Get human-readable name for chart type"""
+        chart_type = self._normalize_chart_type(chart_type)
         names = {
             "pie_chart": "Pie Chart",
             "bar_chart": "Bar Chart",
@@ -2091,6 +2128,7 @@ class VisualizationAnalysisTool(BaseTool):
 
     def _get_data_structure(self, chart_type: str) -> Dict[str, Any]:
         """Get expected data structure for each chart type"""
+        chart_type = self._normalize_chart_type(chart_type)
         structures = {
             "pie_chart": {
                 "labels": "Array of category names",

@@ -208,6 +208,7 @@ class ChatSessionView(ModelViewSet):
             def stream():
                 nonlocal llm_response, tool_call
                 visualization_data = None
+                last_data_tool_response = None
                 thinking_sent = False
                 reasoning_sent = False
 
@@ -277,9 +278,14 @@ class ChatSessionView(ModelViewSet):
                                     and "recommendation" in tool_call
                                 ):
                                     visualization_data = tool_call
+                                    visualization_data = self._inject_chart_data(
+                                        visualization_data,
+                                        last_data_tool_response,
+                                        message.user_input,
+                                    )
                                     try:
                                         yield self._format_stream_message(
-                                            "visualization", tool_call
+                                            "visualization", visualization_data
                                         )
                                     except Exception as viz_e:
                                         logger.warning(
@@ -290,31 +296,32 @@ class ChatSessionView(ModelViewSet):
                                             {"error": "Visualization formatting error"},
                                         )
                                 else:
+                                    last_data_tool_response = tool_call
                                     try:
                                         yield self._format_stream_message(
                                             "tool_response", tool_call
                                         )
                                         # Stream a visualization as soon as tool data is available
                                         if visualization_data is None and isinstance(
-                                            tool_call, dict
+                                            tool_call, (dict, list)
                                         ):
                                             try:
                                                 viz_tool = get_tool_by_name(
                                                     "visualization_analysis"
                                                 )
                                                 if viz_tool is not None:
-                                                    data_summary = None
-                                                    if tool_call.get("analysis_type"):
-                                                        data_summary = f"tool:{tool_call.get('analysis_type')}"
-                                                    elif (
-                                                        tool_call.get("total_count")
-                                                        is not None
-                                                    ):
-                                                        data_summary = f"total_count:{tool_call.get('total_count')}"
+                                                    data_summary = self._summarize_tool_data(
+                                                        tool_call
+                                                    )
 
                                                     auto_viz = viz_tool._run(
                                                         query=message.user_input,
                                                         data_summary=data_summary,
+                                                    )
+                                                    auto_viz = self._inject_chart_data(
+                                                        auto_viz,
+                                                        tool_call,
+                                                        message.user_input,
                                                     )
                                                     if isinstance(
                                                         auto_viz, dict
@@ -433,18 +440,19 @@ class ChatSessionView(ModelViewSet):
                                 if viz_tool is not None:
                                     auto_viz = viz_tool._run(
                                         query=message.user_input,
-                                        data_summary=(
-                                            f"tool:{tool_call.get('analysis_type')}"
-                                            if isinstance(tool_call, dict)
-                                            and tool_call.get("analysis_type")
-                                            else None
+                                        data_summary=self._summarize_tool_data(
+                                            tool_call
                                         ),
                                     )
                                     # Only attach if it looks valid
                                     if isinstance(auto_viz, dict) and auto_viz.get(
                                         "recommendation"
                                     ):
-                                        visualization_data = auto_viz
+                                        visualization_data = self._inject_chart_data(
+                                            auto_viz,
+                                            tool_call,
+                                            message.user_input,
+                                        )
                         except Exception as auto_viz_e:
                             logger.warning(
                                 f"Auto visualization recommendation failed: {auto_viz_e}"
@@ -541,11 +549,15 @@ class ChatSessionView(ModelViewSet):
                                 f"Failed to mark message {message.id} as failed"
                             )
 
-            return StreamingHttpResponse(
+            response = StreamingHttpResponse(
                 stream(),
-                content_type="application/json",
-                headers={"Cache-Control": "no-cache"},
+                content_type="application/json; charset=utf-8",
             )
+            response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response["Pragma"] = "no-cache"
+            response["Expires"] = "0"
+            response["X-Accel-Buffering"] = "no"  # Disable Nginx buffering for streaming
+            return response
 
         except Exception as e:
             logger.error(
@@ -631,6 +643,222 @@ class ChatSessionView(ModelViewSet):
             return sanitized
 
         return data
+
+    def _summarize_tool_data(self, tool_data: Any) -> Optional[str]:
+        try:
+            if isinstance(tool_data, dict):
+                if tool_data.get("analysis_type"):
+                    return f"tool:{tool_data.get('analysis_type')}"
+                if tool_data.get("total_count") is not None:
+                    return f"total_count:{tool_data.get('total_count')}"
+                if tool_data.get("rows"):
+                    cols = (
+                        list(tool_data.get("columns", []))
+                        or list(tool_data.get("rows")[0].keys())
+                        if tool_data.get("rows")
+                        else []
+                    )
+                    return f"rows:{len(tool_data.get('rows', []))} cols:{cols}"
+                return "tool:dict"
+            if isinstance(tool_data, list):
+                cols = list(tool_data[0].keys()) if tool_data else []
+                return f"rows:{len(tool_data)} cols:{cols}"
+            return None
+        except Exception:
+            return None
+
+    def _inject_chart_data(
+        self,
+        visualization_data: Optional[Dict[str, Any]],
+        tool_data: Any,
+        question: str,
+    ) -> Optional[Dict[str, Any]]:
+        if not visualization_data or not tool_data:
+            return visualization_data
+
+        def _is_number(value: Any) -> bool:
+            if isinstance(value, (int, float)):
+                return True
+            if isinstance(value, str):
+                try:
+                    float(value)
+                    return True
+                except Exception:
+                    return False
+            return False
+
+        def _to_number(value: Any) -> Optional[float]:
+            if value is None:
+                return None
+            if isinstance(value, (int, float)):
+                return float(value)
+            if isinstance(value, str):
+                try:
+                    return float(value.replace(",", ""))
+                except Exception:
+                    return None
+            return None
+
+        rows: List[Dict[str, Any]] = []
+        columns: List[str] = []
+
+        if isinstance(tool_data, dict) and isinstance(tool_data.get("rows"), list):
+            rows = [r for r in tool_data.get("rows", []) if isinstance(r, dict)]
+            columns = list(tool_data.get("columns") or (rows[0].keys() if rows else []))
+        elif isinstance(tool_data, list):
+            rows = [r for r in tool_data if isinstance(r, dict)]
+            columns = list(rows[0].keys()) if rows else []
+        elif isinstance(tool_data, dict) and isinstance(tool_data.get("datasets"), list):
+            rows = [r for r in tool_data.get("datasets", []) if isinstance(r, dict)]
+            columns = list(rows[0].keys()) if rows else []
+
+        if not rows or not columns:
+            return visualization_data
+
+        numeric_keys: List[str] = []
+        for key in columns:
+            values = [r.get(key) for r in rows]
+            if any(isinstance(v, (int, float)) for v in values) or all(
+                v is None or _is_number(v) for v in values
+            ):
+                numeric_keys.append(key)
+
+        if not numeric_keys:
+            return visualization_data
+
+        preferred_numeric = [
+            "mean_db",
+            "max_db",
+            "min_db",
+            "avg",
+            "average",
+            "count",
+            "total",
+            "value",
+            "level",
+            "decibel",
+        ]
+        value_key = numeric_keys[0]
+        for pref in preferred_numeric:
+            for key in numeric_keys:
+                if pref in key.lower():
+                    value_key = key
+                    break
+            if value_key != numeric_keys[0]:
+                break
+
+        label_keys = [k for k in columns if k not in numeric_keys]
+        preferred_labels = [
+            "name",
+            "dataset",
+            "noise_id",
+            "region",
+            "community",
+            "category",
+            "class",
+            "subclass",
+            "recording_device",
+            "device",
+        ]
+        label_key = label_keys[0] if label_keys else columns[0]
+        for pref in preferred_labels:
+            for key in label_keys:
+                if pref in key.lower():
+                    label_key = key
+                    break
+            if label_key != (label_keys[0] if label_keys else columns[0]):
+                break
+
+        max_rows = 12
+        rows = rows[:max_rows]
+
+        labels = [
+            str(r.get(label_key) or f"Row {idx + 1}") for idx, r in enumerate(rows)
+        ]
+        data = [(_to_number(r.get(value_key)) or 0) for r in rows]
+
+        frontend_data = visualization_data.get("frontend_data") or {}
+        frontend_data["labels"] = labels
+        frontend_data["data"] = data
+        frontend_data["colors"] = frontend_data.get("colors")
+        if not frontend_data.get("title"):
+            if any(word in question.lower() for word in ["highest", "top", "max"]):
+                frontend_data["title"] = "Top Results"
+            elif any(word in question.lower() for word in ["lowest", "min", "bottom"]):
+                frontend_data["title"] = "Lowest Results"
+            else:
+                frontend_data["title"] = "Results"
+
+        if any(word in question.lower() for word in ["highest", "lowest", "top", "bottom", "max", "min"]):
+            table_columns = columns[:6]
+            table_rows = []
+            for r in rows:
+                table_rows.append({c: r.get(c) for c in table_columns})
+            frontend_data["table"] = {
+                "columns": table_columns,
+                "rows": table_rows,
+            }
+
+        # Choose best chart type based on data shape
+        chart_type = self._choose_chart_type_from_data(
+            question=question,
+            rows=rows,
+            columns=columns,
+            label_key=label_key,
+            value_key=value_key,
+        )
+        if chart_type:
+            visualization_data["visualization_type"] = chart_type
+            if visualization_data.get("recommendation"):
+                visualization_data["recommendation"]["recommended_chart"] = chart_type
+            frontend_data["type"] = chart_type
+
+        visualization_data["frontend_data"] = frontend_data
+        return visualization_data
+
+    def _choose_chart_type_from_data(
+        self,
+        question: str,
+        rows: List[Dict[str, Any]],
+        columns: List[str],
+        label_key: str,
+        value_key: str,
+    ) -> Optional[str]:
+        try:
+            q = (question or "").lower()
+            if not rows or not columns:
+                return None
+
+            # Detect date/time columns
+            date_keywords = ("date", "time", "month", "year", "day")
+            has_time_col = any(any(k in c.lower() for k in date_keywords) for c in columns)
+
+            # Count numeric columns
+            numeric_cols = []
+            for col in columns:
+                values = [r.get(col) for r in rows]
+                if any(isinstance(v, (int, float)) for v in values):
+                    numeric_cols.append(col)
+
+            # Scatter: two numeric columns, no categorical labels
+            if len(numeric_cols) >= 2 and not has_time_col:
+                if "correlation" in q or "relationship" in q or "vs" in q:
+                    return "scatter_plot"
+
+            # Temporal: line chart
+            if has_time_col:
+                return "line_chart"
+
+            # Pie: proportions or percentages
+            if any(word in q for word in ["percentage", "proportion", "share", "distribution of", "breakdown of"]):
+                total = sum([float(r.get(value_key) or 0) for r in rows]) if rows else 0
+                if total > 0 and len(rows) <= 8:
+                    return "pie_chart"
+
+            # Default comparison or ranking
+            return "bar_chart"
+        except Exception:
+            return None
 
     def _format_stream_message(self, action: str, data: Any) -> bytes:
         if data is None:
