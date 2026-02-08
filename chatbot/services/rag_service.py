@@ -51,6 +51,8 @@ EMBEDDING_DIM = 1536  # text-embedding-3-small
 # OpenAI embeddings API allows max 300k tokens per request. Batch to stay safely under.
 # ~70 tokens/chunk typical; 200 chunks ≈ 14k tokens per batch.
 EMBEDDING_BATCH_SIZE = 200
+# Delay between batches (seconds) to avoid 429 rate limits (tokens per minute).
+EMBEDDING_BATCH_DELAY_SECONDS = 2.0
 
 
 class FastRAGService:
@@ -188,8 +190,9 @@ class FastRAGService:
     def _add_texts_batched(
         self, texts: List[str], metadatas: List[Dict[str, Any]]
     ) -> None:
-        """Add texts in batches to avoid OpenAI 300k-token-per-request limit."""
-        for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+        """Add texts in batches to avoid OpenAI 300k-token-per-request and 429 rate limits."""
+        total = len(texts)
+        for i in range(0, total, EMBEDDING_BATCH_SIZE):
             batch_texts = texts[i : i + EMBEDDING_BATCH_SIZE]
             batch_metadatas = metadatas[i : i + EMBEDDING_BATCH_SIZE]
             self.vectorstore.add_texts(batch_texts, batch_metadatas)
@@ -199,6 +202,9 @@ class FastRAGService:
                 i + len(batch_texts),
                 len(batch_texts),
             )
+            # Delay between batches to avoid 429 (tokens per minute) rate limit
+            if i + EMBEDDING_BATCH_SIZE < total and EMBEDDING_BATCH_DELAY_SECONDS > 0:
+                time.sleep(EMBEDDING_BATCH_DELAY_SECONDS)
 
     def add_documents(self, texts: List[str], metadatas: List[Dict[str, Any]]):
         self._add_texts_batched(texts, metadatas)

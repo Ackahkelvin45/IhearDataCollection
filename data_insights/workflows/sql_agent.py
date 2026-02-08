@@ -425,14 +425,35 @@ class TextToSQLAgent:
         indexes_in_table_info: bool = False,
         lazy_table_reflection: bool = True,
         top_k: int = 100,
+        default_offset: int = 0,
         max_retries: int = 1,
     ):
+        db_user = DB_USER
+        db_password = DB_PASSWORD
+        db_host = DB_HOST
+        db_port = DB_PORT
+        db_name = DB_NAME
+
+        if not (db_user and db_password and db_host and db_port and db_name):
+            try:
+                from django.conf import settings
+
+                db = settings.DATABASES.get("default", {})
+                if "postgresql" in db.get("ENGINE", ""):
+                    db_user = db.get("USER") or db_user
+                    db_password = db.get("PASSWORD") or db_password
+                    db_host = db.get("HOST") or db_host
+                    db_port = int(db.get("PORT") or db_port or 5432)
+                    db_name = db.get("NAME") or db_name
+            except Exception:
+                pass
+
         assert (
-            DB_USER and DB_PASSWORD and DB_HOST and DB_PORT
+            db_user and db_password and db_host and db_port and db_name
         ), "Missing database credentials"
 
         engine = create_engine(
-            f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+            f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
         )
 
         self.llm = llm.bind_tools([PostgresSQLInput])
@@ -450,10 +471,17 @@ class TextToSQLAgent:
         self.output_parser = JsonOutputToolsParser(first_tool_only=True, return_id=True)
         self.max_retries = max_retries
         self.ai_answer = ai_answer
+        try:
+            self.default_offset = max(0, int(default_offset))
+        except (TypeError, ValueError):
+            self.default_offset = 0
 
     @staticmethod
     def _validate_sql_query(
-        query: str, table_names: list[str] | None, max_limit: int = 50
+        query: str,
+        table_names: list[str] | None,
+        max_limit: int = 50,
+        default_offset: int = 0,
     ) -> str:
         ALLOWED_FUNCTIONS = {
             "jsonb_array_elements",
@@ -509,6 +537,26 @@ class TextToSQLAgent:
                     return new_query
             return query
 
+        def _apply_limit_offset(query: str, max_limit: int, default_offset: int) -> str:
+            q = query.rstrip().rstrip(";")
+            has_limit = re.search(r"\bLIMIT\b", q, re.IGNORECASE)
+            if not has_limit:
+                q = f"{q} LIMIT {max_limit}"
+            else:
+                q = _enforce_limit(q, max_limit)
+
+            if default_offset and default_offset > 0:
+                if re.search(r"\bOFFSET\b", q, re.IGNORECASE):
+                    q = re.sub(
+                        r"\bOFFSET\s+\d+\b",
+                        f"OFFSET {default_offset}",
+                        q,
+                        flags=re.IGNORECASE,
+                    )
+                else:
+                    q = f"{q} OFFSET {default_offset}"
+            return q
+
         def validate_statement(statement: sqlparse.sql.Statement):
             # first_token = statement.token_first(skip_cm=True)
             # if not first_token or first_token.value.upper() not in ("SELECT", "WITH"):
@@ -548,6 +596,7 @@ class TextToSQLAgent:
             if st.get_type() != "UNKNOWN":
                 validate_statement(st)
 
+        query = _apply_limit_offset(query, max_limit, default_offset)
         return " ".join(query.split())
 
     def _filter_messages(self, messages: List[BaseMessage]) -> List[BaseMessage]:
@@ -627,8 +676,11 @@ class TextToSQLAgent:
                     "n_trials": n_trials,
                 }
             query = self._validate_sql_query(
-                query, None, max_limit=self.top_k
-            )  # TODO fix this
+                query,
+                self.db.get_usable_table_names(),
+                max_limit=self.top_k,
+                default_offset=self.default_offset,
+            )
             res = self.db.run(query, include_columns=True)  # type: ignore
 
             if not res:

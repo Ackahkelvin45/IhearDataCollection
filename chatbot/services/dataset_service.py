@@ -1,14 +1,21 @@
 import logging
+import hashlib
+import re
 import pandas as pd
 from typing import Dict, Any, List, Optional, Tuple
 from django.db import connection
 from django.db.models import Sum
 from django.conf import settings
+from django.core.cache import cache
 
 from .intent_classifier import IntentClassifier
 from .rag_service import RAGService
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_PAGE_SIZE = 50
+MAX_PAGE_SIZE = 200
+NUMERIC_CACHE_TTL_SECONDS = 60 * 5
 
 
 class DatasetService:
@@ -41,6 +48,10 @@ class DatasetService:
 
         start_time = time.time()
 
+        context = context or {}
+        pagination = self._parse_pagination(question, context)
+        context.update(pagination)
+
         # Classify intent
         routing_info = self.intent_classifier.get_routing_info(question)
         intent = routing_info.get("intent", "EXPLANATORY")
@@ -71,10 +82,70 @@ class DatasetService:
                 "confidence": conf,
                 "processing_time": time.time() - start_time,
                 "routing_reasoning": routing_info.get("reasoning", "") or "",
+                "pagination": pagination,
             }
         )
 
         return result
+
+    def _get_allowed_tables(self) -> List[str]:
+        """Return database tables for data-related Django models."""
+        from django.apps import apps
+
+        allowed_tables: List[str] = []
+        for app_label in ("data", "core"):
+            try:
+                app_config = apps.get_app_config(app_label)
+            except LookupError:
+                continue
+            for model in app_config.get_models():
+                allowed_tables.append(model._meta.db_table)
+
+        # De-dupe and stable sort
+        return sorted(set(allowed_tables))
+
+    def _parse_pagination(self, question: str, context: Dict[str, Any]) -> Dict[str, int]:
+        """Parse pagination from context or question text."""
+        question_lower = (question or "").lower()
+
+        def _clamp_page_size(value: int) -> int:
+            return max(1, min(int(value), MAX_PAGE_SIZE))
+
+        page_size = context.get("page_size") or context.get("limit") or DEFAULT_PAGE_SIZE
+        try:
+            page_size = _clamp_page_size(int(page_size))
+        except (TypeError, ValueError):
+            page_size = DEFAULT_PAGE_SIZE
+
+        page = context.get("page") or 1
+        try:
+            page = max(1, int(page))
+        except (TypeError, ValueError):
+            page = 1
+
+        offset = context.get("offset") or 0
+        try:
+            offset = max(0, int(offset))
+        except (TypeError, ValueError):
+            offset = 0
+
+        # Parse hints from question text
+        m = re.search(r"(?:per page|page size|pagesize|limit)\s*(\d{1,4})", question_lower)
+        if m:
+            page_size = _clamp_page_size(int(m.group(1)))
+
+        m = re.search(r"\bpage\s+(\d{1,4})\b", question_lower)
+        if m:
+            page = max(1, int(m.group(1)))
+
+        m = re.search(r"\boffset\s+(\d{1,6})\b", question_lower)
+        if m:
+            offset = max(0, int(m.group(1)))
+
+        if offset == 0 and page > 1:
+            offset = (page - 1) * page_size
+
+        return {"page": page, "page_size": page_size, "offset": offset}
 
     def _handle_numeric_query(
         self, question: str, context: Dict = None
@@ -90,6 +161,14 @@ class DatasetService:
         from chatbot.models import Document
 
         question_lower = question.lower()
+        context = context or {}
+        page_size = int(context.get("page_size", DEFAULT_PAGE_SIZE))
+        offset = int(context.get("offset", 0))
+
+        cache_key = f"chatbot:numeric:{hashlib.md5(f'{question_lower}|{page_size}|{offset}'.encode()).hexdigest()}"
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
 
         # Handle specific dataset/document counting and statistical questions
         # More flexible matching for counting and statistical keywords
@@ -170,6 +249,34 @@ class DatasetService:
             feature in question_lower for feature in audio_features
         )
 
+        # Fast path for common aggregates (no LLM/tool call)
+        if has_counting and (has_dataset or "dataset" in question_lower or "datasets" in question_lower or "datsets" in question_lower):
+            try:
+                result = self._handle_counting_questions(question_lower)
+                cache.set(cache_key, result, NUMERIC_CACHE_TTL_SECONDS)
+                return result
+            except Exception as e:
+                logger.error(f"Error in counting query: {e}", exc_info=True)
+
+        if (has_statistics and has_dataset) or has_audio_features:
+            try:
+                result = self._handle_statistical_questions(
+                    question_lower, has_audio_features
+                )
+                cache.set(cache_key, result, NUMERIC_CACHE_TTL_SECONDS)
+                return result
+            except Exception as e:
+                logger.error(f"Error in statistical query: {e}", exc_info=True)
+
+        # Prefer tool-based SQL agent for numeric/DB questions
+        if context.get("use_sql_tool", True):
+            tool_result = self._handle_numeric_query_with_tool(
+                question, {"page_size": page_size, "offset": offset}
+            )
+            if tool_result:
+                cache.set(cache_key, tool_result, NUMERIC_CACHE_TTL_SECONDS)
+                return tool_result
+
         # Check if this is a counting question about datasets (most common case)
         if has_counting and (has_dataset or "dataset" in question_lower or "datasets" in question_lower or "datsets" in question_lower):
             try:
@@ -181,7 +288,9 @@ class DatasetService:
                 )
 
                 # For "how many datasets" questions, always query the database
-                return self._handle_counting_questions(question_lower)
+                result = self._handle_counting_questions(question_lower)
+                cache.set(cache_key, result, NUMERIC_CACHE_TTL_SECONDS)
+                return result
 
             except Exception as e:
                 logger.error(f"Error in counting query: {e}", exc_info=True)
@@ -214,9 +323,11 @@ class DatasetService:
                         return llm_result
 
                 # Fall back to rule-based statistical/feature analysis
-                return self._handle_statistical_questions(
+                result = self._handle_statistical_questions(
                     question_lower, has_audio_features
                 )
+                cache.set(cache_key, result, NUMERIC_CACHE_TTL_SECONDS)
+                return result
 
             except Exception as e:
                 logger.error(f"Error in statistical query: {e}", exc_info=True)
@@ -229,7 +340,9 @@ class DatasetService:
         # For other numeric questions, try to query anyway if it's a counting question
         if has_counting:
             try:
-                return self._handle_counting_questions(question_lower)
+                result = self._handle_counting_questions(question_lower)
+                cache.set(cache_key, result, NUMERIC_CACHE_TTL_SECONDS)
+                return result
             except Exception as e:
                 logger.debug(f"Could not handle counting question: {e}")
 
@@ -240,16 +353,80 @@ class DatasetService:
                 llm_result
                 and llm_result.get("data_used", {}).get("type") == "llm_generated_sql"
             ):
+                cache.set(cache_key, llm_result, NUMERIC_CACHE_TTL_SECONDS)
                 return llm_result
         except Exception as e:
             logger.debug(f"Complex query handler failed: {e}")
 
         # Last resort: generic response
-        return {
+        result = {
             "answer": f"I detected this as a numeric/computational query: '{question}'. I'm attempting to query the database to get accurate results for you.",
             "data_used": {"type": "numeric_query", "method": "database"},
             "sql_equivalent": self._generate_sql_placeholder(question),
         }
+        cache.set(cache_key, result, NUMERIC_CACHE_TTL_SECONDS)
+        return result
+
+    def _handle_numeric_query_with_tool(self, question: str, pagination: Dict[str, int]) -> Optional[Dict[str, Any]]:
+        """
+        Use the tool-calling SQL agent for numeric/database questions.
+        Returns None on failure so caller can fall back to heuristic handling.
+        """
+        try:
+            from data_insights.workflows.sql_agent import TextToSQLAgent
+            from data_insights.workflows.prompt import SQL_SYSTEM_TEMPLATE
+            from langchain_openai import ChatOpenAI
+            from langchain_core.messages import HumanMessage
+            from django.conf import settings
+
+            allowed_tables = self._get_allowed_tables()
+            if not allowed_tables:
+                logger.warning("No allowed tables found for SQL tool agent")
+                return None
+
+            llm = ChatOpenAI(
+                model_name=settings.OPENAI_MODEL,
+                openai_api_key=settings.OPENAI_API_KEY,
+                temperature=0.1,
+                max_tokens=1500,
+            )
+
+            agent = TextToSQLAgent(
+                llm=llm,
+                system_prompt=SQL_SYSTEM_TEMPLATE,
+                include_tables=allowed_tables,
+                ai_answer=True,
+                top_k=pagination.get("page_size", DEFAULT_PAGE_SIZE),
+                default_offset=pagination.get("offset", 0),
+            )
+
+            workflow = agent.compile_workflow()
+            result = workflow.invoke(
+                {
+                    "messages": [HumanMessage(content=question)],
+                    "n_trials": 0,
+                }
+            )
+
+            if result and "messages" in result:
+                last_message = result["messages"][-1]
+                if hasattr(last_message, "content"):
+                    answer = last_message.content
+                    return {
+                        "answer": answer,
+                        "data_used": {
+                            "type": "tool_sql_agent",
+                            "method": "text_to_sql_agent",
+                            "allowed_tables": allowed_tables,
+                        },
+                        "sources": [],
+                    }
+
+            return None
+
+        except Exception as e:
+            logger.warning(f"SQL tool agent failed, falling back: {e}")
+            return None
     
     def _is_complex_computational_query(self, question_lower):
         """Detect if a question requires complex computational analysis"""
@@ -1397,19 +1574,8 @@ Response:"""
                 from langchain_openai import ChatOpenAI
                 from django.conf import settings
                 
-                # Define allowed tables for complex queries
-                allowed_tables = [
-                    "data_noisedataset",
-                    "data_audiofeature", 
-                    "data_noiseanalysis",
-                    "core_category",
-                    "core_region",
-                    "core_community",
-                    "core_class",
-                    "core_subclass",
-                    "chatbot_document",
-                    "chatbot_documentchunk",
-                ]
+                # Define allowed tables for complex queries (data + core models)
+                allowed_tables = self._get_allowed_tables()
                 
                 # Create TextToSQLAgent for sophisticated SQL generation
                 llm = ChatOpenAI(
