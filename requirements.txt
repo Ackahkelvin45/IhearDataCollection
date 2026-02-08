@@ -133,6 +133,7 @@ llvmlite==0.44.0
 loguru==0.7.3
 lxml==6.0.2
 markdown-it-py==3.0.0
+markdownify==1.2.2
 MarkupSafe==3.0.2
 marshmallow==3.26.1
 matplotlib==3.10.3

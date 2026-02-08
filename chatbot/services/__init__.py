@@ -8,6 +8,7 @@ from .intent_classifier import (
 )
 from .dataset_service import DatasetService
 from .chatbot_service import ChatbotService, process_chatbot_question
+from .chat_message_service import ChatMessageService, get_chat_history
 
 __all__ = [
     "RAGService",
@@ -19,4 +20,6 @@ __all__ = [
     "DatasetService",
     "ChatbotService",
     "process_chatbot_question",
+    "ChatMessageService",
+    "get_chat_history",
 ]

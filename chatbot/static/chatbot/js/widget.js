@@ -20,14 +20,22 @@
     const closeIcon = toggleBtn.querySelector('.close-icon');
 
     function init() {
+        if (!messageForm || !messageInput) {
+            console.warn('Chat widget: form or message input not found');
+            return;
+        }
         setupEventListeners();
         initializeSession();
     }
 
     function setupEventListeners() {
-        toggleBtn.addEventListener('click', toggleWidget);
-        minimizeBtn.addEventListener('click', toggleWidget);
-        messageForm.addEventListener('submit', handleSendMessage);
+        if (toggleBtn) toggleBtn.addEventListener('click', toggleWidget);
+        if (minimizeBtn) minimizeBtn.addEventListener('click', toggleWidget);
+
+        messageForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            handleSendMessage(e);
+        });
 
         messageInput.addEventListener('input', function() {
             this.style.height = 'auto';
@@ -37,17 +45,17 @@
         messageInput.addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                messageForm.dispatchEvent(new Event('submit'));
+                handleSendMessage(e);
             }
         });
 
         document.querySelectorAll('.quick-action-btn').forEach(btn => btn.addEventListener('click', handleQuickAction));
         document.querySelectorAll('.suggestion-btn').forEach(btn => btn.addEventListener('click', function() {
             messageInput.value = this.dataset.question;
-            messageForm.dispatchEvent(new Event('submit'));
+            handleSendMessage(new Event('submit'));
         }));
 
-        fileInput.addEventListener('change', handleFileUpload);
+        if (fileInput) fileInput.addEventListener('change', handleFileUpload);
 
         const openFullPageBtn = document.getElementById('openFullPageBtn');
         if (openFullPageBtn) openFullPageBtn.addEventListener('click', openFullPage);
@@ -111,7 +119,7 @@
     }
 
     async function handleSendMessage(e) {
-        e.preventDefault();
+        if (e && e.preventDefault) e.preventDefault();
         if (!currentSessionId) await createNewSession();
         const message = messageInput.value.trim();
         if (!message) return;
@@ -121,7 +129,8 @@
         messageInput.style.height = 'auto';
         setInputState(false);
 
-        if (streamToggle.checked) await sendMessageWithStreaming(message);
+        var useStreaming = !streamToggle || streamToggle.checked;
+        if (useStreaming) await sendMessageWithStreaming(message);
         else await sendMessageWithoutStreaming(message);
 
         setInputState(true);
@@ -163,16 +172,16 @@
         let tokenCount = 0;
         const renderMarkdown = () => {
             if (accumulatedContent) {
-                // Remove cursor temporarily for rendering
+                // Remove cursor temporarily for rendering (only from this bubble)
                 const cursor = messageBubble.querySelector('.streaming-cursor');
-                const cursorText = cursor ? cursor.textContent : '';
                 if (cursor) cursor.remove();
                 
                 // Render markdown
                 contentDiv.innerHTML = parseMarkdown(accumulatedContent);
                 
-                // Re-add cursor at the end
-                if (isStreaming) {
+                // Re-add cursor only to this (current) streaming message
+                if (isStreaming && messageBubble.classList.contains('streaming')) {
+                    removeStreamingCursorFromOtherBubbles(messageBubble);
                     const newCursor = document.createElement('span');
                     newCursor.className = 'streaming-cursor';
                     contentDiv.appendChild(newCursor);
@@ -254,7 +263,9 @@
                     
                     // Process the parsed event and data IMMEDIATELY
                     if (currentData) {
-                        if (currentData.type === 'token') {
+                        if (currentData.type === 'querying') {
+                            showQueryingState(contentDiv);
+                        } else if (currentData.type === 'token') {
                             const token = currentData.content || '';
                             if (token) {
                                 accumulatedContent += token;
@@ -388,7 +399,17 @@
         scrollToBottom();
     }
 
+    /** Remove streaming cursor from any assistant bubble that is not the current one */
+    function removeStreamingCursorFromOtherBubbles(currentBubble) {
+        messagesArea.querySelectorAll('.message-bubble.assistant').forEach(function(bubble) {
+            if (currentBubble != null && bubble === currentBubble) return;
+            const c = bubble.querySelector('.streaming-cursor');
+            if (c) c.remove();
+        });
+    }
+
     function createStreamingBubble(id) {
+        removeStreamingCursorFromOtherBubbles(null);
         const messageBubble = document.createElement('div');
         messageBubble.id = id;
         messageBubble.className = 'message-bubble assistant';
@@ -422,6 +443,12 @@
 
         const messageContent = messageBubble.querySelector('.message-content');
         messageContent.appendChild(sourcesDiv);
+    }
+
+    /** Show "Querying database" with 3-dot animation in the given content div (streaming bubble) */
+    function showQueryingState(contentDiv) {
+        if (!contentDiv) return;
+        contentDiv.innerHTML = '<span class="querying-text">Querying database</span><div class="typing-indicator typing-indicator-inline"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>';
     }
 
     function showTypingIndicator() {
@@ -478,12 +505,19 @@
             return md.replace(/\n/g, '<br>');
         }
     }
-    function getCSRFToken() { return document.querySelector('[name=csrfmiddlewaretoken]').value; }
+    function getCSRFToken() {
+        var el = document.querySelector('[name=csrfmiddlewaretoken]');
+        return el ? el.value : '';
+    }
     function handleQuickAction(e) { const action = e.currentTarget.dataset.action; if (action === 'upload') fileInput.click(); else if (action === 'newchat') createNewSession(); }
     function handleFileUpload(e) { console.log('Upload file:', e.target.files); e.target.value = ''; }
     function openFullPage() { window.open('/chatbot/', '_blank'); }
     function showError(msg) { const errorBubble = document.createElement('div'); errorBubble.className = 'message-bubble error'; errorBubble.textContent = msg; messagesArea.appendChild(errorBubble); scrollToBottom(); }
 
-    init();
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
 
 })();

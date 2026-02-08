@@ -29,12 +29,12 @@ class StreamingService:
         json_data = json.dumps(data, separators=(',', ':'))
         return f"event: {event}\ndata: {json_data}\n\n"
 
-    def stream_response(
+    def stream_events(
         self, rag_service, question: str, chat_history: list = None
-    ) -> Generator[str, None, None]:
+    ) -> Generator[Dict[str, Any], None, None]:
         """
-        Stream RAG response as SSE with optimized performance
-        Maximum speed - yields immediately without any delays
+        Stream RAG response as structured events (dicts).
+        Caller formats to SSE at the HTTP boundary—no parse/format round-trip.
 
         Args:
             rag_service: RAGService instance
@@ -42,22 +42,26 @@ class StreamingService:
             chat_history: Conversation history
 
         Yields:
-            SSE formatted strings immediately
+            Dict events: {"type": "start"}, {"type": "token", "content": "..."}, etc.
         """
         try:
             for chunk in rag_service.query_stream(question, chat_history):
-                # Yield each chunk immediately for fastest streaming
                 chunk_type = chunk.get("type")
                 if chunk_type in ["start", "token", "source", "complete", "error"]:
-                    # Keep SSE framing consistent (always include `event:` and `data:`).
-                    # Also rely on json.dumps (C-optimized) for escaping, instead of manual replaces.
-                    yield self.format_sse(chunk, event=f"stream_{chunk_type}")
-
+                    yield chunk
         except Exception as e:
-            logger.error(f"Error in stream_response: {e}")
-            yield self.format_sse(
-                {"type": "error", "message": str(e)}, event="stream_error"
-            )
+            logger.error(f"Error in stream_events: {e}")
+            yield {"type": "error", "message": str(e)}
+
+    def stream_response(
+        self, rag_service, question: str, chat_history: list = None
+    ) -> Generator[str, None, None]:
+        """
+        Stream RAG response as SSE strings (legacy). Prefer stream_events + format_sse at edge.
+        """
+        for event in self.stream_events(rag_service, question, chat_history):
+            event_type = event.get("type", "message")
+            yield self.format_sse(event, event=f"stream_{event_type}")
 
     async def astream_response(
         self, rag_service, question: str, chat_history: list = None

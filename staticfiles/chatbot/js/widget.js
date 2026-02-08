@@ -22,18 +22,24 @@
 
     // Initialize
     function init() {
+        if (!messageForm || !messageInput) {
+            console.warn('Chat widget: form or message input not found');
+            return;
+        }
         setupEventListeners();
         initializeSession();
     }
 
     // Setup event listeners
     function setupEventListeners() {
-        // Toggle widget
-        toggleBtn.addEventListener('click', toggleWidget);
-        minimizeBtn.addEventListener('click', toggleWidget);
+        if (toggleBtn) toggleBtn.addEventListener('click', toggleWidget);
+        if (minimizeBtn) minimizeBtn.addEventListener('click', toggleWidget);
 
-        // Message form
-        messageForm.addEventListener('submit', handleSendMessage);
+        // Message form - prevent default and call handler directly so submit always works
+        messageForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            handleSendMessage(e);
+        });
 
         // Auto-resize textarea
         messageInput.addEventListener('input', function() {
@@ -41,11 +47,11 @@
             this.style.height = Math.min(this.scrollHeight, 100) + 'px';
         });
 
-        // Enter to send (Shift+Enter for new line)
+        // Enter to send (Shift+Enter for new line) - call handler directly so it works reliably
         messageInput.addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                messageForm.dispatchEvent(new Event('submit'));
+                handleSendMessage(e);
             }
         });
 
@@ -59,12 +65,11 @@
             btn.addEventListener('click', function() {
                 const question = this.dataset.question;
                 messageInput.value = question;
-                messageForm.dispatchEvent(new Event('submit'));
+                handleSendMessage(new Event('submit'));
             });
         });
 
-        // File input
-        fileInput.addEventListener('change', handleFileUpload);
+        if (fileInput) fileInput.addEventListener('change', handleFileUpload);
 
         // Open full page button
         const openFullPageBtn = document.getElementById('openFullPageBtn');
@@ -159,7 +164,7 @@
 
     // Handle send message
     async function handleSendMessage(e) {
-        e.preventDefault();
+        if (e && e.preventDefault) e.preventDefault();
 
         if (!currentSessionId) {
             await createNewSession();
@@ -176,8 +181,8 @@
         // Disable input
         setInputState(false);
 
-        // Check if streaming is enabled
-        const useStreaming = streamToggle.checked;
+        // Check if streaming is enabled (default to true when toggle is missing, e.g. commented out in template)
+        const useStreaming = !streamToggle || streamToggle.checked;
 
         if (useStreaming) {
             await sendMessageWithStreaming(message);
@@ -227,6 +232,7 @@
         // Create streaming message bubble
         const messageId = 'stream-' + Date.now();
         const messageBubble = createStreamingBubble(messageId);
+        messageBubble.classList.add('streaming');
         messagesArea.appendChild(messageBubble);
         scrollToBottom();
 
@@ -259,22 +265,24 @@
                         try {
                             const data = JSON.parse(line.substring(5).trim());
 
-                            if (data.type === 'token') {
+                            if (data.type === 'querying') {
+                                showQueryingState(contentDiv);
+                            } else if (data.type === 'token') {
                                 accumulatedContent += data.content;
                                 contentDiv.textContent = accumulatedContent;
                                 scrollToBottom();
                             } else if (data.type === 'source') {
                                 sources.push(data);
                             } else if (data.type === 'complete') {
-                                // Remove cursor
+                                messageBubble.classList.remove('streaming');
                                 const cursor = messageBubble.querySelector('.streaming-cursor');
                                 if (cursor) cursor.remove();
 
-                                // Add sources if any
                                 if (sources.length > 0) {
                                     addSourcesToMessage(messageBubble, sources);
                                 }
                             } else if (data.type === 'error') {
+                                messageBubble.classList.remove('streaming');
                                 contentDiv.textContent = 'Error: ' + data.message;
                                 const cursor = messageBubble.querySelector('.streaming-cursor');
                                 if (cursor) cursor.remove();
@@ -287,6 +295,7 @@
             }
         } catch (error) {
             console.error('Streaming error:', error);
+            messageBubble.classList.remove('streaming');
             contentDiv.textContent = 'Connection failed. Please try again.';
             const cursor = messageBubble.querySelector('.streaming-cursor');
             if (cursor) cursor.remove();
@@ -321,8 +330,23 @@
         scrollToBottom();
     }
 
+    function showQueryingState(contentDiv) {
+        if (!contentDiv) return;
+        contentDiv.innerHTML = '<span class="querying-text">Querying database</span><div class="typing-indicator typing-indicator-inline"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>';
+    }
+
+    // Remove streaming cursor from any other assistant bubble (only current message should show it)
+    function removeStreamingCursorFromOtherBubbles(currentBubble) {
+        messagesArea.querySelectorAll('.message-bubble.assistant').forEach(function(bubble) {
+            if (currentBubble != null && bubble === currentBubble) return;
+            const c = bubble.querySelector('.streaming-cursor');
+            if (c) c.remove();
+        });
+    }
+
     // Create streaming bubble
     function createStreamingBubble(id) {
+        removeStreamingCursorFromOtherBubbles(null);
         const messageBubble = document.createElement('div');
         messageBubble.id = id;
         messageBubble.className = 'message-bubble assistant';
@@ -336,7 +360,6 @@
         messageContent.appendChild(cursor);
         messageBubble.appendChild(messageContent);
 
-        // Remove welcome message if present
         const welcomeMsg = messagesArea.querySelector('.welcome-message');
         if (welcomeMsg) {
             welcomeMsg.remove();

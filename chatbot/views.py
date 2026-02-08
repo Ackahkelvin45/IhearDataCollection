@@ -292,6 +292,7 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
 
         # Create streaming response
         def stream_generator():
+            import json as _json
             start_time = time.time()
             assistant_message_saved = False
             
@@ -309,6 +310,8 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                 response_time = time.time() - start_time
 
                 if intent == "NUMERIC":
+                    # Only show "Querying database..." for numeric/database queries
+                    yield "data: " + _json.dumps({"type": "querying"}) + "\n\n"
                     # For numeric questions, return immediate result (no streaming needed)
                     answer = result.get("answer", "I processed your numeric query.")
                     tokens_used = result.get("tokens_used", 0) or len(answer.split())

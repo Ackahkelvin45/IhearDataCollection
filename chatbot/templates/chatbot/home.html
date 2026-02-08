@@ -7,105 +7,96 @@
 <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
 
 <nav>
-  <!-- breadcrumb -->
-  <ol style="margin-bottom: 30px;" class="flex flex-wrap pt-1 mr-12 bg-transparent rounded-lg sm:mr-16">
-    <li class="text-sm leading-normal">
-      <a class="text-white opacity-50" href="javascript:;">home</a>
+  <ol style="margin-bottom: 30px; display: flex; flex-wrap: wrap; padding-top: 0.25rem; margin-right: 3rem; background: transparent; border-radius: 0.5rem;">
+    <li style="font-size: 0.875rem; line-height: 1.5;">
+      <a href="javascript:;" style="color: white; opacity: 0.5;">home</a>
     </li>
-    <li class="text-sm pl-2 capitalize leading-normal text-white before:float-left before:pr-2 before:text-white before:content-['/']" aria-current="page">Chatbot</li>
+    <li style="font-size: 0.875rem; padding-left: 0.5rem; text-transform: capitalize; line-height: 1.5; color: white;" aria-current="page">Chatbot</li>
   </ol>
 </nav>
 
-<div class="flex h-screen bg-gray-50">
+<div style="display: flex; height: 100vh; background-color: #f9fafb;">
     <!-- Sidebar -->
-    <div style="width: 330px;" class=" bg-white border-r border-gray-200 flex flex-col">
-        <!-- Header -->
-        <div class="p-4 border-b border-gray-200">
-            <div class="flex items-center justify-between mb-4">
-                <h6 class="text-lg  font-bold text-gray-800">Chat Sessions</h6>
-                <button id="newChatBtn" class="inline-flex items-center px-2 py-2 text-sm rounded-lg text-white bg-primary hover:opacity-90 shadow-sm text-sm">
-                    <i class="fa-regular fa-plus mr-2"></i>
+    <div style="width: 330px; background-color: white; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column;">
+        <div style="padding: 1rem; border-bottom: 1px solid #e5e7eb;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                <h6 style="font-size: 1.125rem; font-weight: 700; color: #1f2937;">Chat Sessions</h6>
+                <button id="newChatBtn" type="button" style="display: inline-flex; align-items: center; padding: 0.5rem; font-size: 0.875rem; border-radius: 0.5rem; color: white; background-color: #005450; box-shadow: 0 1px 2px rgba(0,0,0,0.05); border: none; cursor: pointer;">
+                    <i class="fa-regular fa-plus" style="margin-right: 0.5rem;"></i>
                     New Chat
                 </button>
             </div>
         </div>
 
-        <!-- Sessions List -->
-        <div id="sessionsList" class="flex-1 overflow-y-auto p-4">
-            <div class="text-center text-gray-500 py-8">
-                <i class="fa-regular fa-message text-4xl mb-2"></i>
-                <p>No sessions yet</p>
-                <p class="text-sm">Start a new conversation</p>
+        <div id="sessionsList" style="flex: 1; overflow-y: auto; padding: 1rem;">
+            <div style="text-align: center; color: #6b7280; padding: 2rem 0;">
+                <i class="fa-regular fa-message" style="font-size: 2.25rem; margin-bottom: 0.5rem; display: block;"></i>
+                <p style="margin: 0;">No sessions yet</p>
+                <p style="font-size: 0.875rem; margin: 0.25rem 0 0 0;">Start a new conversation</p>
             </div>
         </div>
 
-        <!-- Documents Section -->
-        <div class="border-t border-gray-200 p-4">
-            <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Documents</h3>
-            <form id="uploadForm" class="mb-3" enctype="multipart/form-data">
+        <div style="border-top: 1px solid #e5e7eb; padding: 1rem;">
+            <h3 style="font-size: 0.75rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Documents</h3>
+            <form id="uploadForm" style="margin-bottom: 0.75rem;" enctype="multipart/form-data">
                 {% csrf_token %}
-                <input type="file" id="fileInput" name="file" accept=".pdf,.docx,.txt,.md" class="hidden">
-                <button type="button" onclick="document.getElementById('fileInput').click()" class="w-full bg-green-600 hover:bg-green-700 text-white text-sm font-medium py-2 px-3 rounded transition">
-                    <svg class="inline w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <input type="file" id="fileInput" name="file" accept=".pdf,.docx,.txt,.md" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0;">
+                <button type="button" onclick="document.getElementById('fileInput').click()" style="width: 100%; background-color: #16a34a; color: white; font-size: 0.875rem; font-weight: 500; padding: 0.5rem 0.75rem; border-radius: 0.25rem; border: none; cursor: pointer;">
+                    <svg style="display: inline; width: 1rem; height: 1rem; margin-right: 0.25rem; vertical-align: middle;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                     </svg>
                     Upload Document
                 </button>
             </form>
-            <div id="documentsList" class="space-y-1 max-h-32 overflow-y-auto">
+            <div id="documentsList" style="max-height: 8rem; overflow-y: auto;">
                 <!-- Documents will be loaded here -->
             </div>
         </div>
     </div>
 
     <!-- Main Content Area -->
-    <div class="flex-1 flex flex-col">
-        <!-- Header -->
-        <div class="bg-white border-b border-gray-200 p-4">
-            <div class="text-center">
-                <h1 class="text-xl font-semibold text-gray-800">Welcome to AI Assistant</h1>
-                <p class="text-sm text-gray-500">Ask questions about your documents and project</p>
+    <div style="flex: 1; display: flex; flex-direction: column;">
+        <div style="background-color: white; border-bottom: 1px solid #e5e7eb; padding: 1rem;">
+            <div style="text-align: center;">
+                <h1 style="font-size: 1.25rem; font-weight: 600; color: #1f2937; margin: 0;">Welcome to AI Assistant</h1>
+                <p style="font-size: 0.875rem; color: #6b7280; margin: 0.25rem 0 0 0;">Ask questions about your documents and project</p>
             </div>
         </div>
 
-        <!-- Welcome Content -->
-        <div class="flex-1 flex flex-col items-center justify-center p-8">
-            <div class="text-center max-w-2xl">
-                <div class="mb-6">
-\                    <h2 class="text-3xl font-bold text-gray-800 mb-2">IHear Assistant</h2>
-                    <p class="text-gray-600 mb-8">ask questions to get you have about thr Ihear project.</p>
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem;">
+            <div style="text-align: center; max-width: 42rem;">
+                <div style="margin-bottom: 1.5rem;">
+                    <h2 style="font-size: 1.875rem; font-weight: 700; color: #1f2937; margin: 0 0 0.5rem 0;">IHear Assistant</h2>
+                    <p style="color: #4b5563; margin: 0 0 2rem 0;">ask questions to get you have about thr Ihear project.</p>
                 </div>
 
-                <!-- Suggestions -->
-                <div  style="gap: 10px;"  class="flex flex-wrap justify-center gap-3 mb-8">
-                    <button onclick="startChatWithSuggestion('Summarize the uploaded documents')" class="px-4 py-2 rounded-full bg-primary-light text-primary hover:bg-primary-hover border border-primary/10 shadow-sm transition">
+                <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 2rem;">
+                    <button type="button" onclick="startChatWithSuggestion('Summarize the uploaded documents')" style="padding: 0.5rem 1rem; border-radius: 9999px; background-color: rgba(0, 84, 80, 0.1); color: #005450; border: 1px solid rgba(0, 84, 80, 0.1); box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer;">
                         Summarize the uploaded documents
                     </button>
-                    <button onclick="startChatWithSuggestion('What are the main topics in my documents?')" class="px-4 py-2 rounded-full bg-primary-light text-primary hover:bg-primary-hover border border-primary/10 shadow-sm transition">
+                    <button type="button" onclick="startChatWithSuggestion('What are the main topics in my documents?')" style="padding: 0.5rem 1rem; border-radius: 9999px; background-color: rgba(0, 84, 80, 0.1); color: #005450; border: 1px solid rgba(0, 84, 80, 0.1); box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer;">
                         What are the main topics?
                     </button>
-                    <button onclick="startChatWithSuggestion('Find information about...')" class="px-4 py-2 rounded-full bg-primary-light text-primary hover:bg-primary-hover border border-primary/10 shadow-sm transition">
+                    <button type="button" onclick="startChatWithSuggestion('Find information about...')" style="padding: 0.5rem 1rem; border-radius: 9999px; background-color: rgba(0, 84, 80, 0.1); color: #005450; border: 1px solid rgba(0, 84, 80, 0.1); box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer;">
                         Find specific information
                     </button>
-                    <button onclick="startChatWithSuggestion('Compare documents')" class="px-4 py-2 rounded-full bg-primary-light text-primary hover:bg-primary-hover border border-primary/10 shadow-sm transition">
+                    <button type="button" onclick="startChatWithSuggestion('Compare documents')" style="padding: 0.5rem 1rem; border-radius: 9999px; background-color: rgba(0, 84, 80, 0.1); color: #005450; border: 1px solid rgba(0, 84, 80, 0.1); box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer;">
                         Compare documents
                     </button>
                 </div>
 
-                <!-- Input Form -->
-                <form id="homeForm" class="w-full max-w-lg " style="padding: 5px;">
-                    <div class="relative" style="position: relative;">
+                <form id="homeForm" style="width: 100%; max-width: 32rem; padding: 5px;">
+                    <div style="position: relative;">
                         <input
                             id="homeInput"
                             type="text"
-                            class="w-full bg-slate-50 border border-slate-200 rounded-full py-4 pl-4 pr-16 outline-none text-slate-700 focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
                             placeholder="Type your question..."
+                            style="width: 100%; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 9999px; padding: 1rem 1rem 1rem 4rem; outline: none; color: #334155; font-size: 1rem; box-sizing: border-box;"
                         />
                         <button
                             type="submit"
-                            class="absolute w-12 h-12 rounded-full bg-secondary text-white flex items-center justify-center shadow hover:opacity-90"
                             aria-label="Send"
-                            style="position: absolute; right: 0;   top: 50%; transform: translateY(-50%);margin-right:10px;"
+                            style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); margin-right: 10px; width: 3rem; height: 3rem; border-radius: 9999px; background-color: #00d553; color: white; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: none; cursor: pointer;"
                         >
                             <i class="fa-solid fa-paper-plane"></i>
                         </button>
@@ -118,24 +109,24 @@
 </div>
 
 <!-- Loading Overlay -->
-<div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
-    <div class="bg-white rounded-lg p-6 flex items-center space-x-3">
-        <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
-        <span class="text-gray-700">Loading...</span>
+<div id="loadingOverlay" style="position: fixed; inset: 0; background-color: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 50;">
+    <div style="background-color: white; border-radius: 0.5rem; padding: 1.5rem; display: flex; align-items: center; gap: 0.75rem; margin: 1rem;">
+        <div style="animation: spin 1s linear infinite; border-radius: 9999px; height: 1.5rem; width: 1.5rem; border: 2px solid #005450; border-top-color: transparent;"></div>
+        <span style="color: #374151;">Loading...</span>
     </div>
 </div>
 
 <!-- Error Toast -->
-<div id="errorToast" class="fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 hidden">
-    <div class="flex items-center space-x-2">
+<div id="errorToast" style="position: fixed; top: 1rem; right: 1rem; background-color: #ef4444; color: white; padding: 0.75rem 1.5rem; border-radius: 0.5rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); z-index: 50; display: none;">
+    <div style="display: flex; align-items: center; gap: 0.5rem;">
         <i class="fa-solid fa-exclamation-triangle"></i>
         <span id="errorMessage"></span>
     </div>
 </div>
 
 <!-- Success Toast -->
-<div id="successToast" class="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 hidden">
-    <div class="flex items-center space-x-2">
+<div id="successToast" style="position: fixed; top: 1rem; right: 1rem; background-color: #22c55e; color: white; padding: 0.75rem 1.5rem; border-radius: 0.5rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); z-index: 50; display: none;">
+    <div style="display: flex; align-items: center; gap: 0.5rem;">
         <i class="fa-solid fa-check"></i>
         <span id="successMessage"></span>
     </div>
@@ -216,29 +207,28 @@ class ChatbotHomePageManager {
 
         if (this.sessions.length === 0) {
             container.innerHTML = `
-                <div class="text-center text-gray-500 py-8">
-                    <i class="fa-regular fa-message text-4xl mb-2"></i>
-                    <p>No sessions yet</p>
-                    <p class="text-sm">Start a new conversation</p>
+                <div style="text-align: center; color: #6b7280; padding: 2rem 0;">
+                    <i class="fa-regular fa-message" style="font-size: 2.25rem; margin-bottom: 0.5rem; display: block;"></i>
+                    <p style="margin: 0;">No sessions yet</p>
+                    <p style="font-size: 0.875rem; margin: 0.25rem 0 0 0;">Start a new conversation</p>
                 </div>
             `;
             return;
         }
 
         container.innerHTML = this.sessions.map(session => `
-            <div class="session-item p-3 rounded-lg cursor-pointer transition-colors mb-2 hover:bg-gray-50"
+            <div class="session-item" style="padding: 0.75rem; border-radius: 0.5rem; cursor: pointer; margin-bottom: 0.5rem; transition: all 0.2s ease;"
                  data-session-id="${session.id}" onclick="loadSession(${session.id})">
-                <div class="flex items-start justify-between">
-                    <div class="flex-1 min-w-0">
-                        <h6 class="font-medium text-gray-800 truncate">${session.title.length > 25 ? session.title.substring(0, 20) + "..." : session.title || 'Untitled Session'}</h6>
-                        <p class="text-sm text-gray-500 mt-1">${session.message_count || 0} messages</p>
-                        <p class="text-xs text-gray-400">${this.formatDate(session.updated_at || session.created_at)}</p>
+                <div style="display: flex; align-items: flex-start; justify-content: space-between;">
+                    <div style="flex: 1; min-width: 0;">
+                        <h6 style="font-weight: 500; color: #1f2937; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0;">${session.title.length > 25 ? session.title.substring(0, 20) + "..." : session.title || 'Untitled Session'}</h6>
+                        <p style="font-size: 0.875rem; color: #6b7280; margin: 0.25rem 0 0 0;">${session.message_count || 0} messages</p>
+                        <p style="font-size: 0.75rem; color: #9ca3af; margin: 0.125rem 0 0 0;">${this.formatDate(session.updated_at || session.created_at)}</p>
                     </div>
-                    <div class="flex items-center space-x-1 ml-2">
-                        <button class="session-delete-btn p-1 text-gray-400 hover:text-red-500"
+                    <div style="display: flex; align-items: center; gap: 0.25rem; margin-left: 0.5rem;">
+                        <button type="button" style="padding: 0.25rem; color: #9ca3af; background: none; border: none; cursor: pointer;"
                                 onclick="event.stopPropagation(); deleteSession(${session.id})">
-                                                        <i class="fa-regular fa-trash text-xs"></i>
-
+                            <i class="fa-regular fa-trash" style="font-size: 0.75rem;"></i>
                         </button>
                     </div>
                 </div>
@@ -265,19 +255,19 @@ class ChatbotHomePageManager {
         const container = document.getElementById('documentsList');
 
         if (documents.length === 0) {
-            container.innerHTML = '<p class="text-xs text-gray-500 italic">No documents uploaded</p>';
+            container.innerHTML = '<p style="font-size: 0.75rem; color: #6b7280; font-style: italic; margin: 0;">No documents uploaded</p>';
             return;
         }
 
         container.innerHTML = documents.map(doc => `
-            <div class="document-item flex items-center justify-between py-2 px-3 bg-gray-50 rounded text-sm">
-                <div class="flex-1 min-w-0">
-                    <p class="font-medium text-gray-800 truncate">${doc.name}</p>
-                    <p class="text-xs text-gray-500">${this.formatFileSize(doc.file_size)} • ${this.formatDate(doc.created_at)}</p>
+            <div class="document-item" style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0.75rem; background-color: #f9fafb; border-radius: 0.25rem; font-size: 0.875rem; margin-bottom: 0.25rem; transition: background-color 0.2s ease;">
+                <div style="flex: 1; min-width: 0;">
+                    <p style="font-weight: 500; color: #1f2937; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0;">${doc.name}</p>
+                    <p style="font-size: 0.75rem; color: #6b7280; margin: 0.125rem 0 0 0;">${this.formatFileSize(doc.file_size)} • ${this.formatDate(doc.created_at)}</p>
                 </div>
-                <button class="document-delete-btn p-1 text-gray-400 hover:text-red-500 ml-2"
+                <button type="button" style="padding: 0.25rem; color: #9ca3af; background: none; border: none; cursor: pointer; margin-left: 0.5rem;"
                         onclick="deleteDocument(${doc.id})">
-                    <i class="fa-regular fa-trash text-xs"></i>
+                    <i class="fa-regular fa-trash" style="font-size: 0.75rem;"></i>
                 </button>
             </div>
         `).join('');
@@ -415,21 +405,22 @@ class ChatbotHomePageManager {
     }
 
     showLoading() {
-        document.getElementById('loadingOverlay').classList.remove('hidden');
+        const el = document.getElementById('loadingOverlay');
+        el.style.display = 'flex';
     }
 
     hideLoading() {
-        document.getElementById('loadingOverlay').classList.add('hidden');
+        document.getElementById('loadingOverlay').style.display = 'none';
     }
 
     showErrorToast(message) {
         const toast = document.getElementById('errorToast');
         const messageEl = document.getElementById('errorMessage');
         messageEl.textContent = message;
-        toast.classList.remove('hidden');
+        toast.style.display = 'block';
 
         setTimeout(() => {
-            toast.classList.add('hidden');
+            toast.style.display = 'none';
         }, 5000);
     }
 
@@ -437,10 +428,10 @@ class ChatbotHomePageManager {
         const toast = document.getElementById('successToast');
         const messageEl = document.getElementById('successMessage');
         messageEl.textContent = message;
-        toast.classList.remove('hidden');
+        toast.style.display = 'block';
 
         setTimeout(() => {
-            toast.classList.add('hidden');
+            toast.style.display = 'none';
         }, 3000);
     }
 }
@@ -495,51 +486,14 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 
 <style>
-/* Custom styles for the chatbot home page */
-.session-item {
-    transition: all 0.2s ease;
-}
-
-.session-item:hover {
-    transform: translateX(2px);
-}
-
-.document-item {
-    transition: all 0.2s ease;
-}
-
-.document-item:hover {
-    background-color: #f9fafb;
-}
-
-/* Scrollbar styling */
-#sessionsList::-webkit-scrollbar,
-#documentsList::-webkit-scrollbar {
-    width: 6px;
-}
-
-#sessionsList::-webkit-scrollbar-track,
-#documentsList::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 3px;
-}
-
-#sessionsList::-webkit-scrollbar-thumb,
-#documentsList::-webkit-scrollbar-thumb {
-    background: #c1c1c1;
-    border-radius: 3px;
-}
-
-#sessionsList::-webkit-scrollbar-thumb:hover,
-#documentsList::-webkit-scrollbar-thumb:hover {
-    background: #a8a8a8;
-}
-
-/* Animation */
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
+/* Only rules that cannot be expressed inline: hover, scrollbar, keyframes */
+.session-item:hover { background-color: #f9fafb; transform: translateX(2px); }
+.document-item:hover { background-color: #f3f4f6; }
+#sessionsList::-webkit-scrollbar, #documentsList::-webkit-scrollbar { width: 6px; }
+#sessionsList::-webkit-scrollbar-track, #documentsList::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 3px; }
+#sessionsList::-webkit-scrollbar-thumb, #documentsList::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 3px; }
+#sessionsList::-webkit-scrollbar-thumb:hover, #documentsList::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
 
 {% endblock %}

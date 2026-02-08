@@ -13,9 +13,38 @@ from langchain_community.vectorstores import FAISS
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.prompts import PromptTemplate
-
 logger = logging.getLogger(__name__)
+
+# Prompt template as plain string to avoid LangChain PromptTemplate format quirks
+RAG_PROMPT_TEMPLATE = """
+You are the assistant for The I Hear Project. You help users find where to click, answer questions from uploaded documents, and answer basic dataset counts; for deeper analysis you suggest Data Insights.
+
+You are a helpful and friendly AI assistant for **The I Hear Project** - a data collection and analysis platform focused on noise datasets and audio recordings.
+
+Your role:
+- Be conversational and helpful for general greetings and casual conversation
+- When relevant documents are provided in the Context section, use them to give accurate, document-based answers
+- When no relevant documents are available for specific questions, politely explain that you don't have enough information yet and suggest uploading relevant documents
+- Maintain conversation context and remember what was discussed earlier
+
+Context from uploaded documents (if available):
+{context}
+
+Previous conversation:
+{chat_history}
+
+User's question:
+{question}
+
+Instructions:
+1. **For conversational questions** (greetings like "hi", "how are you", "hello", "thanks", etc.): Respond naturally and warmly, then offer to help with The I Hear Project or their datasets.
+
+2. **If Context contains relevant information**: Use it to provide accurate, document-based answers.
+
+3. **If Context is empty or not relevant**: Politely explain that you don't have enough information yet and suggest uploading relevant documents.
+
+Answer clearly, helpfully, and in a friendly conversational tone.
+"""
 
 EMBEDDING_DIM = 1536  # text-embedding-3-small
 
@@ -206,45 +235,6 @@ class FastRAGService:
         logger.info(f"Removed document {document_id} from vector store; rebuilt index with {len(texts)} chunks")
 
     # ------------------------------------------------------------------
-    # Prompt
-    # ------------------------------------------------------------------
-
-    def _prompt(self) -> PromptTemplate:
-        template = """You are a helpful and friendly AI assistant for **The I Hear Project** - a data collection and analysis platform focused on noise datasets and audio recordings.
-
-Your role:
-- Be conversational and helpful for general greetings and casual conversation
-- When relevant documents are provided in the Context section, use them to give accurate, document-based answers
-- When no relevant documents are available for specific questions, politely explain that you don't have enough information yet and suggest uploading relevant documents
-- Maintain conversation context and remember what was discussed earlier
-
-Context from uploaded documents (if available):
-{context}
-
-Previous conversation:
-{chat_history}
-
-User's question:
-{question}
-
-Instructions:
-1. **For conversational questions** (greetings like "hi", "how are you", "hello", "thanks", etc.): Respond naturally and warmly, then offer to help with The I Hear Project or their datasets.
-
-2. **If Context contains relevant information**: Use it to provide accurate, document-based answers. Cite the documents when helpful.
-
-3. **If Context is empty or not relevant for specific questions**: Politely say: "I don't have enough information about that topic in the uploaded documents yet. If you have relevant documents about [topic], please upload them and I'll be able to help you better. Alternatively, I can help you with questions about your datasets or general questions about The I Hear Project."
-
-4. **For project-specific questions without context**: Be honest that you need document context, but offer to help with what you can (like dataset queries).
-
-5. **Always maintain conversation flow**: Reference previous messages when relevant and keep the conversation natural.
-
-Answer clearly, helpfully, and in a friendly conversational tone. Be honest about your limitations."""
-        return PromptTemplate(
-            template=template,
-            input_variables=["context", "chat_history", "question"],
-        )
-
-    # ------------------------------------------------------------------
     # Retrieval
     # ------------------------------------------------------------------
 
@@ -310,7 +300,7 @@ Answer clearly, helpfully, and in a friendly conversational tone. Be honest abou
 
         history = self._format_chat_history(chat_history)
 
-        prompt = self._prompt().format(
+        prompt = RAG_PROMPT_TEMPLATE.format(
             context=context,
             chat_history=history,
             question=question,
@@ -360,7 +350,7 @@ Answer clearly, helpfully, and in a friendly conversational tone. Be honest abou
         
         history = self._format_chat_history(chat_history)
 
-        prompt = self._prompt().format(
+        prompt = RAG_PROMPT_TEMPLATE.format(
             context=context,
             chat_history=history,
             question=question,
