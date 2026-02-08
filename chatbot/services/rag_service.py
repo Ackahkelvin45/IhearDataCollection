@@ -48,6 +48,10 @@ Answer clearly, helpfully, and in a friendly conversational tone.
 
 EMBEDDING_DIM = 1536  # text-embedding-3-small
 
+# OpenAI embeddings API allows max 300k tokens per request. Batch to stay safely under.
+# ~70 tokens/chunk typical; 200 chunks ≈ 14k tokens per batch.
+EMBEDDING_BATCH_SIZE = 200
+
 
 class FastRAGService:
     """High-performance RAG service using FAISS (core implementation)."""
@@ -146,7 +150,7 @@ class FastRAGService:
             docstore=InMemoryDocstore(),
             index_to_docstore_id={},
         )
-        self.vectorstore.add_texts(texts, metadatas)
+        self._add_texts_batched(texts, metadatas)
         self.save_vectorstore()
         self._vectorstore_mtime = self._get_vectorstore_mtime()
         logger.info(
@@ -181,8 +185,23 @@ class FastRAGService:
     # Documents
     # ------------------------------------------------------------------
 
+    def _add_texts_batched(
+        self, texts: List[str], metadatas: List[Dict[str, Any]]
+    ) -> None:
+        """Add texts in batches to avoid OpenAI 300k-token-per-request limit."""
+        for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+            batch_texts = texts[i : i + EMBEDDING_BATCH_SIZE]
+            batch_metadatas = metadatas[i : i + EMBEDDING_BATCH_SIZE]
+            self.vectorstore.add_texts(batch_texts, batch_metadatas)
+            logger.debug(
+                "Added batch %d–%d (%d chunks) to vector store",
+                i,
+                i + len(batch_texts),
+                len(batch_texts),
+            )
+
     def add_documents(self, texts: List[str], metadatas: List[Dict[str, Any]]):
-        self.vectorstore.add_texts(texts, metadatas)
+        self._add_texts_batched(texts, metadatas)
         self.save_vectorstore()
 
     def delete_document(self, document_id: str) -> None:
@@ -229,7 +248,7 @@ class FastRAGService:
             docstore=InMemoryDocstore(),
             index_to_docstore_id={},
         )
-        self.vectorstore.add_texts(texts, metadatas)
+        self._add_texts_batched(texts, metadatas)
         self.save_vectorstore()
         self._vectorstore_mtime = self._get_vectorstore_mtime()
         logger.info(f"Removed document {document_id} from vector store; rebuilt index with {len(texts)} chunks")

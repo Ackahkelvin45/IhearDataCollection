@@ -183,12 +183,14 @@ def process_document_task(self, document_id: str):
         # ===============================
         # ADD TO VECTOR STORE FOR RAG
         # ===============================
+        vectors_added = False
         try:
             from .services import RAGService
             
             rag_service = RAGService()
             logger.info(f"Adding {len(chunk_texts)} chunks to vector store for document {document_id}")
             rag_service.add_documents(chunk_texts, chunk_metadatas)
+            vectors_added = True
             logger.info(f"Successfully added document {document_id} to vector store")
             
             # Update vector_ids for chunks (optional, for tracking)
@@ -201,6 +203,7 @@ def process_document_task(self, document_id: str):
         except Exception as e:
             logger.error(f"Failed to add document {document_id} to vector store: {e}")
             # Don't fail the whole task - document is still processed and chunks are saved
+            # Return reflects partial success (chunks saved but not searchable via RAG)
 
         # ===============================
         # FINALIZE DOCUMENT
@@ -217,12 +220,17 @@ def process_document_task(self, document_id: str):
             ]
         )
 
-        logger.info(f"Successfully processed document {document_id}")
+        logger.info(
+            "Successfully processed document %s (vectors_added=%s)",
+            document_id,
+            vectors_added,
+        )
 
         return {
             "success": True,
             "document_id": str(document_id),
             "chunks_created": len(chunk_objects),
+            "vectors_added": vectors_added,
         }
 
     except Document.DoesNotExist:
