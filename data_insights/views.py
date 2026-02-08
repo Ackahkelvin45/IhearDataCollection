@@ -69,7 +69,17 @@ def home(request):
         "Which data has the highest decibel level?",
         "Which community has the lowest decibel level?",
     ]
-    return render(request, "data_insights/home.html", {"suggestions": suggestions})
+    ml_suggestions = [
+        "Show label distribution by category",
+        "How many datasets have audio features?",
+        "What is the feature coverage percentage?",
+        "Recommend a train/val/test split size",
+    ]
+    return render(
+        request,
+        "data_insights/home.html",
+        {"suggestions": suggestions, "ml_suggestions": ml_suggestions},
+    )
 
 
 def chat(request):
@@ -137,6 +147,11 @@ class ChatSessionView(ModelViewSet):
         validated_data = cast(Dict[str, Any], create_serializer.validated_data)
         user_input = validated_data["user_input"]
         ai_answer = validated_data["ai_answer"]
+        mode = validated_data.get("mode")
+
+        if mode and session.mode != mode:
+            session.mode = mode
+            session.save(update_fields=["mode"])
 
         with transaction.atomic():
             # Generate title from first message if session doesn't have a title
@@ -168,7 +183,7 @@ class ChatSessionView(ModelViewSet):
             message.mark_processing()
             start_time = time.time()
 
-            agent = self._create_ai_agent(ai_answer)
+            agent = self._create_ai_agent(ai_answer, mode=session.mode)
 
             llm_response = ""
             tool_call = None
@@ -188,8 +203,15 @@ class ChatSessionView(ModelViewSet):
             def stream():
                 nonlocal llm_response, tool_call
                 visualization_data = None
+                thinking_sent = False
+                reasoning_sent = False
 
                 try:
+                    yield self._format_stream_message(
+                        "thinking", {"message": "Thinking..."}
+                    )
+                    thinking_sent = True
+
                     response_stream = agent.process_message(
                         user_input=message.user_input,
                         user_id=session.user.id,
@@ -236,6 +258,14 @@ class ChatSessionView(ModelViewSet):
 
                                 tool_call = json.loads(content)
 
+                                try:
+                                    yield self._format_stream_message(
+                                        "querying_db",
+                                        {"message": "Tool results received."},
+                                    )
+                                except Exception:
+                                    pass
+
                                 # Check if this is a visualization analysis tool response
                                 if (
                                     isinstance(tool_call, dict)
@@ -259,6 +289,37 @@ class ChatSessionView(ModelViewSet):
                                         yield self._format_stream_message(
                                             "tool_response", tool_call
                                         )
+                                        # Stream a visualization as soon as tool data is available
+                                        if visualization_data is None and isinstance(
+                                            tool_call, dict
+                                        ):
+                                            try:
+                                                viz_tool = get_tool_by_name(
+                                                    "visualization_analysis"
+                                                )
+                                                if viz_tool is not None:
+                                                    data_summary = None
+                                                    if tool_call.get("analysis_type"):
+                                                        data_summary = f"tool:{tool_call.get('analysis_type')}"
+                                                    elif tool_call.get("total_count") is not None:
+                                                        data_summary = f"total_count:{tool_call.get('total_count')}"
+
+                                                    auto_viz = viz_tool._run(
+                                                        query=message.user_input,
+                                                        data_summary=data_summary,
+                                                    )
+                                                    if (
+                                                        isinstance(auto_viz, dict)
+                                                        and auto_viz.get("recommendation")
+                                                    ):
+                                                        visualization_data = auto_viz
+                                                        yield self._format_stream_message(
+                                                            "visualization", auto_viz
+                                                        )
+                                            except Exception as auto_viz_e:
+                                                logger.warning(
+                                                    f"Streaming visualization failed: {auto_viz_e}"
+                                                )
                                     except Exception as tool_e:
                                         logger.warning(
                                             f"Error formatting tool response: {tool_e}"
@@ -292,7 +353,15 @@ class ChatSessionView(ModelViewSet):
                         elif isinstance(msg, AIMessageChunk):
                             if msg.tool_calls:
                                 try:
-                                    yield self._format_stream_message("tool_call", None)
+                                    tool_names = []
+                                    for tc in msg.tool_calls or []:
+                                        name = tc.get("name") if isinstance(tc, dict) else None
+                                        if name:
+                                            tool_names.append(name)
+                                    yield self._format_stream_message(
+                                        "querying_db",
+                                        {"tools": tool_names} if tool_names else None,
+                                    )
                                 except Exception as tc_e:
                                     logger.warning(
                                         f"Error formatting tool_call message: {tc_e}"
@@ -300,6 +369,15 @@ class ChatSessionView(ModelViewSet):
                             elif msg.content:
                                 try:
                                     content = str(msg.content)
+                                    if not reasoning_sent:
+                                        try:
+                                            yield self._format_stream_message(
+                                                "reasoning",
+                                                {"message": "Summarizing results..."},
+                                            )
+                                            reasoning_sent = True
+                                        except Exception:
+                                            pass
                                     llm_response += content
                                     yield self._format_stream_message("llm", content)
                                 except Exception as llm_e:
@@ -465,15 +543,27 @@ class ChatSessionView(ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    def _create_ai_agent(self, ai_answer: bool = False):
+    def _create_ai_agent(self, ai_answer: bool = False, mode: str = "analysis"):
         llm = ChatOpenAI(
             model=AGENT_CONFIG.get("MODEL", "o4-mini"),
             api_key=os.getenv("OPENAI_API_KEY"),
         )
 
+        system_prompt = SYSTEM_TEMPLATE
+        try:
+            from data_insights.workflows.prompt import ML_SYSTEM_TEMPLATE
+            if mode == "ml":
+                system_prompt = ML_SYSTEM_TEMPLATE
+        except Exception:
+            pass
+
+        from data_insights.workflows.tools import get_agent_tools
+        tools = get_agent_tools(mode=mode)
+
         agent = create_data_insights_agent(
             llm=llm,
-            system_prompt=SYSTEM_TEMPLATE,
+            system_prompt=system_prompt,
+            tools=tools,
             max_retries=AGENT_CONFIG.get("MAX_RETRIES", 3),
             enable_caching=AGENT_CONFIG.get("ENABLE_CACHING", True),
         )

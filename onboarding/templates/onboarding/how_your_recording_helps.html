@@ -39,7 +39,6 @@
 
     <style>
       /* Custom colors */
-
     .bg-primary { background-color: #005450; }
       .bg-secondary { background-color: #00d553; }
       .text-primary { color: #005450; }
@@ -49,6 +48,28 @@
       .focus\:border-primary:focus { border-color: #005450; }
       .focus\:border-secondary:focus { border-color: #00d553; }
       .bg-gradient-primary { background: linear-gradient(135deg, #005450 0%, #00d553 100%); }
+
+      /* Page transition animations */
+      .onboarding-page-content {
+        opacity: 0;
+        animation: onboardingEnter 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      }
+      body.onboarding-exit .onboarding-page-content {
+        animation: none;
+        opacity: 0;
+        transform: translateY(-12px);
+        transition: opacity 0.28s ease-out, transform 0.28s ease-out;
+      }
+      @keyframes onboardingEnter {
+        from {
+          opacity: 0;
+          transform: translateY(28px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
     </style>
   </head>
 
@@ -69,7 +90,7 @@
     <main class="mt-0 transition-all duration-200 ease-in-out">
       <section>
         <div class="relative flex items-center min-h-screen p-0 overflow-hidden bg-center bg-cover">
-          <div  style="width: 100%; padding-left: 50px; padding-right: 50px;" class=" z-1">
+          <div style="width: 100%; padding-left: 50px; padding-right: 50px;" class="z-1 onboarding-page-content">
 
             <div class="flex w-full flex-row items-center justify-between">
 
@@ -86,11 +107,11 @@
                         </ol>
 
                     </div>
-                    <a href="{% url 'onboarding:terms_and_privacy' %}"  class="inline-block px-16 py-3.5 mt-6 mb-0 font-bold leading-normal text-center text-white align-middle transition-all bg-primary border-0 rounded-lg cursor-pointer hover:-translate-y-px active:opacity-85 hover:shadow-xs text-sm ease-in tracking-tight-rem shadow-md bg-150 bg-x-25 hover:bg-secondary">Next <i class="fa-solid fa-arrow-right"></i></a>
+                    <a href="{% url 'onboarding:terms_and_privacy' %}" class="onboarding-nav-link inline-block px-16 py-3.5 mt-6 mb-0 font-bold leading-normal text-center text-white align-middle transition-all bg-primary border-0 rounded-lg cursor-pointer hover:-translate-y-px active:opacity-85 hover:shadow-xs text-sm ease-in tracking-tight-rem shadow-md bg-150 bg-x-25 hover:bg-secondary">Next <i class="fa-solid fa-arrow-right"></i></a>
 
                     <div class="flex justify-end text-sm gap-2 mt-6 w-full" >
 
-                      <a href="{% url 'onboarding:homepage' %}" class="text-primary ml-2 hover:underline"><i class="fa-solid fa-arrow-left"></i>Back</a>
+                      <a href="{% url 'onboarding:homepage' %}" class="onboarding-nav-link text-primary ml-2 hover:underline"><i class="fa-solid fa-arrow-left"></i>Back</a>
 
                     </div>
                 </div>
@@ -111,4 +132,16 @@
   <script src=" {% static 'assets/js/plugins/perfect-scrollbar.min.js' %} " async></script>
   <!-- main script file  -->
   <script src="{% static 'assets/js/argon-dashboard-tailwind.js' %}" async></script>
+  <script>
+    document.querySelectorAll('.onboarding-nav-link').forEach(function(a) {
+      a.addEventListener('click', function(e) {
+        if (this.getAttribute('href') && this.getAttribute('href').startsWith('/')) {
+          e.preventDefault();
+          document.body.classList.add('onboarding-exit');
+          var href = this.getAttribute('href');
+          setTimeout(function() { window.location.href = href; }, 280);
+        }
+      });
+    });
+  </script>
 </html>

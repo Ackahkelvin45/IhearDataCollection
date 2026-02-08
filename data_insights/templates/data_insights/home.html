@@ -21,8 +21,8 @@
         <!-- Header -->
         <div class="p-4 border-b border-gray-200">
             <div class="flex items-center justify-between mb-4">
-                <h6 class="text-xl font-semibold text-gray-800">Chat Sessions</h6>
-                <button id="newChatBtn" class="inline-flex items-center px-2 py-2 text-sm rounded-lg text-white bg-primary hover:opacity-90 shadow-sm text-sm">
+                <p class=" font-semibold text-gray-800">Chat Sessions</p>
+                <button id="newChatBtn" class="inline-flex items-center px-2 py-2 text-xs rounded-lg text-white bg-primary hover:opacity-90 shadow-sm ">
                     <i class="fa-regular fa-plus mr-2"></i>
                     New Chat
                 </button>
@@ -44,8 +44,8 @@
         <!-- Header -->
         <div class="bg-white border-b border-gray-200 p-4">
             <div class="text-center">
-                <h1 class="text-xl font-semibold text-gray-800">Welcome to Data Insights!</h1>
-                <p class="text-sm text-gray-500">Ask me anything about your audio data</p>
+                <h1 id="insightsTitle" class="text-xl font-semibold text-gray-800">Welcome to Data Insights!</h1>
+                <p id="insightsSubtitle" class="text-sm text-gray-500">Ask me anything about your audio data</p>
             </div>
         </div>
 
@@ -54,18 +54,20 @@
             <div class="text-center max-w-2xl">
                 <div class="mb-6">
                     <i class="fa-solid fa-chart-line text-6xl text-primary mb-4"></i>
-                    <h2 class="text-3xl font-bold text-gray-800 mb-2">Audio Data Insights</h2>
-                    <p class="text-gray-600 mb-8">Ask me anything about your audio data or try one of the suggestions below.</p>
+                    <h2 id="insightsModeTitle" class="text-3xl font-bold text-gray-800 mb-2">Audio Data Insights</h2>
+                    <p id="insightsModeDesc" class="text-gray-600 mb-6">Ask me anything about your audio data or try one of the suggestions below.</p>
+                    <div class="flex items-center justify-center gap-2">
+                        <button id="modeAnalysisBtn" class="px-4 py-2 rounded-full bg-primary text-white text-sm shadow-sm">
+                            Data Analysis
+                        </button>
+                        <button id="modeMlBtn" class="px-4 py-2 rounded-full bg-gray-100 text-gray-700 text-sm border border-gray-200">
+                            Machine Learning
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Suggestions -->
-                <div class="flex flex-wrap justify-center gap-3 mb-8">
-                    {% for s in suggestions %}
-                    <button onclick="startChatWithSuggestion('{{ s|escapejs }}')" class="px-4 py-2 rounded-full bg-primary-light text-primary hover:bg-primary-hover border border-primary/10 shadow-sm transition">
-                        {{ s }}
-                    </button>
-                    {% endfor %}
-                </div>
+                <div id="suggestionsContainer" class="flex flex-wrap justify-center gap-3 mb-8"></div>
 
                 <!-- Input Form -->
                 <form id="homeForm" class="w-full max-w-lg mx-auto">
@@ -115,7 +117,13 @@
     </div>
 </div>
 
+{{ suggestions|json_script:"data-suggestions" }}
+{{ ml_suggestions|json_script:"ml-suggestions" }}
+
 <script>
+const dataSuggestions = JSON.parse(document.getElementById('data-suggestions').textContent);
+const mlSuggestions = JSON.parse(document.getElementById('ml-suggestions').textContent);
+
 // Home Page Session Management
 class HomePageManager {
     constructor() {
@@ -126,7 +134,9 @@ class HomePageManager {
         };
         this.sessions = [];
 
+        this.currentMode = sessionStorage.getItem('insightsMode') || 'analysis';
         this.initializeEventListeners();
+        this.updateModeUI();
         this.loadSessions();
     }
 
@@ -136,6 +146,11 @@ class HomePageManager {
     }
 
     initializeEventListeners() {
+        const analysisBtn = document.getElementById('modeAnalysisBtn');
+        const mlBtn = document.getElementById('modeMlBtn');
+        analysisBtn.addEventListener('click', () => this.setMode('analysis'));
+        mlBtn.addEventListener('click', () => this.setMode('ml'));
+
         // New chat button
         document.getElementById('newChatBtn').addEventListener('click', () => {
             this.createNewSession();
@@ -148,9 +163,61 @@ class HomePageManager {
             const message = input.value.trim();
 
             if (message) {
+                sessionStorage.setItem('insightsMode', this.currentMode);
                 sessionStorage.setItem('initialMessage', message);
                 window.location.href = "{% url 'insights:chat' %}";
             }
+        });
+    }
+
+    setMode(mode) {
+        this.currentMode = mode;
+        sessionStorage.setItem('insightsMode', mode);
+        this.updateModeUI();
+    }
+
+    updateModeUI() {
+        const isMl = this.currentMode === 'ml';
+        const analysisBtn = document.getElementById('modeAnalysisBtn');
+        const mlBtn = document.getElementById('modeMlBtn');
+        const title = document.getElementById('insightsTitle');
+        const subtitle = document.getElementById('insightsSubtitle');
+        const modeTitle = document.getElementById('insightsModeTitle');
+        const modeDesc = document.getElementById('insightsModeDesc');
+
+        if (isMl) {
+            analysisBtn.className = "px-4 py-2 rounded-full bg-gray-100 text-gray-700 text-sm border border-gray-200";
+            mlBtn.className = "px-4 py-2 rounded-full bg-primary text-white text-sm shadow-sm";
+            title.textContent = "Welcome to ML Insights!";
+            subtitle.textContent = "Ask me about ML readiness, labels, and features";
+            modeTitle.textContent = "Machine Learning Insights";
+            modeDesc.textContent = "Ask ML-focused questions about labels, feature coverage, and training readiness.";
+        } else {
+            analysisBtn.className = "px-4 py-2 rounded-full bg-primary text-white text-sm shadow-sm";
+            mlBtn.className = "px-4 py-2 rounded-full bg-gray-100 text-gray-700 text-sm border border-gray-200";
+            title.textContent = "Welcome to Data Insights!";
+            subtitle.textContent = "Ask me anything about your audio data";
+            modeTitle.textContent = "Audio Data Insights";
+            modeDesc.textContent = "Ask me anything about your audio data or try one of the suggestions below.";
+        }
+
+        this.renderSuggestions(isMl ? mlSuggestions : dataSuggestions);
+    }
+
+    renderSuggestions(list) {
+        const container = document.getElementById('suggestionsContainer');
+        container.innerHTML = '';
+        list.forEach(s => {
+            const btn = document.createElement('button');
+            btn.className = "px-4 py-2 rounded-full bg-primary-light text-primary hover:bg-primary-hover border border-primary/10 shadow-sm transition";
+            btn.textContent = s;
+            btn.style ="padding: 5px 10px; border-radius: 10px; border: 1px solid #e0e0e0; cursor: pointer;";
+            btn.addEventListener('click', () => {
+                sessionStorage.setItem('insightsMode', this.currentMode);
+                sessionStorage.setItem('initialMessage', s);
+                window.location.href = "{% url 'insights:chat' %}";
+            });
+            container.appendChild(btn);
         });
     }
 
@@ -222,7 +289,7 @@ class HomePageManager {
             const response = await fetch(`${this.apiBaseUrl}/insights/sessions/`, {
                 method: 'POST',
                 headers: this.headers,
-                body: JSON.stringify({ title: null })
+                body: JSON.stringify({ title: null, mode: this.currentMode })
             });
 
             if (response.ok) {

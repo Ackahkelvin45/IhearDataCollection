@@ -177,7 +177,7 @@
                   <a href="{% url 'data:datasetlist'%}"
                      class="dropdown-item block px-4 py-2 text-sm text-slate-700 dark:text-white transition-colors">
                     <i class="fas fa-volume-up mr-2 text-xs text-secondary"></i>
-                    Noise {{request.user.user_type}}
+                    Noise 
                   </a>
                 </li>
                 <li>
@@ -209,7 +209,7 @@
           </div>
         </li>
 
-        {% if request.user.user_type == "researcher" and request.user.is_admin %}
+        {% if request.user.user_type == "researcher" or request.user.is_superuser %}
 
             <li class="mt-0.5 w-full">
           <a href="{% url 'reports:report' %}"
@@ -229,7 +229,7 @@
 
             <!-- Insights link -->
 
-            {% if request.user.user_type == "researcher" and request.user.is_admin %}
+            {% if request.user.user_type == "researcher" or request.user.is_superuser %}
             <li class="mt-0.5 w-full">
               <a href="{% url 'insights:home' %}"
                  class="py-2.7 text-sm ease-nav-brand my-0 mx-2 flex items-center whitespace-nowrap px-4 transition-colors hover-primary
@@ -264,7 +264,7 @@
             </li>
 
         <!-- Export link -->
-        {% if user.user_type == "researcher" and user.is_admin %}
+        {% if user.user_type == "researcher"  or request.user.is_superuser %}
         <li class="mt-0.5 w-full">
           <a href="{% url 'export:export_with_audio' %}"
              class="py-2.7 text-sm ease-nav-brand my-0 mx-2 flex items-center whitespace-nowrap px-4 transition-colors hover-primary
@@ -284,7 +284,7 @@
 
 
         <!-- Approval link -->
-        {% if user.user_type == "researcher" and user.is_admin %}
+        {% if user.user_type == "researcher"  or request.user.is_superuser %}
          <li class="mt-0.5 w-full">
            <a href="/approval/"
              class="py-2.7 text-sm ease-nav-brand my-0 mx-2 flex items-center whitespace-nowrap px-4 transition-colors hover-primary
@@ -436,8 +436,8 @@
       <!-- end cards -->
     </main>
 
-    <!-- AI Chatbot Widget -->
-    {% if user.is_authenticated %}
+    <!-- AI Chatbot Widget (hidden on /chatbot page - full page chat is shown there) -->
+    {% if user.is_authenticated and request.path != '/chatbot/' and request.path != '/chatbot' %}
       {% include 'chatbot/widget.html' %}
     {% endif %}
 

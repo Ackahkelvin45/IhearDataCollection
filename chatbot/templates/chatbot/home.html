@@ -15,7 +15,7 @@
   </ol>
 </nav>
 
-<div style="display: flex; height: calc(100vh - 120px); background-color: #f9fafb;">
+<div style="display: flex; height: calc(100vh - 120px); background-color: #f9fafb; border-radius: 10px; " class="rounded-2xl shadow-xl">
     <!-- Sidebar -->
     <div style="width: 330px; background-color: white; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column;">
         <div style="padding: 1rem; border-bottom: 1px solid #e5e7eb;">
@@ -59,11 +59,11 @@
             <div id="widgetChatMessages" class="chat-widget-messages">
                 <div class="welcome-message">
                     <h4 class="welcome-title">Welcome!</h4>
-                    <p class="welcome-text">I'm your AI assistant. Upload documents and ask me questions about your project.</p>
-                    <div class="welcome-suggestions">
-                        <button class="suggestion-btn" data-question="How do I upload audio files?">How do I upload audio files?</button>
-                        <button class="suggestion-btn" data-question="What features are available?">What features are available?</button>
-                        <button class="suggestion-btn" data-question="How does data export work?">How does data export work?</button>
+                    <p class="welcome-text">I'm your AI assistant. Ask me questions about your project.</p>
+                    <div class="welcome-suggestions " style="display: flex; flex-wrap: wrap; gap: 10px; flex-direction: row; justify-content: center; align-items: center;">
+                        <button class="suggestion-btn  px-4 py-2 rounded-full bg-primary-light text-primary hover:bg-primary-hover border border-primary/10 shadow-sm transition "  data-question="How do I upload audio files?" style="padding: 5px 10px; border-radius: 10px;  border: 1px solid #e0e0e0; cursor: pointer;">How do I upload audio files?</button>
+                        <button class="suggestion-btn bg-primary-light px-4 py-2 rounded-full bg-primary-light text-primary hover:bg-primary-hover border border-primary/10 shadow-sm transition  " data-question="What features are available?" style="padding: 5px 10px; border-radius: 10px; border: 1px solid #e0e0e0; cursor: pointer;">What features are available?</button>
+                        <button class="suggestion-btn bg-primary-light px-4 py-2 rounded-full bg-primary-light text-primary hover:bg-primary-hover border border-primary/10 shadow-sm transition  " data-question="How does data export work?" style="padding: 5px 10px; border-radius: 10px; border: 1px solid #e0e0e0; cursor: pointer;">How does data export work?</button>
                     </div>
                 </div>
             </div>

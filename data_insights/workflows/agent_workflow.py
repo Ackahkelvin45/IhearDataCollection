@@ -22,7 +22,6 @@ from data_insights.models import QueryCacheModel
 
 
 class AgentState(Dict):
-    """State for the CRM Agent workflow"""
 
     messages: Annotated[List[AnyMessage], add]
     user_id: int
@@ -32,16 +31,7 @@ class AgentState(Dict):
 
 
 class DataAgent:
-    """
-    Advanced CRM Agent that uses tools for data retrieval and operations.
-
-    This agent handles:
-    - Customer data retrieval with pagination and caching
-    - Dormant account management
-    - Email sending (individual and bulk)
-    - Query handle management for large datasets
-    - Context-aware conversations
-    """
+  
 
     def __init__(
         self,
@@ -50,20 +40,22 @@ class DataAgent:
         max_retries: int = 3,
         enable_caching: bool = True,
         session_timeout_hours: int = 24,
+        tools: Optional[List[Any]] = None,
     ):
         self.llm = llm
         self.system_prompt = system_prompt
         self.max_retries = max_retries
         self.enable_caching = enable_caching
         self.session_timeout_hours = session_timeout_hours
+        self.tools = tools or list(AGENT_TOOLS)
 
         # Bind tools to LLM
-        self.llm_with_tools = self.llm.bind_tools(AGENT_TOOLS)
+        self.llm_with_tools = self.llm.bind_tools(self.tools)
 
         # Create tool node for executing tools
-        self.tool_node = ToolNode(AGENT_TOOLS)
+        self.tool_node = ToolNode(self.tools)
 
-        logger.info(f"CRM Agent initialized with {len(AGENT_TOOLS)} tools")
+        logger.info(f"CRM Agent initialized with {len(self.tools)} tools")
 
     def _create_system_message(
         self, user_context: Dict[str, Any] | None = None

@@ -12,9 +12,16 @@ class ChatSession(models.Model):
         INACTIVE = "inactive"
         ARCHIVED = "archived"
 
+    class Mode(models.TextChoices):
+        ANALYSIS = "analysis"
+        ML = "ml"
+
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     session_id = models.UUIDField(unique=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=255, blank=True, null=True)
+    mode = models.CharField(
+        max_length=20, choices=Mode.choices, default=Mode.ANALYSIS
+    )
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.ACTIVE
     )
@@ -129,6 +136,5 @@ class QueryCacheModel(models.Model):
     @property
     def is_expired(self):
         return timezone.now() > self.expires_at
-
 
 

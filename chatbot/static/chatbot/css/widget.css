@@ -207,6 +207,15 @@
     margin-bottom: 8px;
 }
 
+textarea {
+    overflow: auto;
+    scrollbar-width: none;      /* Firefox */
+  }
+  
+  textarea::-webkit-scrollbar {
+    display: none;              /* Chrome, Safari, Edge */
+  }
+  
 .welcome-text {
     font-size: 14px;
     color: #6b7280;
@@ -553,22 +562,14 @@
     box-shadow: none;
 }
 
-/* Neutral scrollbar so no green line appears on the right when typing */
+/* Hide scrollbar on textarea (Chrome, Safari, Edge, Firefox) */
+.widget-form textarea {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
 .widget-form textarea::-webkit-scrollbar {
-    width: 6px;
-}
-
-.widget-form textarea::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.widget-form textarea::-webkit-scrollbar-thumb {
-    background: #d1d5db;
-    border-radius: 3px;
-}
-
-.widget-form textarea::-webkit-scrollbar-thumb:hover {
-    background: #9ca3af;
+    display: none;
 }
 
 .widget-send-btn {

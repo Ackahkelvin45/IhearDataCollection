@@ -43,6 +43,11 @@ class ChatMessageCreateSerializer(serializers.Serializer):
     ai_answer = serializers.BooleanField(
         default=False, help_text="Whether AI should provide interpretation of results"
     )
+    mode = serializers.ChoiceField(
+        choices=["analysis", "ml"],
+        required=False,
+        help_text="Session mode: analysis or ml",
+    )
 
     def validate_user_input(self, value):
         value = re.sub(r"\s+", " ", value.strip())
@@ -113,6 +118,7 @@ class ChatSessionDetailSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "title",
+            "mode",
             "status",
             "total_messages",
             "created_at",
@@ -135,6 +141,7 @@ class ChatSessionCreateSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "title",
+            "mode",
         ]
         read_only_fields = ["id"]
 
@@ -193,6 +200,7 @@ class ChatSessionListSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "title",
+            "mode",
             "status",
             "total_messages",
             "created_at",

@@ -197,6 +197,7 @@ class UnifiedAudioDataChat {
         this.currentSession = null;
         this.sessions = [];
         this.isLoading = false;
+        this.currentMode = sessionStorage.getItem('insightsMode') || 'analysis';
 
         // Performance optimizations for streaming
         this.scrollThrottle = null;
@@ -210,6 +211,7 @@ class UnifiedAudioDataChat {
         };
 
         this.initializeEventListeners();
+        this.updateModeUI();
         this.loadSessions();
     }
 
@@ -366,7 +368,7 @@ class UnifiedAudioDataChat {
             const response = await fetch(`${this.apiBaseUrl}/insights/sessions/`, {
                 method: 'POST',
                 headers: this.headers,
-                body: JSON.stringify({ title: null })
+                body: JSON.stringify({ title: null, mode: this.currentMode })
             });
 
             if (!response.ok) {
@@ -376,9 +378,14 @@ class UnifiedAudioDataChat {
 
             const session = await response.json();
             this.currentSession = session;
+            if (session.mode) {
+                this.currentMode = session.mode;
+                sessionStorage.setItem('insightsMode', session.mode);
+            }
             this.sessions.unshift(session);
             this.updateSessionsList();
             this.updateChatTitle(session.title || 'New Chat');
+            this.updateModeUI();
 
             return session;
         } catch (error) {
@@ -397,10 +404,15 @@ class UnifiedAudioDataChat {
             if (response.ok) {
                 const session = await response.json();
                 this.currentSession = session;
+                if (session.mode) {
+                    this.currentMode = session.mode;
+                    sessionStorage.setItem('insightsMode', session.mode);
+                }
                 this.showChatInterface();
                 this.loadSessionMessages(session);
                 this.updateSessionsList();
                 this.updateChatTitle(session.title || 'Untitled Session');
+                this.updateModeUI();
             } else {
                 const errorData = await response.json().catch(() => ({}));
                 throw new Error(errorData.detail || `HTTP ${response.status}: Failed to load session`);
@@ -410,6 +422,18 @@ class UnifiedAudioDataChat {
             this.showErrorToast('Failed to load session');
         } finally {
             this.hideLoading();
+        }
+    }
+
+    updateModeUI() {
+        const title = document.getElementById('chatTitle');
+        const isMl = this.currentMode === 'ml';
+        if (title) {
+            title.textContent = isMl ? 'Machine Learning Insights' : 'Welcome to Data Insights!';
+        }
+        const input = document.getElementById('messageInput');
+        if (input) {
+            input.placeholder = isMl ? 'Ask ML questions about your data...' : 'Ask about your audio data...';
         }
     }
 
@@ -511,7 +535,8 @@ class UnifiedAudioDataChat {
                     headers: this.headers,
                     body: JSON.stringify({
                         user_input: userInput,
-                        ai_answer: true
+                        ai_answer: true,
+                        mode: this.currentMode
                     })
                 }
             );
@@ -578,19 +603,49 @@ class UnifiedAudioDataChat {
     handleStreamMessage(message, assistantMessage) {
         const { action, data } = message;
 
-        // Skip null/undefined data
-        if (data === null || data === undefined) {
-            return;
-        }
-
         switch (action) {
+            case 'thinking':
+                this.updateStreamStatus(assistantMessage.id, data?.message || 'Thinking...');
+                break;
+
+            case 'reasoning':
+                this.updateStreamStatus(assistantMessage.id, data?.message || 'Reasoning...');
+                break;
+
+            case 'querying_db':
+                if (data && data.tools && data.tools.length) {
+                    this.updateStreamStatus(
+                        assistantMessage.id,
+                        `Querying database: ${data.tools.join(', ')}`
+                    );
+                } else {
+                    this.updateStreamStatus(assistantMessage.id, data?.message || 'Querying database...');
+                }
+                this.showToolActivity(assistantMessage.id);
+                break;
+
+            case 'tool_call':
+                if (data && data.tools && data.tools.length) {
+                    this.updateStreamStatus(
+                        assistantMessage.id,
+                        `Querying database: ${data.tools.join(', ')}`
+                    );
+                } else {
+                    this.updateStreamStatus(assistantMessage.id, 'Querying database...');
+                }
+                this.showToolActivity(assistantMessage.id);
+                break;
+
             case 'tool_response':
                 // Store tool responses for chart data extraction
                 assistantMessage.toolResponses = assistantMessage.toolResponses || [];
-                assistantMessage.toolResponses.push(data);
+                if (data !== null && data !== undefined) {
+                    assistantMessage.toolResponses.push(data);
+                }
 
                 // Show a subtle indicator that tools are working
                 this.showToolActivity(assistantMessage.id);
+                this.updateStreamStatus(assistantMessage.id, 'Tool results received.');
                 break;
 
             case 'llm':
@@ -627,6 +682,7 @@ class UnifiedAudioDataChat {
                 break;
 
             case 'completed':
+                this.updateStreamStatus(assistantMessage.id, 'Completed');
                 this.updateMessageStatus(assistantMessage.id, 'completed');
                 this.hideToolActivity(assistantMessage.id);
 
@@ -714,6 +770,7 @@ class UnifiedAudioDataChat {
               ${message.assistant_response ? this.formatMarkdown(message.assistant_response) :
                 '<div style="display:flex; align-items:center; gap:0.5rem;"><span style="color:#6b7280;">Thinking</span><div class="thinking-dots"><span>.</span><span>.</span><span>.</span></div></div>'}
             </div>
+            <div class="stream-status" style="font-size:0.75rem; color:#6b7280; margin-top:0.25rem; display:none;"></div>
             <div class="visualizations-container" style="margin-top:1rem;"></div>
           </div>
           <p style="font-size:0.75rem; color:#667781; margin-top:0.25rem;">
@@ -799,6 +856,9 @@ class UnifiedAudioDataChat {
         if (messageDiv) {
             const container = messageDiv.querySelector('.visualizations-container');
             if (container) {
+                if (container.dataset.rendered === 'true') {
+                    return;
+                }
                 const chartId = `chart-${messageId}-${Date.now()}`;
                 const vizDiv = document.createElement('div');
                 vizDiv.className = 'visualization mb-6 p-4 bg-gradient-to-r from-green-600 to-lime-400 rounded-lg ';
@@ -820,6 +880,7 @@ class UnifiedAudioDataChat {
                 setTimeout(() => {
                     this.createChart(visualizationData, chartId, toolResponses);
                 }, 100);
+                container.dataset.rendered = 'true';
             }
         }
     }
@@ -1498,6 +1559,15 @@ class UnifiedAudioDataChat {
                 indicator.remove();
             }
         }
+    }
+
+    updateStreamStatus(messageId, text) {
+        const messageDiv = document.getElementById(`message-${messageId}`);
+        if (!messageDiv) return;
+        const statusDiv = messageDiv.querySelector('.stream-status');
+        if (!statusDiv) return;
+        statusDiv.textContent = text || '';
+        statusDiv.style.display = text ? 'block' : 'none';
     }
 
     setSendButtonLoading(loading) {

@@ -177,8 +177,10 @@ class AudioDataChat {
         this.currentSession = null;
         this.sessions = [];
         this.isLoading = false;
+        this.currentMode = sessionStorage.getItem('insightsMode') || 'analysis';
         
         this.initializeEventListeners();
+        this.updateModeUI();
         this.loadSessions();
     }
     
@@ -267,7 +269,7 @@ class AudioDataChat {
             const response = await fetch(`${this.apiBaseUrl}/insights/sessions/`, {
                 method: 'POST',
                 headers: this.headers,
-                body: JSON.stringify({ title: null })
+                body: JSON.stringify({ title: null, mode: this.currentMode })
             });
             
             if (!response.ok) {
@@ -277,9 +279,14 @@ class AudioDataChat {
             
             const session = await response.json();
             this.currentSession = session;
+            if (session.mode) {
+                this.currentMode = session.mode;
+                sessionStorage.setItem('insightsMode', session.mode);
+            }
             this.sessions.unshift(session);
             this.updateSessionsList();
             this.updateChatTitle(session.title || 'New Chat');
+            this.updateModeUI();
             
             return session;
         } catch (error) {
@@ -381,11 +388,16 @@ class AudioDataChat {
             if (response.ok) {
                 const session = await response.json();
                 this.currentSession = session;
+                if (session.mode) {
+                    this.currentMode = session.mode;
+                    sessionStorage.setItem('insightsMode', session.mode);
+                }
                 this.hideWelcomeScreen();
                 this.showChatInterface();
                 this.loadSessionMessages(session);
                 this.updateSessionsList();
                 this.updateChatTitle(session.title || 'Untitled Session');
+                this.updateModeUI();
             } else {
                 const errorData = await response.json().catch(() => ({}));
                 throw new Error(errorData.detail || `HTTP ${response.status}: Failed to load session`);
@@ -395,6 +407,18 @@ class AudioDataChat {
             this.showErrorToast('Failed to load session');
         } finally {
             this.hideLoading();
+        }
+    }
+
+    updateModeUI() {
+        const title = document.getElementById('chatTitle');
+        const isMl = this.currentMode === 'ml';
+        if (title) {
+            title.textContent = isMl ? 'Machine Learning Insights' : 'Welcome to Data Insights!';
+        }
+        const input = document.getElementById('messageInput');
+        if (input) {
+            input.placeholder = isMl ? 'Ask ML questions about your data...' : 'Ask about your audio data...';
         }
     }
     
@@ -482,7 +506,8 @@ class AudioDataChat {
                     headers: this.headers,
                     body: JSON.stringify({
                         user_input: userInput,
-                        ai_answer: true
+                        ai_answer: true,
+                        mode: this.currentMode
                     })
                 }
             );
@@ -538,10 +563,41 @@ class AudioDataChat {
         const { action, data } = message;
         
         switch (action) {
+            case 'thinking':
+                this.updateStreamStatus(assistantMessage.id, data?.message || 'Thinking...');
+                break;
+
+            case 'reasoning':
+                this.updateStreamStatus(assistantMessage.id, data?.message || 'Reasoning...');
+                break;
+
+            case 'querying_db':
+                if (data && data.tools && data.tools.length) {
+                    this.updateStreamStatus(
+                        assistantMessage.id,
+                        `Querying database: ${data.tools.join(', ')}`
+                    );
+                } else {
+                    this.updateStreamStatus(assistantMessage.id, data?.message || 'Querying database...');
+                }
+                break;
+
+            case 'tool_call':
+                if (data && data.tools && data.tools.length) {
+                    this.updateStreamStatus(
+                        assistantMessage.id,
+                        `Querying database: ${data.tools.join(', ')}`
+                    );
+                } else {
+                    this.updateStreamStatus(assistantMessage.id, 'Querying database...');
+                }
+                break;
+
             case 'tool_response':
                 // Store tool responses for chart data extraction
                 assistantMessage.toolResponses = assistantMessage.toolResponses || [];
                 assistantMessage.toolResponses.push(data);
+                this.updateStreamStatus(assistantMessage.id, 'Tool results received.');
                 break;
                 
             case 'llm':
@@ -557,6 +613,7 @@ class AudioDataChat {
                 break;
                 
             case 'completed':
+                this.updateStreamStatus(assistantMessage.id, 'Completed');
                 this.updateMessageStatus(assistantMessage.id, 'completed');
                 this.loadSessions(); // Refresh sessions list
                 break;
@@ -603,6 +660,7 @@ class AudioDataChat {
                             ${message.assistant_response ? this.formatMarkdown(message.assistant_response) : 
                               '<div class="flex items-center space-x-2"><div class="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div><span class="text-gray-500">Analyzing your audio data...</span></div>'}
                         </div>
+                        <div class="stream-status text-xs text-gray-400 mt-2 hidden"></div>
                         <div class="visualizations-container mt-4"></div>
                     </div>
                     <p class="text-xs text-gray-500 mt-2">${this.formatTime(message.created_at)}</p>
@@ -623,6 +681,19 @@ class AudioDataChat {
             }
         }
     }
+
+    updateStreamStatus(messageId, text) {
+        const messageDiv = document.getElementById(`message-${messageId}`);
+        if (!messageDiv) return;
+        const statusDiv = messageDiv.querySelector('.stream-status');
+        if (!statusDiv) return;
+        statusDiv.textContent = text || '';
+        if (text) {
+            statusDiv.classList.remove('hidden');
+        } else {
+            statusDiv.classList.add('hidden');
+        }
+    }
     
     updateMessageStatus(messageId, status) {
         const messageDiv = document.getElementById(`message-${messageId}`);
@@ -639,6 +710,9 @@ class AudioDataChat {
         if (messageDiv) {
             const container = messageDiv.querySelector('.visualizations-container');
             if (container) {
+                if (container.dataset.rendered === 'true') {
+                    return;
+                }
                 const chartId = `chart-${messageId}-${Date.now()}`;
                 const vizDiv = document.createElement('div');
                 vizDiv.className = 'visualization mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200';
@@ -660,6 +734,7 @@ class AudioDataChat {
                 setTimeout(() => {
                     this.createChart(visualizationData, chartId, toolResponses);
                 }, 100);
+                container.dataset.rendered = 'true';
             }
         }
     }

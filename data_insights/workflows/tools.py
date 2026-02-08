@@ -3,6 +3,7 @@ from typing import Dict, List, Any, Literal, Optional
 from typing import Optional, Dict, Any
 from pydantic import BaseModel
 from django.db.models import Q
+from django.db import models
 import uuid
 import logging
 import os
@@ -1257,6 +1258,29 @@ llm = ChatOpenAI(
 allowed_tables = SECURITY_CONFIG.get("DEFAULT_ALLOWED_TABLES", [])
 
 
+def _get_default_allowed_tables() -> List[str]:
+    """Discover data/core tables for SQL tools when not explicitly configured."""
+    try:
+        from django.apps import apps
+
+        tables: List[str] = []
+        for app_label in ("data", "core"):
+            try:
+                app_config = apps.get_app_config(app_label)
+            except LookupError:
+                continue
+            for model in app_config.get_models():
+                tables.append(model._meta.db_table)
+        return sorted(set(tables))
+    except Exception as e:
+        logger.warning(f"Failed to discover allowed tables: {e}")
+        return []
+
+
+if not allowed_tables:
+    allowed_tables = _get_default_allowed_tables()
+
+
 class DataAnalysisInput(BaseModel):
     query: str = Field(description="The natural language query to analyst")
 
@@ -2094,11 +2118,154 @@ class VisualizationAnalysisTool(BaseTool):
 
 # Lazy initialization to avoid database connection at import time
 _agent_tools = None
+_ml_agent_tools = None
 
 
-def get_agent_tools():
+class MLProfileInput(BaseModel):
+    """Input for ML dataset profile"""
+
+    group_by: Optional[Literal["category", "region", "class", "subclass"]] = Field(
+        default="category", description="Field to group label distribution by"
+    )
+    top_k: int = Field(default=10, description="Top groups to return")
+
+
+class MLDatasetProfileTool(BaseTool):
+    name: str = "ml_dataset_profile"
+    description: str = (
+        "Profile dataset readiness for ML: dataset size, label distribution, "
+        "feature coverage, and missingness for key metadata fields."
+    )
+    args_schema: Optional[type[BaseModel]] = MLProfileInput
+
+    def _run(self, group_by: Optional[str] = "category", top_k: int = 10, **kwargs) -> Dict[str, Any]:
+        try:
+            total = NoiseDataset.objects.count()
+            with_features = NoiseDataset.objects.filter(audio_features__isnull=False).count()
+            with_analysis = NoiseDataset.objects.filter(noise_analysis__isnull=False).count()
+
+            dataset_types = NoiseDataset.objects.values("dataset_type").distinct().count()
+
+            missing = {
+                "region": NoiseDataset.objects.filter(region__isnull=True).count(),
+                "category": NoiseDataset.objects.filter(category__isnull=True).count(),
+                "community": NoiseDataset.objects.filter(community__isnull=True).count(),
+                "recording_date": NoiseDataset.objects.filter(recording_date__isnull=True).count(),
+                "recording_device": NoiseDataset.objects.filter(recording_device__isnull=True).count(),
+                "microphone_type": NoiseDataset.objects.filter(microphone_type__isnull=True).count(),
+            }
+
+            group_field = "category__name"
+            if group_by == "region":
+                group_field = "region__name"
+            elif group_by == "class":
+                group_field = "class_name__name"
+            elif group_by == "subclass":
+                group_field = "subclass__name"
+
+            distribution = (
+                NoiseDataset.objects.values(group_field)
+                .annotate(count=models.Count("id"))
+                .order_by("-count")[: max(1, int(top_k))]
+            )
+
+            return {
+                "analysis_type": "ml_dataset_profile",
+                "totals": {
+                    "noise_datasets": total,
+                    "dataset_types": dataset_types,
+                    "with_audio_features": with_features,
+                    "with_noise_analysis": with_analysis,
+                },
+                "coverage": {
+                    "features_pct": (with_features / total * 100) if total else 0,
+                    "analysis_pct": (with_analysis / total * 100) if total else 0,
+                },
+                "missingness": missing,
+                "label_distribution": {
+                    "group_by": group_by,
+                    "top_k": top_k,
+                    "counts": list(distribution),
+                },
+            }
+        except Exception as e:
+            logger.error(f"Error in ML dataset profile: {e}")
+            return {"error": get_user_friendly_error(str(e), "profiling ML dataset")}
+
+
+class MLFeatureStatsInput(BaseModel):
+    """Input for ML feature stats"""
+
+    include_decibels: bool = Field(default=True, description="Include noise analysis decibel stats")
+
+
+class MLFeatureStatsTool(BaseTool):
+    name: str = "ml_feature_stats"
+    description: str = "Compute summary statistics for ML-relevant audio features."
+    args_schema: Optional[type[BaseModel]] = MLFeatureStatsInput
+
+    def _run(self, include_decibels: bool = True, **kwargs) -> Dict[str, Any]:
+        try:
+            feature_stats = AudioFeature.objects.aggregate(
+                count=models.Count("id"),
+                avg_duration=models.Avg("duration"),
+                std_duration=models.StdDev("duration"),
+                avg_rms=models.Avg("rms_energy"),
+                std_rms=models.StdDev("rms_energy"),
+                avg_centroid=models.Avg("spectral_centroid"),
+                std_centroid=models.StdDev("spectral_centroid"),
+                avg_bandwidth=models.Avg("spectral_bandwidth"),
+                std_bandwidth=models.StdDev("spectral_bandwidth"),
+                avg_zcr=models.Avg("zero_crossing_rate"),
+                std_zcr=models.StdDev("zero_crossing_rate"),
+            )
+
+            response = {
+                "analysis_type": "ml_feature_stats",
+                "audio_features": feature_stats,
+            }
+
+            if include_decibels:
+                decibel_stats = NoiseAnalysis.objects.aggregate(
+                    count=models.Count("id"),
+                    avg_mean_db=models.Avg("mean_db"),
+                    std_mean_db=models.StdDev("mean_db"),
+                    max_db=models.Max("max_db"),
+                    min_db=models.Min("min_db"),
+                )
+                response["noise_analysis"] = decibel_stats
+
+            return response
+        except Exception as e:
+            logger.error(f"Error in ML feature stats: {e}")
+            return {"error": get_user_friendly_error(str(e), "computing ML feature stats")}
+
+
+def get_agent_tools(mode: str = "analysis"):
     """Get agent tools with lazy initialization"""
     global _agent_tools
+    global _ml_agent_tools
+
+    if mode == "ml":
+        if _ml_agent_tools is None:
+            try:
+                _ml_agent_tools = [
+                    MLDatasetProfileTool(),
+                    MLFeatureStatsTool(),
+                    DataAnalysisTool(),
+                    VisualizationAnalysisTool(),
+                    NoiseDatasetSearchTool(),
+                    AudioFeatureSearchTool(),
+                ]
+            except Exception as e:
+                logger.warning(f"Failed to initialize ML tools: {e}")
+                _ml_agent_tools = [
+                    MLDatasetProfileTool(),
+                    DataAnalysisTool(),
+                    VisualizationAnalysisTool(),
+                ]
+        return _ml_agent_tools
+
     if _agent_tools is None:
         try:
             _agent_tools = [
@@ -2139,6 +2306,9 @@ AGENT_TOOLS = LazyAgentTools()
 def get_tool_by_name(tool_name: str) -> Optional[BaseTool]:
     """Get a tool by its name"""
     for tool in get_agent_tools():
+        if tool.name == tool_name:
+            return tool
+    for tool in get_agent_tools(mode="ml"):
         if tool.name == tool_name:
             return tool
     return None
