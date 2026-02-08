@@ -19,9 +19,7 @@ class ChatSession(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     session_id = models.UUIDField(unique=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=255, blank=True, null=True)
-    mode = models.CharField(
-        max_length=20, choices=Mode.choices, default=Mode.ANALYSIS
-    )
+    mode = models.CharField(max_length=20, choices=Mode.choices, default=Mode.ANALYSIS)
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.ACTIVE
     )
@@ -43,18 +41,18 @@ class ChatSession(models.Model):
         """Generate a title from the first user message"""
         # Clean and truncate the message to create a title
         title = user_input.strip()
-        
+
         # Remove extra whitespace
-        title = ' '.join(title.split())
-        
+        title = " ".join(title.split())
+
         # Truncate to reasonable length (50 characters)
         if len(title) > 50:
             title = title[:47] + "..."
-        
+
         # If title is too short, add a prefix
         if len(title) < 3:
             title = "New Chat Session"
-        
+
         return title
 
     def __str__(self):
@@ -136,5 +134,3 @@ class QueryCacheModel(models.Model):
     @property
     def is_expired(self):
         return timezone.now() > self.expires_at
-
-

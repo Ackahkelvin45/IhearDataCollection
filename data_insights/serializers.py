@@ -5,8 +5,6 @@ from django.core.validators import MinLengthValidator
 import re
 
 
-
-
 class ChatMessageListSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChatMessage
@@ -18,6 +16,7 @@ class ChatMessageListSerializer(serializers.ModelSerializer):
             "status",
             "visulization",
         ]
+
 
 class ChatMessageDetailSerializer(serializers.ModelSerializer):
     class Meta:
@@ -32,6 +31,7 @@ class ChatMessageDetailSerializer(serializers.ModelSerializer):
             "tool_called",
             "updated_at",
         ]
+
 
 class ChatMessageCreateSerializer(serializers.Serializer):
     user_input = serializers.CharField(
@@ -71,6 +71,7 @@ class ChatMessageCreateSerializer(serializers.Serializer):
     def create(self, validated_data):
         raise NotImplementedError("Use ChatMessageCreateSerializer for validation only")
 
+
 class ChatSessionUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChatSession
@@ -103,12 +104,14 @@ class ChatSessionUpdateSerializer(serializers.ModelSerializer):
             validated_data["archived_at"] = None
 
         return super().update(instance, validated_data)
-    
+
+
 class MessageStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChatMessage
         fields = ["id", "status", "processing_time_ms"]
         read_only_fields = fields
+
 
 class ChatSessionDetailSerializer(serializers.ModelSerializer):
     messages = ChatMessageListSerializer(many=True, read_only=True)
@@ -135,6 +138,7 @@ class ChatSessionDetailSerializer(serializers.ModelSerializer):
             "messages",
         ]
 
+
 class ChatSessionCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChatSession
@@ -154,6 +158,7 @@ class ChatSessionCreateSerializer(serializers.ModelSerializer):
                     "Title must be at least 3 characters long"
                 )
         return value
+
 
 class ChatSessionUpdateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -188,11 +193,13 @@ class ChatSessionUpdateSerializer(serializers.ModelSerializer):
 
         return super().update(instance, validated_data)
 
+
 class ChatSessionArchiveSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChatSession
         fields = ["id", "title", "status", "archived_at"]
         read_only_fields = fields
+
 
 class ChatSessionListSerializer(serializers.ModelSerializer):
     class Meta:
@@ -204,6 +211,6 @@ class ChatSessionListSerializer(serializers.ModelSerializer):
             "status",
             "total_messages",
             "created_at",
-            'updated_at',
+            "updated_at",
         ]
         read_only_fields = fields

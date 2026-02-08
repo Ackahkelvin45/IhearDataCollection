@@ -55,7 +55,7 @@ SYSTEM_TEMPLATE = """**You are a professional audio data analyst assistant integ
 ### Audio Data Retrieval & Analysis
 - **`analyze_audio_data`**: Comprehensive audio analysis tool for energy, spectral, frequency, and statistical analysis
   - Energy analysis: RMS energy, decibel levels, cumulative energy over time
-  - Spectral analysis: centroid, bandwidth, rolloff, flatness characteristics  
+  - Spectral analysis: centroid, bandwidth, rolloff, flatness characteristics
   - Frequency analysis: dominant frequencies, zero crossing rates
   - Correlation analysis: relationships between audio features
   - Statistical analysis: distributions, quartiles, outliers

@@ -46,9 +46,13 @@
             <div class="flex items-center justify-between">
                 <div>
                     <h1 id="chatTitle" class="text-xl font-semibold text-gray-800">Welcome to Data Insights!</h1>
-                    <p class="text-sm text-gray-500">Ask me anything about your audio data</p>
+                    <p id="chatSubtitle" class="text-sm text-gray-500">Ask me anything about your audio data</p>
                 </div>
                 <div class="flex items-center space-x-2">
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <button id="modeAnalysisBtn" type="button" style="padding:6px 12px; border-radius:9999px; font-size:12px; border:1px solid #e5e7eb; background:#22c55e; color:#ffffff; box-shadow:0 1px 2px rgba(0,0,0,0.06); cursor:pointer;">Data Analysis</button>
+                        <button id="modeMlBtn" type="button" style="padding:6px 12px; border-radius:9999px; font-size:12px; border:1px solid #e5e7eb; background:#f3f4f6; color:#374151; cursor:pointer;">Machine Learning</button>
+                    </div>
                     <span id="connectionStatus" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                         <span style="height: 10px; width: 10px;" class="w-2 h-2 bg-primary rounded-full mr-1"></span>
                         Connected
@@ -62,17 +66,11 @@
             <div class="text-cente h-full  flex flex-col justify-between  items-center w-full">
                 <div class="mb-8 w-full flex flex-col items-center" style="margin-top: 20px;">
                     <i class="fa-solid fa-chart-line text-6xl text-primary mb-4"></i>
-                    <h4 class="font-semibold text-gray-800 mb-4">Get Started</h4>
-                    <p class="text-gray-600 mb-8 text-sm">Try one of these suggestions or ask your own question:</p>
+                    <h4 id="welcomeModeTitle" class="font-semibold text-gray-800 mb-2">Audio Data Insights</h4>
+                    <p id="welcomeModeDesc" class="text-gray-600 mb-8 text-sm">Try one of these suggestions or ask your own question:</p>
 
 
-                     <div class="flex flex-wrap justify-center gap-3 mb-8">
-                    {% for s in suggestions %}
-                    <button style="margin-right: 10px;margin-bottom: 10px;" onclick="startChatWithSuggestion('{{ s|escapejs }}')" class="px-4 py-2 rounded-full bg-primary-light text-primary hover:bg-primary-hover border border-primary/10 shadow-sm transition">
-                        {{ s }}
-                    </button>
-                    {% endfor %}
-                </div>
+                     <div id="suggestionsContainer" class="flex flex-wrap justify-center gap-3 mb-8"></div>
                 </div>
 
                 <!-- Suggestions -->
@@ -157,11 +155,12 @@
     </div>
 </div>
 
+
 <!-- Loading Overlay -->
 <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
     <div class="bg-white rounded-lg p-6 flex items-center space-x-3">
         <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
-        <span class="text-gray-700">Processing your request...</span>
+        <span class="text-gray-700">Loading...</span>
     </div>
 </div>
 
@@ -181,11 +180,17 @@
     </div>
 </div>
 
+{{ suggestions|json_script:"data-suggestions" }}
+{{ ml_suggestions|json_script:"ml-suggestions" }}
+
 <!-- Include Chart.js with Box Plot Plugin -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-boxplot@0.2.0/dist/chartjs-chart-boxplot.min.js"></script>
 
 <script>
+const dataSuggestions = JSON.parse(document.getElementById('data-suggestions').textContent);
+const mlSuggestions = JSON.parse(document.getElementById('ml-suggestions').textContent);
+
 // Unified Audio Data Chat Implementation
 class UnifiedAudioDataChat {
     constructor() {
@@ -221,6 +226,13 @@ class UnifiedAudioDataChat {
     }
 
     initializeEventListeners() {
+        const analysisBtn = document.getElementById('modeAnalysisBtn');
+        const mlBtn = document.getElementById('modeMlBtn');
+        if (analysisBtn && mlBtn) {
+            analysisBtn.addEventListener('click', () => this.setMode('analysis'));
+            mlBtn.addEventListener('click', () => this.setMode('ml'));
+        }
+
         // New chat button
         document.getElementById('newChatBtn').addEventListener('click', () => {
             this.createNewSession();
@@ -428,13 +440,66 @@ class UnifiedAudioDataChat {
     updateModeUI() {
         const title = document.getElementById('chatTitle');
         const isMl = this.currentMode === 'ml';
+        const subtitle = document.getElementById('chatSubtitle');
+        const welcomeTitle = document.getElementById('welcomeModeTitle');
+        const welcomeDesc = document.getElementById('welcomeModeDesc');
+        const analysisBtn = document.getElementById('modeAnalysisBtn');
+        const mlBtn = document.getElementById('modeMlBtn');
+
         if (title) {
             title.textContent = isMl ? 'Machine Learning Insights' : 'Welcome to Data Insights!';
         }
+        if (subtitle) {
+            subtitle.textContent = isMl
+                ? 'Ask me about ML readiness, labels, and features'
+                : 'Ask me anything about your audio data';
+        }
+        if (welcomeTitle) {
+            welcomeTitle.textContent = isMl ? 'Machine Learning Insights' : 'Audio Data Insights';
+        }
+        if (welcomeDesc) {
+            welcomeDesc.textContent = isMl
+                ? 'Ask ML-focused questions about labels, feature coverage, and training readiness.'
+                : 'Try one of these suggestions or ask your own question:';
+        }
+        if (analysisBtn && mlBtn) {
+            analysisBtn.style.background = isMl ? '#f3f4f6' : '#22c55e';
+            analysisBtn.style.color = isMl ? '#374151' : '#ffffff';
+            analysisBtn.style.boxShadow = isMl ? 'none' : '0 1px 2px rgba(0,0,0,0.06)';
+            mlBtn.style.background = isMl ? '#22c55e' : '#f3f4f6';
+            mlBtn.style.color = isMl ? '#ffffff' : '#374151';
+            mlBtn.style.boxShadow = isMl ? '0 1px 2px rgba(0,0,0,0.06)' : 'none';
+        }
+
         const input = document.getElementById('messageInput');
         if (input) {
             input.placeholder = isMl ? 'Ask ML questions about your data...' : 'Ask about your audio data...';
         }
+        const welcomeInput = document.getElementById('welcomeInput');
+        if (welcomeInput) {
+            welcomeInput.placeholder = isMl ? 'Ask ML questions about your data...' : 'Type your question...';
+        }
+
+        this.renderSuggestions(isMl ? mlSuggestions : dataSuggestions);
+    }
+
+    setMode(mode) {
+        this.currentMode = mode;
+        sessionStorage.setItem('insightsMode', mode);
+        this.updateModeUI();
+    }
+
+    renderSuggestions(list) {
+        const container = document.getElementById('suggestionsContainer');
+        if (!container) return;
+        container.innerHTML = '';
+        list.forEach((s) => {
+            const btn = document.createElement('button');
+            btn.textContent = s;
+            btn.style = "margin-right: 10px; margin-bottom: 10px; padding: 8px 14px; border-radius: 9999px; background: #eafff1; color: #0f766e; border: 1px solid #c7f9dd; box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer;";
+            btn.addEventListener('click', () => startChatWithSuggestion(s));
+            container.appendChild(btn);
+        });
     }
 
     loadSessionMessages(session) {
@@ -1502,6 +1567,7 @@ class UnifiedAudioDataChat {
         document.getElementById('chatInputContainer').classList.add('hidden');
         document.getElementById('messagesContainer').innerHTML = '';
         this.updateChatTitle('Welcome to Data Insights!');
+        this.updateModeUI();
     }
 
     showChatInterface() {

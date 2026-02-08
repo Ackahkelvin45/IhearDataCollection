@@ -211,11 +211,11 @@ textarea {
     overflow: auto;
     scrollbar-width: none;      /* Firefox */
   }
-  
+
   textarea::-webkit-scrollbar {
     display: none;              /* Chrome, Safari, Edge */
   }
-  
+
 .welcome-text {
     font-size: 14px;
     color: #6b7280;
@@ -276,6 +276,12 @@ textarea {
 
 .message-bubble.assistant {
     align-items: flex-start;
+    width: 100%;
+}
+
+/* Keep text bubble width constrained; table will sit full-width below */
+.message-bubble.assistant .message-content {
+    max-width: 85%;
 }
 
 .message-content {
@@ -285,7 +291,7 @@ textarea {
     font-size: 14px;
     line-height: 1.5;
     word-wrap: break-word;
-    display: inline-block;
+    display: block;
 }
 
 /* Markdown styling */
@@ -397,7 +403,15 @@ textarea {
     margin-top: 2px;
 }
 
-/* Data table inside chat */
+/* Data table: always below the AI response, full width for visibility */
+.message-bubble.assistant .message-table {
+    order: 2;
+    width: 100%;
+    max-width: 100%;
+    margin-top: 14px;
+    clear: both;
+}
+
 .message-table {
     margin-top: 8px;
     background: #ffffff;
@@ -405,6 +419,7 @@ textarea {
     border-radius: 8px;
     overflow-x: auto;
     max-width: 85%;
+    display: block;
 }
 
 .message-table .data-table {

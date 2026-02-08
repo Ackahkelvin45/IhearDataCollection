@@ -31,7 +31,6 @@ class AgentState(Dict):
 
 
 class DataAgent:
-  
 
     def __init__(
         self,
@@ -63,7 +62,7 @@ class DataAgent:
         context_info = ""
         if user_context:
             context_info = f"""
-            
+
 ## Current Context
 - User ID: {user_context.get("user_id", "Unknown")}
 - Session ID: {user_context.get("session_id", "Unknown")}
@@ -102,11 +101,13 @@ class DataAgent:
                 self._update_query_handles(state, response.tool_calls)
 
             # Only return AIMessage objects to avoid serialization issues
-            if hasattr(response, 'content') and hasattr(response, 'tool_calls'):
+            if hasattr(response, "content") and hasattr(response, "tool_calls"):
                 return {"messages": [response]}
             else:
                 # If response is not an AIMessage, create one
-                safe_response = AIMessage(content=str(response) if response else "No response")
+                safe_response = AIMessage(
+                    content=str(response) if response else "No response"
+                )
                 return {"messages": [safe_response]}
 
         except Exception as e:
@@ -281,5 +282,7 @@ class DataAgent:
             return {"error": str(e)}
 
 
-def create_data_insights_agent(llm: BaseChatModel, system_prompt: str, **kwargs) -> DataAgent:
+def create_data_insights_agent(
+    llm: BaseChatModel, system_prompt: str, **kwargs
+) -> DataAgent:
     return DataAgent(llm=llm, system_prompt=system_prompt, **kwargs)

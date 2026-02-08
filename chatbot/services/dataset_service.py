@@ -233,6 +233,53 @@ class DatasetService:
         # More flexible matching - check if any dataset keyword appears
         has_dataset = any(keyword in question_lower for keyword in dataset_keywords) or "dataset" in question_lower
 
+        multi_filter_counting = (
+            has_counting
+            and has_dataset
+            and self._is_multi_filter_count_question(question_lower)
+        )
+
+        # Prefer SQL tool for multi-filter counting questions
+        if multi_filter_counting and context.get("use_sql_tool", True):
+            tool_result = self._handle_numeric_query_with_tool(
+                question, {"page_size": page_size, "offset": offset}
+            )
+            if tool_result:
+                cache.set(cache_key, tool_result, NUMERIC_CACHE_TTL_SECONDS)
+                return tool_result
+
+        grouping_keywords = [
+            "by region",
+            "by category",
+            "by community",
+            "by time of day",
+            "by time",
+            "by device",
+            "by recording device",
+            "by dataset type",
+            "by type",
+            "per region",
+            "per category",
+            "per community",
+            "per time",
+            "per device",
+            "group by",
+            "breakdown",
+            "distribution",
+        ]
+        is_grouping = any(keyword in question_lower for keyword in grouping_keywords)
+        if (
+            is_grouping
+            and (has_dataset or "recording" in question_lower or "audio" in question_lower)
+            and not multi_filter_counting
+        ):
+            try:
+                result = self._get_distribution_statistics(question_lower)
+                cache.set(cache_key, result, NUMERIC_CACHE_TTL_SECONDS)
+                return result
+            except Exception as e:
+                logger.error(f"Error in grouping query: {e}", exc_info=True)
+
         # Check for statistical questions about audio features
         audio_features = [
             "mfcc",
@@ -251,7 +298,11 @@ class DatasetService:
         )
 
         # Fast path for common aggregates (no LLM/tool call)
-        if has_counting and (has_dataset or "dataset" in question_lower or "datasets" in question_lower or "datsets" in question_lower):
+        if (
+            not multi_filter_counting
+            and has_counting
+            and (has_dataset or "dataset" in question_lower or "datasets" in question_lower or "datsets" in question_lower)
+        ):
             try:
                 result = self._handle_counting_questions(question_lower)
                 cache.set(cache_key, result, NUMERIC_CACHE_TTL_SECONDS)
@@ -279,7 +330,11 @@ class DatasetService:
                 return tool_result
 
         # Check if this is a counting question about datasets (most common case)
-        if has_counting and (has_dataset or "dataset" in question_lower or "datasets" in question_lower or "datsets" in question_lower):
+        if (
+            not multi_filter_counting
+            and has_counting
+            and (has_dataset or "dataset" in question_lower or "datasets" in question_lower or "datsets" in question_lower)
+        ):
             try:
                 from data.models import (
                     Dataset as AudioDataset,
@@ -339,7 +394,7 @@ class DatasetService:
                 }
 
         # For other numeric questions, try to query anyway if it's a counting question
-        if has_counting:
+        if has_counting and not multi_filter_counting:
             try:
                 result = self._handle_counting_questions(question_lower)
                 cache.set(cache_key, result, NUMERIC_CACHE_TTL_SECONDS)
@@ -538,24 +593,370 @@ class DatasetService:
         
         return is_complex
 
+    def _is_multi_filter_count_question(self, question_lower: str) -> bool:
+        """Detect counting questions that include multiple filter types"""
+        import re
+
+        filters = 0
+
+        if re.search(r"\bregion(s)?\b", question_lower):
+            filters += 1
+        if re.search(r"\bcommunity\b", question_lower):
+            filters += 1
+        if re.search(r"\bcategory|categories\b", question_lower):
+            filters += 1
+        if re.search(r"\bsubclass|sub-class|sub class\b", question_lower):
+            filters += 1
+        if re.search(r"\bclass\b", question_lower) and "classification" not in question_lower and "classify" not in question_lower:
+            filters += 1
+        if "time of day" in question_lower:
+            filters += 1
+        if re.search(r"\b(recording device|device|recorded with|recorded on|using)\b", question_lower):
+            filters += 1
+
+        # Dataset type keywords (noise, clean speech, mixed, animals, etc.)
+        try:
+            from data.models import Dataset as AudioDataset
+
+            type_keywords = []
+            for value, label in getattr(AudioDataset, "DATASET_TYPES", []):
+                if value:
+                    type_keywords.append(value.lower())
+                    type_keywords.append(value.lower().replace("_", " "))
+                if label:
+                    type_keywords.append(str(label).lower())
+            if any(token in question_lower for token in set(type_keywords)):
+                filters += 1
+        except Exception:
+            if "dataset type" in question_lower or "type of dataset" in question_lower:
+                filters += 1
+
+        # Date filters
+        has_year = re.search(r"\b(19|20)\d{2}\b", question_lower)
+        has_date = re.search(r"\b\d{4}-\d{1,2}-\d{1,2}\b", question_lower)
+        has_date_words = re.search(
+            r"\b(from|between|after|before|since|during)\b", question_lower
+        ) and ("date" in question_lower or "recording" in question_lower or "recorded" in question_lower)
+        if has_year or has_date or has_date_words:
+            filters += 1
+
+        return filters >= 2
+
     def _handle_counting_questions(self, question: str = ""):
         """Handle basic counting questions about datasets"""
         from data.models import Dataset as AudioDataset, NoiseDataset
         from chatbot.models import Document
-        from core.models import Category
+        from core.models import Category, Region, Community, Class, SubClass
         from django.db.models import Sum
+        import re
 
         question_lower = question.lower() if question else ""
+
+        def _match_entity_name(q: str, names: List[str]) -> Optional[str]:
+            if not names:
+                return None
+            for name in sorted([n for n in names if n], key=len, reverse=True):
+                name_lower = name.lower()
+                if name_lower and name_lower in q:
+                    return name
+            return None
+
+        def _extract_count_filter(q: str) -> Optional[Dict[str, Any]]:
+            # Region
+            if "region" in q:
+                region_name = _match_entity_name(
+                    q, list(Region.objects.values_list("name", flat=True))
+                )
+                if not region_name:
+                    m = re.search(
+                        r"(?:from|in|within|inside)\s+(?:the\s+)?([a-z0-9\\s-]+?)\s+region",
+                        q,
+                    )
+                    if m:
+                        candidate = m.group(1).strip()
+                        region_obj = Region.objects.filter(
+                            name__icontains=candidate
+                        ).first()
+                        if region_obj:
+                            region_name = region_obj.name
+                        else:
+                            return {
+                                "type": "region",
+                                "value": candidate,
+                                "exists": False,
+                            }
+                if region_name:
+                    return {"type": "region", "value": region_name, "exists": True}
+
+            # Community
+            if "community" in q:
+                community_name = _match_entity_name(
+                    q, list(Community.objects.values_list("name", flat=True))
+                )
+                if not community_name:
+                    m = re.search(
+                        r"(?:from|in|within|inside)\s+(?:the\s+)?([a-z0-9\\s-]+?)\s+community",
+                        q,
+                    )
+                    if m:
+                        candidate = m.group(1).strip()
+                        community_obj = Community.objects.filter(
+                            name__icontains=candidate
+                        ).first()
+                        if community_obj:
+                            community_name = community_obj.name
+                        else:
+                            return {
+                                "type": "community",
+                                "value": candidate,
+                                "exists": False,
+                            }
+                if community_name:
+                    return {
+                        "type": "community",
+                        "value": community_name,
+                        "exists": True,
+                    }
+
+            # Dataset type
+            dataset_type_map: Dict[str, str] = {}
+            dataset_type_names: List[str] = []
+            try:
+                for obj in AudioDataset.objects.all():
+                    if obj.name:
+                        dataset_type_map[obj.name.lower()] = obj.name
+                        dataset_type_map[obj.name.replace("_", " ").lower()] = obj.name
+                        dataset_type_names.append(obj.name)
+                        dataset_type_names.append(obj.name.replace("_", " "))
+                    try:
+                        display = obj.get_name_display()
+                        if display:
+                            dataset_type_map[display.lower()] = obj.name
+                            dataset_type_names.append(display)
+                    except Exception:
+                        pass
+            except Exception:
+                dataset_type_names = []
+
+            if dataset_type_names:
+                dataset_type_name = _match_entity_name(q, dataset_type_names)
+                if dataset_type_name:
+                    canonical = dataset_type_map.get(
+                        dataset_type_name.lower(), dataset_type_name
+                    )
+                    return {
+                        "type": "dataset_type",
+                        "value": canonical,
+                        "display": dataset_type_name,
+                        "exists": True,
+                    }
+
+            # Category
+            if "category" in q:
+                category_name = _match_entity_name(
+                    q, list(Category.objects.values_list("name", flat=True))
+                )
+                if category_name:
+                    return {
+                        "type": "category",
+                        "value": category_name,
+                        "exists": True,
+                    }
+
+            # Subclass
+            if "subclass" in q or "sub-class" in q or "sub class" in q:
+                subclass_name = _match_entity_name(
+                    q, list(SubClass.objects.values_list("name", flat=True))
+                )
+                if subclass_name:
+                    return {
+                        "type": "subclass",
+                        "value": subclass_name,
+                        "exists": True,
+                    }
+
+            # Class
+            if "class" in q:
+                class_name = _match_entity_name(
+                    q, list(Class.objects.values_list("name", flat=True))
+                )
+                if class_name:
+                    return {"type": "class", "value": class_name, "exists": True}
+
+            # Recording device
+            if any(
+                token in q
+                for token in [
+                    "recording device",
+                    "device",
+                    "recorded with",
+                    "recorded on",
+                    "using",
+                ]
+            ):
+                device_names = list(
+                    NoiseDataset.objects.exclude(recording_device__isnull=True)
+                    .exclude(recording_device__exact="")
+                    .values_list("recording_device", flat=True)
+                    .distinct()[:200]
+                )
+                device_match = _match_entity_name(q, device_names)
+                if not device_match and device_names:
+                    def _normalize_device(text: str) -> str:
+                        return re.sub(r"[\\s\\-]+", "", (text or "").lower())
+                    q_norm = _normalize_device(q)
+                    for name in device_names:
+                        if _normalize_device(name) in q_norm:
+                            device_match = name
+                            break
+                if device_match:
+                    return {
+                        "type": "recording_device",
+                        "value": device_match,
+                        "exists": True,
+                    }
+
+                device_regex = re.search(
+                    r"(?:recording device|device|recorded with|recorded on|using)\s+([a-z0-9\\-\\s]+)",
+                    q,
+                )
+                if device_regex:
+                    candidate = device_regex.group(1).strip()
+                    candidate = re.split(
+                        r"\\b(from|in|within|inside|between|after|before|since|during|and|or|with)\\b",
+                        candidate,
+                    )[0].strip()
+                    if candidate:
+                        return {
+                            "type": "recording_device",
+                            "value": candidate,
+                            "exists": True,
+                        }
+
+            # If no explicit keyword, try matching a region name directly
+            region_guess = _match_entity_name(
+                q, list(Region.objects.values_list("name", flat=True))
+            )
+            if region_guess:
+                return {"type": "region", "value": region_guess, "exists": True}
+
+            return None
         
         # Determine what the user is asking about
         asking_about_noise = any(word in question_lower for word in ["noise", "recording", "audio", "sound"])
-        asking_about_docs = any(word in question_lower for word in ["document", "doc", "file", "upload"])
+        asking_about_docs = any(
+            word in question_lower
+            for word in ["document", "documents", "doc", "docs", "file", "files", "upload", "uploads", "uploaded"]
+        )
         asking_about_categories = any(word in question_lower for word in ["category", "categories"])
         asking_about_dataset = any(word in question_lower for word in ["dataset", "datasets", "datset", "datsets"])
         # Treat generic "dataset(s)" as noise datasets unless explicitly about documents
         if asking_about_dataset and not asking_about_docs:
             asking_about_noise = True
         asking_about_all = not asking_about_noise and not asking_about_docs
+        if asking_about_all:
+            asking_about_noise = True
+            asking_about_docs = False
+
+        # Handle filtered counts (region/community/category/class/subclass)
+        filter_info = _extract_count_filter(question_lower)
+        if filter_info and asking_about_dataset:
+            if not filter_info.get("exists", True):
+                return {
+                    "answer": f"I couldn't find a {filter_info['type']} named **{filter_info['value']}** in your database.",
+                    "data_used": {
+                        "type": "database_query",
+                        "method": "filtered_count",
+                        "filter_type": filter_info["type"],
+                        "filter_value": filter_info["value"],
+                        "found": False,
+                    },
+                    "sources": [],
+                }
+
+            filter_type = filter_info["type"]
+            filter_value = filter_info["value"]
+            display_value = filter_info.get("display") or filter_value
+
+            queryset = NoiseDataset.objects.all()
+            if filter_type == "region":
+                queryset = queryset.filter(region__name__icontains=filter_value)
+            elif filter_type == "community":
+                queryset = queryset.filter(community__name__icontains=filter_value)
+            elif filter_type == "category":
+                queryset = queryset.filter(category__name__icontains=filter_value)
+            elif filter_type == "class":
+                queryset = queryset.filter(class_name__name__icontains=filter_value)
+            elif filter_type == "subclass":
+                queryset = queryset.filter(subclass__name__icontains=filter_value)
+            elif filter_type == "dataset_type":
+                queryset = queryset.filter(dataset_type__name__iexact=filter_value)
+            elif filter_type == "recording_device":
+                # Prefer fuzzy matching for device names when supported
+                if connection.vendor == "postgresql":
+                    try:
+                        from django.contrib.postgres.search import TrigramSimilarity
+
+                        trigram_qs = queryset.annotate(
+                            similarity=TrigramSimilarity("recording_device", filter_value)
+                        ).filter(similarity__gte=0.25)
+
+                        if trigram_qs.exists():
+                            queryset = trigram_qs
+                        else:
+                            queryset = queryset.filter(
+                                recording_device__icontains=filter_value
+                            )
+                    except Exception:
+                        queryset = queryset.filter(
+                            recording_device__icontains=filter_value
+                        )
+                else:
+                    queryset = queryset.filter(recording_device__icontains=filter_value)
+
+            filtered_count = queryset.count()
+
+            if filter_type == "region":
+                scope_text = f"from the **{filter_value}** region"
+            elif filter_type == "community":
+                scope_text = f"from the **{filter_value}** community"
+            elif filter_type == "category":
+                scope_text = f"in the **{filter_value}** category"
+            elif filter_type == "class":
+                scope_text = f"in the **{filter_value}** class"
+            elif filter_type == "dataset_type":
+                scope_text = f"with dataset type **{display_value}**"
+            elif filter_type == "recording_device":
+                scope_text = f"recorded with **{display_value}**"
+            else:
+                scope_text = f"in the **{filter_value}** subclass"
+
+            answer = f"You have **{filtered_count:,}** noise datasets {scope_text}."
+            table = {
+                "columns": ["metric", "value"],
+                "rows": [
+                    {
+                        "metric": f"noise_records_{filter_type}",
+                        "value": filtered_count,
+                    }
+                ],
+                "page": 1,
+                "page_size": 1,
+                "offset": 0,
+                "row_count": 1,
+                "has_more": False,
+            }
+            return {
+                "answer": answer,
+                "table": table,
+                "data_used": {
+                    "type": "database_query",
+                    "method": "filtered_dataset_count",
+                    "filter_type": filter_type,
+                    "filter_value": filter_value,
+                },
+                "sources": [],
+            }
 
         if asking_about_categories:
             total_categories = Category.objects.count()
@@ -589,16 +990,21 @@ class DatasetService:
                 "sources": [],
             }
 
-        # 1. Document datasets (RAG chatbot documents)
-        total_docs = Document.objects.count()
-        processed_docs = Document.objects.filter(processed=True).count()
-        unprocessed_docs = total_docs - processed_docs
-        total_chunks = (
-            Document.objects.filter(processed=True).aggregate(
-                total_chunks=Sum("total_chunks")
-            )["total_chunks"]
-            or 0
-        )
+        # 1. Document datasets (RAG chatbot documents) - only if explicitly asked
+        total_docs = 0
+        processed_docs = 0
+        unprocessed_docs = 0
+        total_chunks = 0
+        if asking_about_docs:
+            total_docs = Document.objects.count()
+            processed_docs = Document.objects.filter(processed=True).count()
+            unprocessed_docs = total_docs - processed_docs
+            total_chunks = (
+                Document.objects.filter(processed=True).aggregate(
+                    total_chunks=Sum("total_chunks")
+                )["total_chunks"]
+                or 0
+            )
 
         # 2. Audio/noise datasets (data collection datasets)
         total_audio_datasets = AudioDataset.objects.count()
@@ -616,7 +1022,7 @@ class DatasetService:
             elif asking_about_noise:
                 answer_parts.append("You don't have any noise datasets yet. You can start collecting audio data through the data collection interface.")
 
-        if asking_about_docs or asking_about_all:
+        if asking_about_docs:
             # User is asking about documents or all datasets
             if total_docs > 0:
                 doc_info = f"You have **{total_docs}** document(s) uploaded for chatbot analysis"
@@ -630,15 +1036,14 @@ class DatasetService:
                 answer_parts.append("You don't have any documents uploaded yet. You can upload documents through the chatbot interface.")
 
         # If asking about all and no datasets found
-        if asking_about_all and total_docs == 0 and total_audio_datasets == 0 and total_noise_records == 0:
-            answer = "You don't have any datasets yet. You can upload documents for chatbot analysis or start collecting audio data through the data collection interface."
+        if asking_about_all and total_audio_datasets == 0 and total_noise_records == 0:
+            answer = "You don't have any datasets yet. You can start collecting audio data through the data collection interface."
         elif answer_parts:
             answer = " ".join(answer_parts)
         else:
             # Fallback
-            total_all = total_noise_records + total_docs
-            if total_all > 0:
-                answer = f"You have **{total_all:,}** total datasets ({total_noise_records:,} noise datasets and {total_docs} documents)."
+            if total_noise_records > 0:
+                answer = f"You have **{total_noise_records:,}** noise datasets."
             else:
                 answer = "You don't have any datasets yet."
 
@@ -646,7 +1051,7 @@ class DatasetService:
         if asking_about_noise or asking_about_all:
             table_rows.append({"metric": "noise_records", "value": total_noise_records})
             table_rows.append({"metric": "audio_dataset_types", "value": total_audio_datasets})
-        if asking_about_docs or asking_about_all:
+        if asking_about_docs:
             table_rows.append({"metric": "uploaded_documents", "value": total_docs})
             table_rows.append({"metric": "processed_documents", "value": processed_docs})
             table_rows.append({"metric": "total_text_chunks", "value": total_chunks})
@@ -661,22 +1066,25 @@ class DatasetService:
             "has_more": False,
         }
 
+        data_used = {
+            "type": "database_query",
+            "method": "comprehensive_dataset_count",
+            "audio_datasets": {
+                "types": total_audio_datasets,
+                "records": total_noise_records,
+            },
+        }
+        if asking_about_docs:
+            data_used["document_datasets"] = {
+                "total": total_docs,
+                "processed": processed_docs,
+                "chunks": total_chunks,
+            }
+
         return {
             "answer": answer,
             "table": table,
-            "data_used": {
-                "type": "database_query",
-                "method": "comprehensive_dataset_count",
-                "document_datasets": {
-                    "total": total_docs,
-                    "processed": processed_docs,
-                    "chunks": total_chunks,
-                },
-                "audio_datasets": {
-                    "types": total_audio_datasets,
-                    "records": total_noise_records,
-                },
-            },
+            "data_used": data_used,
             "sources": [],
         }
 
@@ -825,6 +1233,36 @@ class DatasetService:
                     for community in communities:
                         if community["community__name"]:
                             answer += f"• {community['community__name']}: {community['count']} recordings\\n"
+                    answer += "\\n"
+
+            # Dataset type distribution
+            if "dataset type" in question_lower or "by type" in question_lower or "types" in question_lower:
+                types = (
+                    NoiseDataset.objects.values("dataset_type__name")
+                    .annotate(count=Count("id"))
+                    .order_by("-count")
+                )
+                if types:
+                    answer += "🧾 **By Dataset Type:**\\n"
+                    for dtype in types:
+                        if dtype["dataset_type__name"]:
+                            answer += f"• {dtype['dataset_type__name']}: {dtype['count']} recordings\\n"
+                    answer += "\\n"
+
+            # Recording device distribution
+            if "device" in question_lower:
+                devices = (
+                    NoiseDataset.objects.exclude(recording_device__isnull=True)
+                    .exclude(recording_device__exact="")
+                    .values("recording_device")
+                    .annotate(count=Count("id"))
+                    .order_by("-count")
+                )
+                if devices:
+                    answer += "🎙️ **By Recording Device:**\\n"
+                    for device in devices:
+                        if device["recording_device"]:
+                            answer += f"• {device['recording_device']}: {device['count']} recordings\\n"
                     answer += "\\n"
 
             total_recordings = NoiseDataset.objects.count()

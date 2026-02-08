@@ -51,12 +51,13 @@ DB_CONFIG = AI_CONFIG.get("DATABASE", {})
 AGENT_CONFIG = AI_CONFIG.get("AGENT", {})
 SECURITY_CONFIG = AI_CONFIG.get("SECURITY", {})
 
+# Built from AI_INSIGHT["DATABASE"] in settings: local DB when USE_SQLITE=true, Docker DB when false
 DB_URI = (
-    f"postgresql://{DB_CONFIG.get('USER', 'admin')}:"
-    f"{DB_CONFIG.get('PASSWORD', 'localhost')}@"
-    f"{DB_CONFIG.get('HOST', 'db')}:"
+    f"postgresql://{DB_CONFIG.get('USER', 'postgres')}:"
+    f"{DB_CONFIG.get('PASSWORD', '')}@"
+    f"{DB_CONFIG.get('HOST', 'localhost')}:"
     f"{DB_CONFIG.get('PORT', 5432)}/"
-    f"{DB_CONFIG.get('NAME', 'brainbox-crm')}"
+    f"{DB_CONFIG.get('NAME', 'iheardatadb')}"
 )
 
 
@@ -82,10 +83,6 @@ def home(request):
     )
 
 
-def chat(request):
-    """Main chat interface."""
-    return render(request, "data_insights/chat.html")
-
 
 def unified_chat(request):
     """Unified chat interface with sessions, suggestions, and chat in one page."""
@@ -95,8 +92,16 @@ def unified_chat(request):
         "Which data has the highest decibel level?",
         "Which community has the lowest decibel level?",
     ]
+    ml_suggestions = [
+        "Show label distribution by category",
+        "How many datasets have audio features?",
+        "What is the feature coverage percentage?",
+        "Recommend a train/val/test split size",
+    ]
     return render(
-        request, "data_insights/unified_chat.html", {"suggestions": suggestions}
+        request,
+        "data_insights/unified_chat.html",
+        {"suggestions": suggestions, "ml_suggestions": ml_suggestions},
     )
 
 
@@ -301,16 +306,20 @@ class ChatSessionView(ModelViewSet):
                                                     data_summary = None
                                                     if tool_call.get("analysis_type"):
                                                         data_summary = f"tool:{tool_call.get('analysis_type')}"
-                                                    elif tool_call.get("total_count") is not None:
+                                                    elif (
+                                                        tool_call.get("total_count")
+                                                        is not None
+                                                    ):
                                                         data_summary = f"total_count:{tool_call.get('total_count')}"
 
                                                     auto_viz = viz_tool._run(
                                                         query=message.user_input,
                                                         data_summary=data_summary,
                                                     )
-                                                    if (
-                                                        isinstance(auto_viz, dict)
-                                                        and auto_viz.get("recommendation")
+                                                    if isinstance(
+                                                        auto_viz, dict
+                                                    ) and auto_viz.get(
+                                                        "recommendation"
                                                     ):
                                                         visualization_data = auto_viz
                                                         yield self._format_stream_message(
@@ -355,7 +364,11 @@ class ChatSessionView(ModelViewSet):
                                 try:
                                     tool_names = []
                                     for tc in msg.tool_calls or []:
-                                        name = tc.get("name") if isinstance(tc, dict) else None
+                                        name = (
+                                            tc.get("name")
+                                            if isinstance(tc, dict)
+                                            else None
+                                        )
                                         if name:
                                             tool_names.append(name)
                                     yield self._format_stream_message(
@@ -552,12 +565,14 @@ class ChatSessionView(ModelViewSet):
         system_prompt = SYSTEM_TEMPLATE
         try:
             from data_insights.workflows.prompt import ML_SYSTEM_TEMPLATE
+
             if mode == "ml":
                 system_prompt = ML_SYSTEM_TEMPLATE
         except Exception:
             pass
 
         from data_insights.workflows.tools import get_agent_tools
+
         tools = get_agent_tools(mode=mode)
 
         agent = create_data_insights_agent(

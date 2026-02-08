@@ -541,14 +541,14 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", default="gpt-4o-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 if USE_SQLITE:
-
+    # Local development: use local Postgres (localhost)
     AI_INSIGHT = {
         "DATABASE": {
-            "USER": os.getenv("LOCAL_POSTGRES_USER", "postgres"),
-            "PASSWORD": os.getenv("LOCAL_POSTGRES_PASSWORD", "localhost"),
-            "HOST": os.getenv("LOCAL_POSTGRES_HOST", "db"),
+            "USER": os.getenv("LOCAL_POSTGRES_USER", "kelvin"),
+            "PASSWORD": os.getenv("LOCAL_POSTGRES_PASSWORD", "kelvin"),
+            "HOST": os.getenv("LOCAL_POSTGRES_HOST", "localhost"),
             "PORT": int(os.getenv("LOCAL_POSTGRES_PORT", 5432)),
-            "NAME": os.getenv("LOCAL_POSTGRES_DB", "iheardatadb"),
+            "NAME": os.getenv("LOCAL_POSTGRES_DB", "datacollection"),
             "MAX_CONNECTIONS": int(os.getenv("AI_INSIGHT_DB_MAX_CONNECTIONS", 20)),
             "CONNECTION_TIMEOUT": int(
                 os.getenv("AI_INSIGHT_DB_CONNECTION_TIMEOUT", 30)
@@ -579,7 +579,7 @@ if USE_SQLITE:
         },
     }
 else:
-
+    # Docker / production: use Postgres from env (host "db" in Docker)
     AI_INSIGHT = {
         "DATABASE": {
             "USER": os.getenv("POSTGRES_USER", "postgres"),

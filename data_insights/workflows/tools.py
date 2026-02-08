@@ -175,12 +175,13 @@ DB_CONFIG = AI_CONFIG.get("DATABASE", {})
 AGENT_CONFIG = AI_CONFIG.get("AGENT", {})
 SECURITY_CONFIG = AI_CONFIG.get("SECURITY", {})
 
+# Built from AI_INSIGHT["DATABASE"] in settings: local DB when USE_SQLITE=true, Docker DB when false
 DB_URI = (
-    f"postgresql://{DB_CONFIG.get('USER', 'admin')}:"
-    f"{DB_CONFIG.get('PASSWORD', 'localhost')}@"
-    f"{DB_CONFIG.get('HOST', 'db')}:"
+    f"postgresql://{DB_CONFIG.get('USER', 'postgres')}:"
+    f"{DB_CONFIG.get('PASSWORD', '')}@"
+    f"{DB_CONFIG.get('HOST', 'localhost')}:"
     f"{DB_CONFIG.get('PORT', 5432)}/"
-    f"{DB_CONFIG.get('NAME', 'database')}"
+    f"{DB_CONFIG.get('NAME', 'iheardatadb')}"
 )
 from data.models import (
     NoiseDataset,
@@ -317,7 +318,17 @@ class NoiseDatasetSearchTool(BaseTool):
             filter_criteria = filter_criteria or {}
 
             # Build queryset
-            queryset = NoiseDataset.objects.all()
+            queryset = NoiseDataset.objects.select_related(
+                "region",
+                "community",
+                "category",
+                "time_of_day",
+                "class_name",
+                "subclass",
+                "microphone_type",
+                "dataset_type",
+                "collector",
+            )
 
             # Apply filters
             if "name" in filter_criteria:
@@ -458,7 +469,12 @@ class AudioFeatureSearchTool(BaseTool):
             filter_criteria = filter_criteria or {}
 
             # Build queryset
-            queryset = AudioFeature.objects.all()
+            queryset = AudioFeature.objects.select_related(
+                "noise_dataset",
+                "noise_dataset__region",
+                "noise_dataset__category",
+                "noise_dataset__community",
+            )
 
             # Apply filters with correct field names
             if "rms_energy" in filter_criteria:
@@ -2138,21 +2154,37 @@ class MLDatasetProfileTool(BaseTool):
     )
     args_schema: Optional[type[BaseModel]] = MLProfileInput
 
-    def _run(self, group_by: Optional[str] = "category", top_k: int = 10, **kwargs) -> Dict[str, Any]:
+    def _run(
+        self, group_by: Optional[str] = "category", top_k: int = 10, **kwargs
+    ) -> Dict[str, Any]:
         try:
             total = NoiseDataset.objects.count()
-            with_features = NoiseDataset.objects.filter(audio_features__isnull=False).count()
-            with_analysis = NoiseDataset.objects.filter(noise_analysis__isnull=False).count()
+            with_features = NoiseDataset.objects.filter(
+                audio_features__isnull=False
+            ).count()
+            with_analysis = NoiseDataset.objects.filter(
+                noise_analysis__isnull=False
+            ).count()
 
-            dataset_types = NoiseDataset.objects.values("dataset_type").distinct().count()
+            dataset_types = (
+                NoiseDataset.objects.values("dataset_type").distinct().count()
+            )
 
             missing = {
                 "region": NoiseDataset.objects.filter(region__isnull=True).count(),
                 "category": NoiseDataset.objects.filter(category__isnull=True).count(),
-                "community": NoiseDataset.objects.filter(community__isnull=True).count(),
-                "recording_date": NoiseDataset.objects.filter(recording_date__isnull=True).count(),
-                "recording_device": NoiseDataset.objects.filter(recording_device__isnull=True).count(),
-                "microphone_type": NoiseDataset.objects.filter(microphone_type__isnull=True).count(),
+                "community": NoiseDataset.objects.filter(
+                    community__isnull=True
+                ).count(),
+                "recording_date": NoiseDataset.objects.filter(
+                    recording_date__isnull=True
+                ).count(),
+                "recording_device": NoiseDataset.objects.filter(
+                    recording_device__isnull=True
+                ).count(),
+                "microphone_type": NoiseDataset.objects.filter(
+                    microphone_type__isnull=True
+                ).count(),
             }
 
             group_field = "category__name"
@@ -2196,7 +2228,9 @@ class MLDatasetProfileTool(BaseTool):
 class MLFeatureStatsInput(BaseModel):
     """Input for ML feature stats"""
 
-    include_decibels: bool = Field(default=True, description="Include noise analysis decibel stats")
+    include_decibels: bool = Field(
+        default=True, description="Include noise analysis decibel stats"
+    )
 
 
 class MLFeatureStatsTool(BaseTool):
@@ -2238,7 +2272,9 @@ class MLFeatureStatsTool(BaseTool):
             return response
         except Exception as e:
             logger.error(f"Error in ML feature stats: {e}")
-            return {"error": get_user_friendly_error(str(e), "computing ML feature stats")}
+            return {
+                "error": get_user_friendly_error(str(e), "computing ML feature stats")
+            }
 
 
 def get_agent_tools(mode: str = "analysis"):

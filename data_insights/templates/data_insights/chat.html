@@ -19,7 +19,7 @@
                 </button>
             </div>
         </div>
-        
+
         <!-- Sessions List -->
         <div id="sessionsList" class="flex-1 overflow-y-auto p-4">
             <div class="text-center text-gray-500 py-8">
@@ -84,14 +84,14 @@
                 <!-- Input Form -->
                 <form id="welcomeForm" class="w-full max-w-lg mx-auto">
                     <div class="relative">
-                        <input 
-                            id="welcomeInput" 
-                            type="text" 
-                            class="w-full bg-slate-50 border border-slate-200 rounded-full py-4 pl-4 pr-16 outline-none text-slate-700 focus:ring-2 focus:ring-secondary/30 focus:border-secondary" 
+                        <input
+                            id="welcomeInput"
+                            type="text"
+                            class="w-full bg-slate-50 border border-slate-200 rounded-full py-4 pl-4 pr-16 outline-none text-slate-700 focus:ring-2 focus:ring-secondary/30 focus:border-secondary"
                             placeholder="Type your question..."
                         />
-                        <button 
-                            type="submit" 
+                        <button
+                            type="submit"
                             class="absolute right-2 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-secondary text-white flex items-center justify-center shadow hover:opacity-90"
                             aria-label="Send"
                         >
@@ -115,16 +115,16 @@
                 <form id="chatForm" class="relative">
                     <div class="flex items-end space-x-3">
                         <div class="flex-1">
-                            <textarea 
-                                id="messageInput" 
-                                rows="1" 
-                                class="w-full bg-slate-50 border border-slate-200 rounded-lg py-3 px-4 outline-none text-slate-700 focus:ring-2 focus:ring-secondary/30 focus:border-secondary resize-none" 
+                            <textarea
+                                id="messageInput"
+                                rows="1"
+                                class="w-full bg-slate-50 border border-slate-200 rounded-lg py-3 px-4 outline-none text-slate-700 focus:ring-2 focus:ring-secondary/30 focus:border-secondary resize-none"
                                 placeholder="Ask about your audio data..."
                                 style="min-height: 48px; max-height: 120px;"
                             ></textarea>
                         </div>
-                        <button 
-                            type="submit" 
+                        <button
+                            type="submit"
                             id="sendBtn"
                             class="w-12 h-12 rounded-lg bg-secondary text-white flex items-center justify-center shadow hover:opacity-90 disabled:opacity-50"
                             aria-label="Send"
@@ -178,23 +178,23 @@ class AudioDataChat {
         this.sessions = [];
         this.isLoading = false;
         this.currentMode = sessionStorage.getItem('insightsMode') || 'analysis';
-        
+
         this.initializeEventListeners();
         this.updateModeUI();
         this.loadSessions();
     }
-    
+
     getCSRFToken() {
-        return document.querySelector('[name=csrfmiddlewaretoken]')?.value || 
+        return document.querySelector('[name=csrfmiddlewaretoken]')?.value ||
                document.querySelector('meta[name="csrf-token"]')?.content || '';
     }
-    
+
     initializeEventListeners() {
         // New chat button
         document.getElementById('newChatBtn').addEventListener('click', () => {
             this.createNewSession();
         });
-        
+
         // Welcome form submission
         document.getElementById('welcomeForm').addEventListener('submit', (e) => {
             e.preventDefault();
@@ -203,14 +203,14 @@ class AudioDataChat {
                 this.createSessionAndSendMessage(input.value.trim());
             }
         });
-        
+
         // Suggestion buttons
         document.querySelectorAll('.suggestion-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 this.createSessionAndSendMessage(btn.textContent.trim());
             });
         });
-        
+
         // Chat form submission
         document.getElementById('chatForm').addEventListener('submit', (e) => {
             e.preventDefault();
@@ -221,19 +221,19 @@ class AudioDataChat {
                 this.autoResizeTextarea(input);
             }
         });
-        
+
         // Auto-resize textarea
         const messageInput = document.getElementById('messageInput');
         messageInput.addEventListener('input', () => {
             this.autoResizeTextarea(messageInput);
         });
     }
-    
+
     autoResizeTextarea(textarea) {
         textarea.style.height = 'auto';
         textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
     }
-    
+
     async createNewSession() {
         try {
             this.showLoading();
@@ -248,7 +248,7 @@ class AudioDataChat {
             this.hideLoading();
         }
     }
-    
+
     async createSessionAndSendMessage(userInput) {
         try {
             this.showLoading();
@@ -263,7 +263,7 @@ class AudioDataChat {
             this.hideLoading();
         }
     }
-    
+
     async createSession() {
         try {
             const response = await fetch(`${this.apiBaseUrl}/insights/sessions/`, {
@@ -271,12 +271,12 @@ class AudioDataChat {
                 headers: this.headers,
                 body: JSON.stringify({ title: null, mode: this.currentMode })
             });
-            
+
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
                 throw new Error(errorData.detail || `HTTP ${response.status}: Failed to create session`);
             }
-            
+
             const session = await response.json();
             this.currentSession = session;
             if (session.mode) {
@@ -287,20 +287,20 @@ class AudioDataChat {
             this.updateSessionsList();
             this.updateChatTitle(session.title || 'New Chat');
             this.updateModeUI();
-            
+
             return session;
         } catch (error) {
             console.error('Error creating session:', error);
             throw error;
         }
     }
-    
+
     async loadSessions() {
         try {
             const response = await fetch(`${this.apiBaseUrl}/insights/sessions/`, {
                 headers: this.headers
             });
-            
+
             if (response.ok) {
                 const data = await response.json();
                 // Handle paginated response - extract results array
@@ -320,15 +320,15 @@ class AudioDataChat {
             this.showErrorToast('Failed to load chat sessions');
         }
     }
-    
+
     updateSessionsList() {
         const container = document.getElementById('sessionsList');
-        
+
         // Ensure sessions is an array
         if (!Array.isArray(this.sessions)) {
             this.sessions = [];
         }
-        
+
         if (this.sessions.length === 0) {
             container.innerHTML = `
                 <div class="text-center text-gray-500 py-8">
@@ -339,7 +339,7 @@ class AudioDataChat {
             `;
             return;
         }
-        
+
         container.innerHTML = this.sessions.map(session => `
             <div class="session-item p-3 rounded-lg cursor-pointer transition-colors mb-2 ${
                 this.currentSession?.id === session.id ? 'bg-primary-light border border-primary/20' : 'hover:bg-gray-50'
@@ -358,7 +358,7 @@ class AudioDataChat {
                 </div>
             </div>
         `).join('');
-        
+
         // Add event listeners
         container.querySelectorAll('.session-item').forEach(item => {
             item.addEventListener('click', (e) => {
@@ -368,7 +368,7 @@ class AudioDataChat {
                 }
             });
         });
-        
+
         container.querySelectorAll('.session-delete-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -377,14 +377,14 @@ class AudioDataChat {
             });
         });
     }
-    
+
     async loadSession(sessionId) {
         try {
             this.showLoading();
             const response = await fetch(`${this.apiBaseUrl}/insights/sessions/${sessionId}/`, {
                 headers: this.headers
             });
-            
+
             if (response.ok) {
                 const session = await response.json();
                 this.currentSession = session;
@@ -421,17 +421,17 @@ class AudioDataChat {
             input.placeholder = isMl ? 'Ask ML questions about your data...' : 'Ask about your audio data...';
         }
     }
-    
+
     loadSessionMessages(session) {
         const container = document.getElementById('messagesContainer');
         container.innerHTML = '';
-        
+
         if (session.messages && session.messages.length > 0) {
             // Sort messages by creation date (oldest first)
-            const sortedMessages = [...session.messages].sort((a, b) => 
+            const sortedMessages = [...session.messages].sort((a, b) =>
                 new Date(a.created_at) - new Date(b.created_at)
             );
-            
+
             sortedMessages.forEach(message => {
                 // Add user message
                 this.addMessageToUI({
@@ -440,7 +440,7 @@ class AudioDataChat {
                     created_at: message.created_at,
                     status: message.status
                 });
-                
+
                 // Add assistant message if it exists
                 if (message.assistant_response && message.assistant_response.trim()) {
                     this.addMessageToUI({
@@ -450,7 +450,7 @@ class AudioDataChat {
                         status: message.status,
                         visulization: message.visulization
                     });
-                    
+
                     // Add visualization if it exists
                     if (message.visulization) {
                         setTimeout(() => {
@@ -468,16 +468,16 @@ class AudioDataChat {
                 }
             });
         }
-        
+
         this.scrollToBottom();
     }
-    
+
     async sendMessage(userInput) {
         if (!this.currentSession || this.isLoading) return;
-        
+
         this.isLoading = true;
         this.setSendButtonLoading(true);
-        
+
         // Add user message to UI
         const userMessage = {
             id: Date.now(),
@@ -486,7 +486,7 @@ class AudioDataChat {
             status: 'pending'
         };
         this.addMessageToUI(userMessage);
-        
+
         // Add assistant message placeholder
         const assistantMessage = {
             id: Date.now() + 1,
@@ -497,7 +497,7 @@ class AudioDataChat {
             visualizations: []
         };
         this.addMessageToUI(assistantMessage);
-        
+
         try {
             const response = await fetch(
                 `${this.apiBaseUrl}/insights/sessions/${this.currentSession.id}/messages/`,
@@ -511,13 +511,13 @@ class AudioDataChat {
                     })
                 }
             );
-            
+
             if (!response.ok) {
                 throw new Error('Failed to send message');
             }
-            
+
             await this.handleStreamingResponse(response, assistantMessage);
-            
+
         } catch (error) {
             console.error('Error sending message:', error);
             this.showErrorToast('Failed to send message');
@@ -527,22 +527,22 @@ class AudioDataChat {
             this.setSendButtonLoading(false);
         }
     }
-    
+
     async handleStreamingResponse(response, assistantMessage) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        
+
         try {
             while (true) {
                 const { done, value } = await reader.read();
-                
+
                 if (done) break;
-                
+
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\n');
                 buffer = lines.pop();
-                
+
                 for (const line of lines) {
                     if (line.trim()) {
                         try {
@@ -558,10 +558,10 @@ class AudioDataChat {
             console.error('Streaming error:', error);
         }
     }
-    
+
     handleStreamMessage(message, assistantMessage) {
         const { action, data } = message;
-        
+
         switch (action) {
             case 'thinking':
                 this.updateStreamStatus(assistantMessage.id, data?.message || 'Thinking...');
@@ -599,38 +599,38 @@ class AudioDataChat {
                 assistantMessage.toolResponses.push(data);
                 this.updateStreamStatus(assistantMessage.id, 'Tool results received.');
                 break;
-                
+
             case 'llm':
                 assistantMessage.assistant_response += data;
                 this.updateMessageContent(assistantMessage.id, assistantMessage.assistant_response);
                 break;
-                
+
             case 'visualization':
                 assistantMessage.visualizations = assistantMessage.visualizations || [];
                 assistantMessage.visualizations.push(data);
                 // Pass tool responses to extract actual data
                 this.addVisualizationToMessage(assistantMessage.id, data, assistantMessage.toolResponses);
                 break;
-                
+
             case 'completed':
                 this.updateStreamStatus(assistantMessage.id, 'Completed');
                 this.updateMessageStatus(assistantMessage.id, 'completed');
                 this.loadSessions(); // Refresh sessions list
                 break;
-                
+
             case 'error':
                 console.error('Stream error:', data);
                 this.updateMessageStatus(assistantMessage.id, 'failed');
                 break;
         }
     }
-    
+
     addMessageToUI(message) {
         const container = document.getElementById('messagesContainer');
         const messageDiv = document.createElement('div');
         messageDiv.id = `message-${message.id}`;
         messageDiv.className = 'message flex space-x-3';
-        
+
         if (message.user_input && !message.assistant_response) {
             // User message
             messageDiv.innerHTML = `
@@ -657,7 +657,7 @@ class AudioDataChat {
                 <div class="flex-1">
                     <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
                         <div class="message-content prose prose-sm max-w-none">
-                            ${message.assistant_response ? this.formatMarkdown(message.assistant_response) : 
+                            ${message.assistant_response ? this.formatMarkdown(message.assistant_response) :
                               '<div class="flex items-center space-x-2"><div class="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div><span class="text-gray-500">Analyzing your audio data...</span></div>'}
                         </div>
                         <div class="stream-status text-xs text-gray-400 mt-2 hidden"></div>
@@ -667,11 +667,11 @@ class AudioDataChat {
                 </div>
             `;
         }
-        
+
         container.appendChild(messageDiv);
         this.scrollToBottom();
     }
-    
+
     updateMessageContent(messageId, content) {
         const messageDiv = document.getElementById(`message-${messageId}`);
         if (messageDiv) {
@@ -694,7 +694,7 @@ class AudioDataChat {
             statusDiv.classList.add('hidden');
         }
     }
-    
+
     updateMessageStatus(messageId, status) {
         const messageDiv = document.getElementById(`message-${messageId}`);
         if (messageDiv) {
@@ -704,7 +704,7 @@ class AudioDataChat {
             }
         }
     }
-    
+
     addVisualizationToMessage(messageId, visualizationData, toolResponses = []) {
         const messageDiv = document.getElementById(`message-${messageId}`);
         if (messageDiv) {
@@ -729,7 +729,7 @@ class AudioDataChat {
                     </div>
                 `;
                 container.appendChild(vizDiv);
-                
+
                 // Create the chart with actual data
                 setTimeout(() => {
                     this.createChart(visualizationData, chartId, toolResponses);
@@ -738,23 +738,23 @@ class AudioDataChat {
             }
         }
     }
-    
+
     createChart(visualizationData, canvasId, toolResponses = []) {
         const canvas = document.getElementById(canvasId);
         if (!canvas) return;
-        
+
         try {
             const frontendData = visualizationData.frontend_data;
             const chartType = frontendData.type;
-            
+
             // Extract actual data from the tool responses
             const actualData = this.extractChartData(visualizationData, toolResponses);
-            
+
             console.log('Creating chart:', chartType, 'with data:', actualData);
-            
+
             // Create chart configuration based on type
             let config;
-            
+
             switch (chartType) {
                 case 'pie_chart':
                     config = {
@@ -789,7 +789,7 @@ class AudioDataChat {
                         }
                     };
                     break;
-                    
+
                 case 'bar_chart':
                     config = {
                         type: 'bar',
@@ -820,7 +820,7 @@ class AudioDataChat {
                         }
                     };
                     break;
-                    
+
                 case 'line_chart':
                     config = {
                         type: 'line',
@@ -851,7 +851,7 @@ class AudioDataChat {
                         }
                     };
                     break;
-                    
+
                 default:
                     // Default to bar chart
                     config = {
@@ -878,10 +878,10 @@ class AudioDataChat {
                         }
                     };
             }
-            
+
             // Create the chart
             new Chart(canvas, config);
-            
+
             console.log('Chart created successfully:', canvasId);
         } catch (error) {
             console.error('Error creating chart:', error);
@@ -890,13 +890,13 @@ class AudioDataChat {
             container.innerHTML = '<div class="text-red-500 text-center p-4">Failed to load chart</div>';
         }
     }
-    
+
     extractChartData(visualizationData, toolResponses = []) {
         console.log('Extracting chart data from:', visualizationData, 'Tool responses:', toolResponses);
-        
+
         // Try to extract actual data from tool responses
         let extractedData = null;
-        
+
         for (const toolResponse of toolResponses) {
             // Handle array responses (like region counts)
             if (Array.isArray(toolResponse)) {
@@ -905,7 +905,7 @@ class AudioDataChat {
                         // Extract region data from array format
                         const labels = toolResponse.map(item => item.region_name);
                         const data = toolResponse.map(item => item.noise_dataset_count);
-                        
+
                         extractedData = {
                             labels: labels,
                             data: data,
@@ -925,10 +925,10 @@ class AudioDataChat {
                     if (Array.isArray(datasets)) {
                         const regions = datasets.map(d => d.region);
                         const uniqueRegions = [...new Set(regions)];
-                        const counts = uniqueRegions.map(region => 
+                        const counts = uniqueRegions.map(region =>
                             regions.filter(r => r === region).length
                         );
-                        
+
                         extractedData = {
                             labels: uniqueRegions,
                             data: counts,
@@ -951,10 +951,10 @@ class AudioDataChat {
                         if (match) {
                             const regions = match.map(m => m.match(/'region':\s*'([^']+)'/)[1]);
                             const uniqueRegions = [...new Set(regions)];
-                            const counts = uniqueRegions.map(region => 
+                            const counts = uniqueRegions.map(region =>
                                 regions.filter(r => r === region).length
                             );
-                            
+
                             extractedData = {
                                 labels: uniqueRegions,
                                 data: counts,
@@ -969,12 +969,12 @@ class AudioDataChat {
                 }
             }
         }
-        
+
         // If we extracted data, return it
         if (extractedData) {
             return extractedData;
         }
-        
+
         // Check if there's a chart_template in the recommendation with actual data
         const recommendation = visualizationData.recommendation;
         if (recommendation && recommendation.chart_template) {
@@ -988,7 +988,7 @@ class AudioDataChat {
                 };
             }
         }
-        
+
         // Fallback: Use the data from the sample response (Ashanti region with 2 files)
         return {
             labels: ['Ashanti'],
@@ -997,16 +997,16 @@ class AudioDataChat {
             title: 'Distribution of Audio Files by Region'
         };
     }
-    
+
     generateColors(count) {
         const colors = [
-            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', 
+            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0',
             '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF',
             '#4BC0C0', '#FF6384', '#36A2EB', '#FFCE56'
         ];
         return colors.slice(0, count);
     }
-    
+
     generateSampleData(chartType) {
         // Generate sample data based on chart type
         switch (chartType) {
@@ -1065,16 +1065,16 @@ class AudioDataChat {
                 };
         }
     }
-    
+
     async deleteSession(sessionId) {
         if (!confirm('Are you sure you want to delete this session?')) return;
-        
+
         try {
             const response = await fetch(`${this.apiBaseUrl}/insights/sessions/${sessionId}/archive/`, {
                 method: 'POST',
                 headers: this.headers
             });
-            
+
             if (response.ok) {
                 this.sessions = this.sessions.filter(s => s.id !== sessionId);
                 if (this.currentSession?.id === sessionId) {
@@ -1089,33 +1089,33 @@ class AudioDataChat {
             this.showErrorToast('Failed to delete session');
         }
     }
-    
+
     hideWelcomeScreen() {
         document.getElementById('welcomeScreen').classList.add('hidden');
         document.getElementById('chatContainer').classList.remove('hidden');
         document.getElementById('chatInputContainer').classList.remove('hidden');
     }
-    
+
     showWelcomeScreen() {
         document.getElementById('welcomeScreen').classList.remove('hidden');
         document.getElementById('chatContainer').classList.add('hidden');
         document.getElementById('chatInputContainer').classList.add('hidden');
         document.getElementById('messagesContainer').innerHTML = '';
     }
-    
+
     showChatInterface() {
         this.hideWelcomeScreen();
     }
-    
+
     updateChatTitle(title) {
         document.getElementById('chatTitle').textContent = title;
     }
-    
+
     scrollToBottom() {
         const container = document.getElementById('chatContainer');
         container.scrollTop = container.scrollHeight;
     }
-    
+
     setSendButtonLoading(loading) {
         const btn = document.getElementById('sendBtn');
         if (loading) {
@@ -1126,76 +1126,76 @@ class AudioDataChat {
             btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i>';
         }
     }
-    
+
     showLoading() {
         document.getElementById('loadingOverlay').classList.remove('hidden');
     }
-    
+
     hideLoading() {
         document.getElementById('loadingOverlay').classList.add('hidden');
     }
-    
+
     showErrorToast(message) {
         const toast = document.getElementById('errorToast');
         const messageEl = document.getElementById('errorMessage');
         messageEl.textContent = message;
         toast.classList.remove('hidden');
-        
+
         setTimeout(() => {
             toast.classList.add('hidden');
         }, 5000);
     }
-    
+
     showSuccessToast(message) {
         const toast = document.getElementById('successToast');
         const messageEl = document.getElementById('successMessage');
         messageEl.textContent = message;
         toast.classList.remove('hidden');
-        
+
         setTimeout(() => {
             toast.classList.add('hidden');
         }, 3000);
     }
-    
+
     formatDate(dateString) {
         const date = new Date(dateString);
         const now = new Date();
         const diffTime = Math.abs(now - date);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        
+
         if (diffDays === 1) return 'Today';
         if (diffDays === 2) return 'Yesterday';
         if (diffDays <= 7) return `${diffDays - 1} days ago`;
-        
+
         return date.toLocaleDateString();
     }
-    
+
     formatTime(dateString) {
         const date = new Date(dateString);
         return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
-    
+
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     }
-    
+
     formatMarkdown(text) {
         // Enhanced markdown formatting for better display
         let formattedText = text;
-        
+
         // Remove chart configuration JSON blocks (they're handled by visualizations)
         formattedText = formattedText.replace(/```json\s*\{\s*"recommended_chart"[\s\S]*?```/g, '');
         formattedText = formattedText.replace(/```json\s*\{\s*"type":\s*"pie"[\s\S]*?```/g, '');
         formattedText = formattedText.replace(/```json\s*\{\s*"type":\s*"bar"[\s\S]*?```/g, '');
         formattedText = formattedText.replace(/```json\s*\{\s*"type":\s*"line"[\s\S]*?```/g, '');
-        
+
         // Remove chart reasoning sections
         formattedText = formattedText.replace(/### Recommended Visualization:[\s\S]*?(?=###|$)/g, '');
         formattedText = formattedText.replace(/#### [^:]*Chart Configuration:[\s\S]*?(?=###|####|$)/g, '');
         formattedText = formattedText.replace(/Here's the template for creating[\s\S]*?```/g, '');
-        
+
         return formattedText
             // Code blocks
             .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre class="bg-gray-100 p-4 rounded-lg overflow-x-auto"><code class="language-$1">$2</code></pre>')
@@ -1232,7 +1232,7 @@ class AudioDataChat {
 // Initialize the chat when the page loads
 document.addEventListener('DOMContentLoaded', () => {
     window.audioDataChat = new AudioDataChat();
-    
+
     // Check for session to load from home page
     const loadSessionId = sessionStorage.getItem('loadSessionId');
     if (loadSessionId) {
@@ -1242,7 +1242,7 @@ document.addEventListener('DOMContentLoaded', () => {
         window.audioDataChat.loadSession(parseInt(loadSessionId));
         return;
     }
-    
+
     // Check for initial message from home page
     const initialMessage = sessionStorage.getItem('initialMessage');
     if (initialMessage) {
@@ -1315,9 +1315,9 @@ document.addEventListener('DOMContentLoaded', () => {
     padding: 0;
 }
 
-.message-content h1, 
-.message-content h2, 
-.message-content h3, 
+.message-content h1,
+.message-content h2,
+.message-content h3,
 .message-content h4 {
     color: #1f2937;
     font-weight: 600;
