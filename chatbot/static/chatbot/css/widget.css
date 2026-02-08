@@ -255,14 +255,18 @@
     }
 }
 
-.message-bubble.user {
+.message-bubble {
     display: flex;
-    justify-content: flex-end;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.message-bubble.user {
+    align-items: flex-end;
 }
 
 .message-bubble.assistant {
-    display: flex;
-    justify-content: flex-start;
+    align-items: flex-start;
 }
 
 .message-content {
@@ -272,6 +276,7 @@
     font-size: 14px;
     line-height: 1.5;
     word-wrap: break-word;
+    display: inline-block;
 }
 
 /* Markdown styling */
@@ -389,13 +394,15 @@
     background: #ffffff;
     border: 1px solid #e5e7eb;
     border-radius: 8px;
-    overflow: hidden;
+    overflow-x: auto;
+    max-width: 85%;
 }
 
 .message-table .data-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 12px;
+    min-width: 360px;
 }
 
 .message-table th,

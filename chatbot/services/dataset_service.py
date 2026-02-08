@@ -551,6 +551,10 @@ class DatasetService:
         asking_about_noise = any(word in question_lower for word in ["noise", "recording", "audio", "sound"])
         asking_about_docs = any(word in question_lower for word in ["document", "doc", "file", "upload"])
         asking_about_categories = any(word in question_lower for word in ["category", "categories"])
+        asking_about_dataset = any(word in question_lower for word in ["dataset", "datasets", "datset", "datsets"])
+        # Treat generic "dataset(s)" as noise datasets unless explicitly about documents
+        if asking_about_dataset and not asking_about_docs:
+            asking_about_noise = True
         asking_about_all = not asking_about_noise and not asking_about_docs
 
         if asking_about_categories:
@@ -638,13 +642,14 @@ class DatasetService:
             else:
                 answer = "You don't have any datasets yet."
 
-        table_rows = [
-            {"metric": "noise_records", "value": total_noise_records},
-            {"metric": "audio_dataset_types", "value": total_audio_datasets},
-            {"metric": "uploaded_documents", "value": total_docs},
-            {"metric": "processed_documents", "value": processed_docs},
-            {"metric": "total_text_chunks", "value": total_chunks},
-        ]
+        table_rows = []
+        if asking_about_noise or asking_about_all:
+            table_rows.append({"metric": "noise_records", "value": total_noise_records})
+            table_rows.append({"metric": "audio_dataset_types", "value": total_audio_datasets})
+        if asking_about_docs or asking_about_all:
+            table_rows.append({"metric": "uploaded_documents", "value": total_docs})
+            table_rows.append({"metric": "processed_documents", "value": processed_docs})
+            table_rows.append({"metric": "total_text_chunks", "value": total_chunks})
 
         table = {
             "columns": ["metric", "value"],

@@ -177,7 +177,7 @@
                   <a href="{% url 'data:datasetlist'%}"
                      class="dropdown-item block px-4 py-2 text-sm text-slate-700 dark:text-white transition-colors">
                     <i class="fas fa-volume-up mr-2 text-xs text-secondary"></i>
-                    Noise
+                    Noise {{request.user.user_type}}
                   </a>
                 </li>
                 <li>
@@ -209,6 +209,7 @@
           </div>
         </li>
 
+        {% if request.user.user_type == "researcher" and request.user.is_admin %}
 
             <li class="mt-0.5 w-full">
           <a href="{% url 'reports:report' %}"
@@ -224,8 +225,11 @@
             <span class="ml-1 duration-300 opacity-100 pointer-events-none ease">Report</span>
           </a>
         </li>
+          {%endif%}
 
             <!-- Insights link -->
+
+            {% if request.user.user_type == "researcher" and request.user.is_admin %}
             <li class="mt-0.5 w-full">
               <a href="{% url 'insights:home' %}"
                  class="py-2.7 text-sm ease-nav-brand my-0 mx-2 flex items-center whitespace-nowrap px-4 transition-colors hover-primary
@@ -240,6 +244,8 @@
                 <span class="ml-1 duration-300 opacity-100 pointer-events-none ease">Data Insights</span>
               </a>
             </li>
+
+            {%endif%}
 
             <!-- AI Chatbot link -->
             <li class="mt-0.5 w-full">
@@ -258,6 +264,7 @@
             </li>
 
         <!-- Export link -->
+        {% if user.user_type == "researcher" and user.is_admin %}
         <li class="mt-0.5 w-full">
           <a href="{% url 'export:export_with_audio' %}"
              class="py-2.7 text-sm ease-nav-brand my-0 mx-2 flex items-center whitespace-nowrap px-4 transition-colors hover-primary
@@ -271,11 +278,13 @@
             </div>
             <span class="ml-1 duration-300 opacity-100 pointer-events-none ease">Export</span>
           </a>
-        </li>
+        </li> 
+        {%endif%}
 
 
 
         <!-- Approval link -->
+        {% if user.user_type == "researcher" and user.is_admin %}
          <li class="mt-0.5 w-full">
            <a href="/approval/"
              class="py-2.7 text-sm ease-nav-brand my-0 mx-2 flex items-center whitespace-nowrap px-4 transition-colors hover-primary
@@ -290,6 +299,7 @@
             <span class="ml-1 duration-300 opacity-100 pointer-events-none ease">Approval</span>
           </a>
         </li>
+        {%endif%}
         <li class="mt-0.5 w-full">
           <a href="{% url 'auth:logout' %}"
              class="py-2.7 text-sm ease-nav-brand my-0 mx-2 flex items-center whitespace-nowrap px-4 transition-colors hover:bg-red-50

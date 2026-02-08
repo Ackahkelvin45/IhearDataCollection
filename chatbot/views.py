@@ -501,7 +501,6 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
         response["Pragma"] = "no-cache"
         response["Expires"] = "0"
         response["X-Accel-Buffering"] = "no"  # Disable Nginx buffering
-        response["Connection"] = "keep-alive"
         return response
 
     @action(detail=True, methods=["get"])

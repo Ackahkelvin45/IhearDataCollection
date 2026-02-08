@@ -6,6 +6,7 @@
     let isStreaming = false;
     let scrollPending = false;
     let lastUserMessage = null;
+    let onSessionChange = null;
 
     const widget = document.getElementById('chatWidget');
     const toggleBtn = document.getElementById('chatWidgetToggle');
@@ -17,8 +18,9 @@
     const sendBtn = document.getElementById('widgetSendBtn');
     const streamToggle = document.getElementById('widgetStreamToggle');
     const fileInput = document.getElementById('widgetFileInput');
-    const chatIcon = toggleBtn.querySelector('.chat-icon');
-    const closeIcon = toggleBtn.querySelector('.close-icon');
+    const chatIcon = toggleBtn ? toggleBtn.querySelector('.chat-icon') : null;
+    const closeIcon = toggleBtn ? toggleBtn.querySelector('.close-icon') : null;
+    const isHomePage = document.getElementById('homeChatContainer') != null;
 
     function init() {
         if (!messageForm || !messageInput) {
@@ -26,7 +28,25 @@
             return;
         }
         setupEventListeners();
-        initializeSession();
+        if (isHomePage) {
+            var loadSessionId = sessionStorage.getItem('loadSessionId');
+            var initialMessage = sessionStorage.getItem('initialMessage');
+            sessionStorage.removeItem('loadSessionId');
+            sessionStorage.removeItem('initialMessage');
+            if (loadSessionId) {
+                currentSessionId = loadSessionId;
+                loadMessages().then(function() {
+                    if (initialMessage) {
+                        messageInput.value = initialMessage;
+                        handleSendMessage(new Event('submit'));
+                    }
+                });
+            } else {
+                initializeSession();
+            }
+        } else {
+            initializeSession();
+        }
     }
 
     function setupEventListeners() {
@@ -63,16 +83,17 @@
     }
 
     function toggleWidget() {
+        if (!widgetWindow) return;
         isExpanded = !isExpanded;
         if (isExpanded) {
             widgetWindow.classList.remove('hidden');
-            chatIcon.classList.add('hidden');
-            closeIcon.classList.remove('hidden');
+            if (chatIcon) chatIcon.classList.add('hidden');
+            if (closeIcon) closeIcon.classList.remove('hidden');
             messageInput.focus();
         } else {
             widgetWindow.classList.add('hidden');
-            chatIcon.classList.remove('hidden');
-            closeIcon.classList.add('hidden');
+            if (chatIcon) chatIcon.classList.remove('hidden');
+            if (closeIcon) closeIcon.classList.add('hidden');
         }
     }
 
@@ -101,6 +122,7 @@
             const session = await response.json();
             currentSessionId = session.id;
             clearMessages();
+            if (typeof onSessionChange === 'function') onSessionChange();
         } catch (error) {
             console.error('Error creating session:', error);
             showError('Failed to start chat session');
@@ -649,5 +671,20 @@
     } else {
         init();
     }
+
+    window.ChatWidget = {
+        loadSession: function(id) {
+            currentSessionId = id;
+            loadMessages();
+            if (typeof onSessionChange === 'function') onSessionChange();
+        },
+        createNewSession: createNewSession,
+        sendMessage: function(msg) {
+            if (msg) messageInput.value = msg;
+            handleSendMessage(new Event('submit'));
+        },
+        getCurrentSessionId: function() { return currentSessionId; },
+        setOnSessionChange: function(fn) { onSessionChange = fn; }
+    };
 
 })();

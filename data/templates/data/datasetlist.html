@@ -258,10 +258,12 @@
         </div>
 
         <!-- Export Buttons -->
+        {% if user.user_type=="researcher" and  user.is_admin%}
         <div class="flex gap-2 items-center mr-4" >
           <button type="button" id="export-csv" class="px-4 py-2 border border-primary rounded-lg  mr-2 text-primary text-sm">Export CSV</button>
           <button type="button" id="export-xlsx" class="px-4 py-2 border border-emerald-600 rounded-lg text-emerald-600 text-sm">Export Excel</button>
         </div>
+        {%endif%}
 
         <!-- Filter Buttons -->
         <div class="flex gap-2" >
