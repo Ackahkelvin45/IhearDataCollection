@@ -1,5 +1,6 @@
 import logging
 import hashlib
+import json
 import re
 import pandas as pd
 from typing import Dict, Any, List, Optional, Tuple
@@ -409,6 +410,16 @@ class DatasetService:
             )
 
             if result and "messages" in result:
+                table = None
+                try:
+                    from langchain_core.messages import ToolMessage
+                    for msg in reversed(result["messages"]):
+                        if isinstance(msg, ToolMessage):
+                            table = self._parse_tool_table(msg.content, pagination)
+                            break
+                except Exception:
+                    table = None
+
                 last_message = result["messages"][-1]
                 if hasattr(last_message, "content"):
                     answer = last_message.content
@@ -419,6 +430,7 @@ class DatasetService:
                             "method": "text_to_sql_agent",
                             "allowed_tables": allowed_tables,
                         },
+                        "table": table,
                         "sources": [],
                     }
 
@@ -427,6 +439,45 @@ class DatasetService:
         except Exception as e:
             logger.warning(f"SQL tool agent failed, falling back: {e}")
             return None
+
+    def _parse_tool_table(self, content: Any, pagination: Dict[str, int]) -> Optional[Dict[str, Any]]:
+        """Parse tool output into table data for UI."""
+        if content is None:
+            return None
+
+        data = None
+        if isinstance(content, list):
+            data = content
+        elif isinstance(content, dict):
+            data = [content]
+        elif isinstance(content, str):
+            if content.lower().startswith("error"):
+                return None
+            try:
+                data = json.loads(content)
+            except Exception:
+                return None
+
+        if not isinstance(data, list):
+            return None
+
+        rows = [row for row in data if isinstance(row, dict)]
+        columns = list(rows[0].keys()) if rows else []
+        page_size = int(pagination.get("page_size", DEFAULT_PAGE_SIZE))
+        page = int(pagination.get("page", 1))
+        offset = int(pagination.get("offset", 0))
+        row_count = len(rows)
+        has_more = row_count >= page_size
+
+        return {
+            "columns": columns,
+            "rows": rows,
+            "page": page,
+            "page_size": page_size,
+            "offset": offset,
+            "row_count": row_count,
+            "has_more": has_more,
+        }
     
     def _is_complex_computational_query(self, question_lower):
         """Detect if a question requires complex computational analysis"""
@@ -491,6 +542,7 @@ class DatasetService:
         """Handle basic counting questions about datasets"""
         from data.models import Dataset as AudioDataset, NoiseDataset
         from chatbot.models import Document
+        from core.models import Category
         from django.db.models import Sum
 
         question_lower = question.lower() if question else ""
@@ -498,7 +550,40 @@ class DatasetService:
         # Determine what the user is asking about
         asking_about_noise = any(word in question_lower for word in ["noise", "recording", "audio", "sound"])
         asking_about_docs = any(word in question_lower for word in ["document", "doc", "file", "upload"])
+        asking_about_categories = any(word in question_lower for word in ["category", "categories"])
         asking_about_all = not asking_about_noise and not asking_about_docs
+
+        if asking_about_categories:
+            total_categories = Category.objects.count()
+            used_categories = NoiseDataset.objects.values("category_id").distinct().count()
+
+            answer = (
+                f"You have **{total_categories}** total categories, "
+                f"with **{used_categories}** categories currently used in noise datasets."
+            )
+            table = {
+                "columns": ["metric", "value"],
+                "rows": [
+                    {"metric": "total_categories", "value": total_categories},
+                    {"metric": "used_categories_in_noise", "value": used_categories},
+                ],
+                "page": 1,
+                "page_size": 2,
+                "offset": 0,
+                "row_count": 2,
+                "has_more": False,
+            }
+            return {
+                "answer": answer,
+                "table": table,
+                "data_used": {
+                    "type": "database_query",
+                    "method": "category_count",
+                    "total_categories": total_categories,
+                    "used_categories": used_categories,
+                },
+                "sources": [],
+            }
 
         # 1. Document datasets (RAG chatbot documents)
         total_docs = Document.objects.count()
@@ -553,8 +638,27 @@ class DatasetService:
             else:
                 answer = "You don't have any datasets yet."
 
+        table_rows = [
+            {"metric": "noise_records", "value": total_noise_records},
+            {"metric": "audio_dataset_types", "value": total_audio_datasets},
+            {"metric": "uploaded_documents", "value": total_docs},
+            {"metric": "processed_documents", "value": processed_docs},
+            {"metric": "total_text_chunks", "value": total_chunks},
+        ]
+
+        table = {
+            "columns": ["metric", "value"],
+            "rows": table_rows,
+            "page": 1,
+            "page_size": len(table_rows),
+            "offset": 0,
+            "row_count": len(table_rows),
+            "has_more": False,
+        }
+
         return {
             "answer": answer,
+            "table": table,
             "data_used": {
                 "type": "database_query",
                 "method": "comprehensive_dataset_count",

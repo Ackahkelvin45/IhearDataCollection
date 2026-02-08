@@ -762,6 +762,8 @@ class TextToSQLAgent:
         tool_calls = self.output_parser.invoke(last_msg)
         if tool_calls or self.extract_sql(last_msg.content):  # type: ignore
             return "tool"
+        if self.ai_answer and state.get("n_trials", 0) < self.max_retries:
+            return "tool"
         return "__end__"
 
     def retry_error(self, state: AgentState):

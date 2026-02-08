@@ -5,6 +5,7 @@
     let isExpanded = false;
     let isStreaming = false;
     let scrollPending = false;
+    let lastUserMessage = null;
 
     const widget = document.getElementById('chatWidget');
     const toggleBtn = document.getElementById('chatWidgetToggle');
@@ -113,7 +114,7 @@
             const data = await response.json();
             const messages = data.results || data;
             clearMessages();
-            messages.forEach(msg => addMessageToUI(msg.role, msg.content, msg.sources));
+            messages.forEach(msg => addMessageToUI(msg.role, msg.content, msg.sources, msg.metadata || null, null));
             scrollToBottom();
         } catch (error) { console.error('Error loading messages:', error); }
     }
@@ -124,6 +125,7 @@
         const message = messageInput.value.trim();
         if (!message) return;
 
+        lastUserMessage = message;
         addMessageToUI('user', message);
         messageInput.value = '';
         messageInput.style.height = 'auto';
@@ -147,7 +149,15 @@
             });
             const data = await response.json();
             removeTypingIndicator();
-            if (data.assistant_message) addMessageToUI('assistant', data.assistant_message.content, data.assistant_message.sources);
+            if (data.assistant_message) {
+                addMessageToUI(
+                    'assistant',
+                    data.assistant_message.content,
+                    data.assistant_message.sources,
+                    data.assistant_message.metadata,
+                    lastUserMessage
+                );
+            }
         } catch (error) {
             console.error('Error sending message:', error);
             removeTypingIndicator();
@@ -287,6 +297,8 @@
                             } else {
                                 sources.push(currentData);
                             }
+                        } else if (currentData.type === 'table') {
+                            addTableToMessage(messageBubble, currentData.table, lastUserMessage, currentData.pagination);
                         } else if (currentData.type === 'complete') {
                             // Clear any pending render timeout
                             if (renderTimeout) {
@@ -383,14 +395,18 @@
         isStreaming = false;
     }
 
-    function addMessageToUI(role, content, sources = []) {
+    function addMessageToUI(role, content, sources = [], metadata = null, originQuestion = null) {
         const messageBubble = document.createElement('div');
         messageBubble.className = `message-bubble ${role}`;
         const messageContent = document.createElement('div');
         messageContent.className = 'message-content';
         messageContent.innerHTML = parseMarkdown(content);
         messageBubble.appendChild(messageContent);
-        if (sources.length > 0) addSourcesToMessage(messageBubble, sources);
+        if (sources && sources.length > 0) addSourcesToMessage(messageBubble, sources);
+
+        if (metadata && metadata.table) {
+            addTableToMessage(messageBubble, metadata.table, originQuestion, metadata.pagination);
+        }
 
         const welcomeMsg = messagesArea.querySelector('.welcome-message');
         if (welcomeMsg) welcomeMsg.remove();
@@ -443,6 +459,120 @@
 
         const messageContent = messageBubble.querySelector('.message-content');
         messageContent.appendChild(sourcesDiv);
+    }
+
+    function addTableToMessage(messageBubble, tableData, originQuestion, paginationOverride) {
+        if (!tableData || !messageBubble) return;
+
+        const existing = messageBubble.querySelector('.message-table');
+        if (existing) existing.remove();
+
+        const container = document.createElement('div');
+        container.className = 'message-table';
+
+        const tableEl = document.createElement('table');
+        tableEl.className = 'data-table';
+
+        const columns = Array.isArray(tableData.columns) ? tableData.columns : [];
+        const rows = Array.isArray(tableData.rows) ? tableData.rows : [];
+
+        if (columns.length > 0) {
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            columns.forEach(col => {
+                const th = document.createElement('th');
+                th.textContent = col;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            tableEl.appendChild(thead);
+        }
+
+        const tbody = document.createElement('tbody');
+        if (rows.length === 0) {
+            const emptyRow = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = Math.max(columns.length, 1);
+            td.textContent = 'No rows returned.';
+            emptyRow.appendChild(td);
+            tbody.appendChild(emptyRow);
+        } else {
+            rows.forEach(row => {
+                const tr = document.createElement('tr');
+                columns.forEach(col => {
+                    const td = document.createElement('td');
+                    const val = row[col];
+                    if (val === null || val === undefined) {
+                        td.textContent = '';
+                    } else if (typeof val === 'object') {
+                        td.textContent = JSON.stringify(val);
+                    } else {
+                        td.textContent = String(val);
+                    }
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+        }
+        tableEl.appendChild(tbody);
+        container.appendChild(tableEl);
+
+        const pagination = paginationOverride || tableData;
+        const page = parseInt(pagination && pagination.page, 10) || 1;
+        const pageSize = parseInt(pagination && pagination.page_size, 10) || rows.length || 1;
+        const hasMore = !!(pagination && pagination.has_more);
+
+        const meta = document.createElement('div');
+        meta.className = 'table-meta';
+        const metaText = document.createElement('div');
+        metaText.textContent = `Rows: ${rows.length} · Page: ${page}`;
+        meta.appendChild(metaText);
+
+        if (originQuestion && (page > 1 || hasMore)) {
+            const controls = document.createElement('div');
+            controls.className = 'pagination-controls';
+
+            const prevBtn = document.createElement('button');
+            prevBtn.className = 'pagination-btn';
+            prevBtn.textContent = 'Prev';
+            prevBtn.disabled = page <= 1 || isStreaming;
+            prevBtn.addEventListener('click', function() {
+                const nextQuestion = buildPaginatedQuestion(originQuestion, page - 1, pageSize);
+                sendPaginationQuestion(nextQuestion);
+            });
+
+            const nextBtn = document.createElement('button');
+            nextBtn.className = 'pagination-btn';
+            nextBtn.textContent = 'Next';
+            nextBtn.disabled = !hasMore || isStreaming;
+            nextBtn.addEventListener('click', function() {
+                const nextQuestion = buildPaginatedQuestion(originQuestion, page + 1, pageSize);
+                sendPaginationQuestion(nextQuestion);
+            });
+
+            controls.appendChild(prevBtn);
+            controls.appendChild(nextBtn);
+            meta.appendChild(controls);
+        }
+
+        container.appendChild(meta);
+
+        messageBubble.appendChild(container);
+        scrollToBottom();
+    }
+
+    function buildPaginatedQuestion(question, page, pageSize) {
+        let base = String(question || '');
+        base = base.replace(/\bpage\s+\d+\b/ig, '').replace(/\bpage\s*size\s+\d+\b/ig, '');
+        base = base.replace(/\bpagesize\s+\d+\b/ig, '').replace(/\blimit\s+\d+\b/ig, '').replace(/\boffset\s+\d+\b/ig, '');
+        base = base.replace(/\s{2,}/g, ' ').trim();
+        return `${base} page ${page} limit ${pageSize}`.trim();
+    }
+
+    function sendPaginationQuestion(question) {
+        if (!question) return;
+        messageInput.value = question;
+        handleSendMessage(new Event('submit'));
     }
 
     /** Show "Querying database" with 3-dot animation in the given content div (streaming bubble) */

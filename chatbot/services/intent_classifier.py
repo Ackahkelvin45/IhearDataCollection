@@ -21,6 +21,8 @@ INTENT_CACHE_TTL = 60 * 10  # 10 minutes
 NUMERIC_KEYWORDS = [
     "how many", "count", "total", "number of", "average", "sum", "maximum", "minimum",
     "how much", "statistics", "dataset", "datasets", "recordings", "documents",
+    "category", "categories", "region", "regions", "community", "communities",
+    "class", "subclass",
 ]
 EXPLANATORY_KEYWORDS = ["what is", "explain", "tell me about", "who", "why", "when", "where", "how does"]
 

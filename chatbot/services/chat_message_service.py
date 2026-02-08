@@ -141,6 +141,8 @@ class ChatMessageService:
                 metadata={
                     "intent": result.get("intent", "EXPLANATORY"),
                     "method_used": result.get("method_used", "rag"),
+                    "table": result.get("table"),
+                    "pagination": result.get("pagination"),
                 },
             )
             session.save()
@@ -193,6 +195,8 @@ class ChatMessageService:
                         "conversation_context": result.get("conversation_context"),
                         "follow_up_suggestions": result.get("follow_up_suggestions"),
                         "processing_time": result.get("processing_time", response_time),
+                        "table": result.get("table"),
+                        "pagination": result.get("pagination"),
                     },
                 )
                 assistant_message_saved = True
@@ -207,6 +211,12 @@ class ChatMessageService:
                     "method": result.get("method_used", "database"),
                     "follow_up_suggestions": result.get("follow_up_suggestions", []),
                 }
+                if result.get("table"):
+                    yield {
+                        "type": "table",
+                        "table": result.get("table"),
+                        "pagination": result.get("pagination"),
+                    }
                 yield {
                     "type": "complete",
                     "tokens_used": tokens_used,

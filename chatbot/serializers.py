@@ -102,6 +102,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "tokens_used",
             "response_time",
             "sources",
+            "metadata",
             "has_feedback",
         ]
         read_only_fields = [
@@ -110,6 +111,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "tokens_used",
             "response_time",
             "sources",
+            "metadata",
         ]
 
     def get_has_feedback(self, obj):

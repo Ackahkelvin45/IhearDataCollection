@@ -191,6 +191,14 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
             tokens_used = result.get("tokens_used", 0) or len(answer.split())
             sources = result.get("sources", [])
 
+            metadata = {
+                "intent": intent,
+                "method_used": "database_query" if intent == "NUMERIC" else "rag",
+            }
+            if result.get("table"):
+                metadata["table"] = result.get("table")
+                metadata["pagination"] = result.get("pagination")
+
             # Save assistant message
             assistant_message = Message.objects.create(
                 session=session,
@@ -199,10 +207,7 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                 sources=sources,
                 tokens_used=tokens_used,
                 response_time=response_time,
-                metadata={
-                    "intent": intent,
-                    "method_used": "database_query" if intent == "NUMERIC" else "rag",
-                },
+                metadata=metadata,
             )
 
             # Update session timestamp
@@ -317,6 +322,19 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                     tokens_used = result.get("tokens_used", 0) or len(answer.split())
 
                     # Save the assistant message immediately for numeric responses
+                    metadata = {
+                        "intent": result.get("intent"),
+                        "method_used": result.get("method_used"),
+                        "conversation_context": result.get("conversation_context"),
+                        "follow_up_suggestions": result.get(
+                            "follow_up_suggestions"
+                        ),
+                        "processing_time": result.get("processing_time", response_time),
+                    }
+                    if result.get("table"):
+                        metadata["table"] = result.get("table")
+                        metadata["pagination"] = result.get("pagination")
+
                     Message.objects.create(
                         session=session,
                         role="assistant",
@@ -324,15 +342,7 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                         sources=result.get("sources", []),
                         tokens_used=tokens_used,
                         response_time=response_time,
-                        metadata={
-                            "intent": result.get("intent"),
-                            "method_used": result.get("method_used"),
-                            "conversation_context": result.get("conversation_context"),
-                            "follow_up_suggestions": result.get(
-                                "follow_up_suggestions"
-                            ),
-                            "processing_time": result.get("processing_time", response_time),
-                        },
+                        metadata=metadata,
                     )
                     assistant_message_saved = True
 
@@ -347,6 +357,12 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                         "method": result.get("method_used", "database"),
                         "follow_up_suggestions": result.get("follow_up_suggestions", []),
                     }) + "\n\n"
+                    if result.get("table"):
+                        yield "data: " + _json.dumps({
+                            "type": "table",
+                            "table": result.get("table"),
+                            "pagination": result.get("pagination"),
+                        }) + "\n\n"
                     yield "data: " + _json.dumps({"type": "complete", "tokens_used": tokens_used, "response_time": response_time}) + "\n\n"
                     
                     # Update session timestamp
