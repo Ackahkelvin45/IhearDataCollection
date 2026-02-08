@@ -37,7 +37,7 @@ from langchain_openai import ChatOpenAI
 from psycopg_pool import ConnectionPool
 from langgraph.checkpoint.postgres import PostgresSaver
 from loguru import logger
-from typing import Any, Dict, cast
+from typing import Any, Dict, cast, List, Optional
 from django.conf import settings
 
 from data_insights.workflows.agent_workflow import create_data_insights_agent
@@ -81,7 +81,6 @@ def home(request):
         "data_insights/home.html",
         {"suggestions": suggestions, "ml_suggestions": ml_suggestions},
     )
-
 
 
 def unified_chat(request):
@@ -310,8 +309,10 @@ class ChatSessionView(ModelViewSet):
                                                     "visualization_analysis"
                                                 )
                                                 if viz_tool is not None:
-                                                    data_summary = self._summarize_tool_data(
-                                                        tool_call
+                                                    data_summary = (
+                                                        self._summarize_tool_data(
+                                                            tool_call
+                                                        )
                                                     )
 
                                                     auto_viz = viz_tool._run(
@@ -556,7 +557,9 @@ class ChatSessionView(ModelViewSet):
             response["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response["Pragma"] = "no-cache"
             response["Expires"] = "0"
-            response["X-Accel-Buffering"] = "no"  # Disable Nginx buffering for streaming
+            response["X-Accel-Buffering"] = (
+                "no"  # Disable Nginx buffering for streaming
+            )
             return response
 
         except Exception as e:
@@ -708,7 +711,9 @@ class ChatSessionView(ModelViewSet):
         elif isinstance(tool_data, list):
             rows = [r for r in tool_data if isinstance(r, dict)]
             columns = list(rows[0].keys()) if rows else []
-        elif isinstance(tool_data, dict) and isinstance(tool_data.get("datasets"), list):
+        elif isinstance(tool_data, dict) and isinstance(
+            tool_data.get("datasets"), list
+        ):
             rows = [r for r in tool_data.get("datasets", []) if isinstance(r, dict)]
             columns = list(rows[0].keys()) if rows else []
 
@@ -789,7 +794,10 @@ class ChatSessionView(ModelViewSet):
             else:
                 frontend_data["title"] = "Results"
 
-        if any(word in question.lower() for word in ["highest", "lowest", "top", "bottom", "max", "min"]):
+        if any(
+            word in question.lower()
+            for word in ["highest", "lowest", "top", "bottom", "max", "min"]
+        ):
             table_columns = columns[:6]
             table_rows = []
             for r in rows:
@@ -831,7 +839,9 @@ class ChatSessionView(ModelViewSet):
 
             # Detect date/time columns
             date_keywords = ("date", "time", "month", "year", "day")
-            has_time_col = any(any(k in c.lower() for k in date_keywords) for c in columns)
+            has_time_col = any(
+                any(k in c.lower() for k in date_keywords) for c in columns
+            )
 
             # Count numeric columns
             numeric_cols = []
@@ -850,7 +860,16 @@ class ChatSessionView(ModelViewSet):
                 return "line_chart"
 
             # Pie: proportions or percentages
-            if any(word in q for word in ["percentage", "proportion", "share", "distribution of", "breakdown of"]):
+            if any(
+                word in q
+                for word in [
+                    "percentage",
+                    "proportion",
+                    "share",
+                    "distribution of",
+                    "breakdown of",
+                ]
+            ):
                 total = sum([float(r.get(value_key) or 0) for r in rows]) if rows else 0
                 if total > 0 and len(rows) <= 8:
                     return "pie_chart"
