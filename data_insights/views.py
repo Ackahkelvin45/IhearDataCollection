@@ -276,24 +276,25 @@ class ChatSessionView(ModelViewSet):
                                     isinstance(tool_call, dict)
                                     and "recommendation" in tool_call
                                 ):
-                                    visualization_data = tool_call
-                                    visualization_data = self._inject_chart_data(
-                                        visualization_data,
-                                        last_data_tool_response,
-                                        message.user_input,
-                                    )
-                                    try:
-                                        yield self._format_stream_message(
-                                            "visualization", visualization_data
+                                    if last_data_tool_response is not None:
+                                        visualization_data = tool_call
+                                        visualization_data = self._inject_chart_data(
+                                            visualization_data,
+                                            last_data_tool_response,
+                                            message.user_input,
                                         )
-                                    except Exception as viz_e:
-                                        logger.warning(
-                                            f"Error formatting visualization message: {viz_e}"
-                                        )
-                                        yield self._format_stream_message(
-                                            "visualization",
-                                            {"error": "Visualization formatting error"},
-                                        )
+                                        try:
+                                            yield self._format_stream_message(
+                                                "visualization", visualization_data
+                                            )
+                                        except Exception as viz_e:
+                                            logger.warning(
+                                                f"Error formatting visualization message: {viz_e}"
+                                            )
+                                            yield self._format_stream_message(
+                                                "visualization",
+                                                {"error": "Visualization formatting error"},
+                                            )
                                 else:
                                     last_data_tool_response = tool_call
                                     try:
@@ -314,25 +315,25 @@ class ChatSessionView(ModelViewSet):
                                                             tool_call
                                                         )
                                                     )
-
-                                                    auto_viz = viz_tool._run(
-                                                        query=message.user_input,
-                                                        data_summary=data_summary,
-                                                    )
-                                                    auto_viz = self._inject_chart_data(
-                                                        auto_viz,
-                                                        tool_call,
-                                                        message.user_input,
-                                                    )
-                                                    if isinstance(
-                                                        auto_viz, dict
-                                                    ) and auto_viz.get(
-                                                        "recommendation"
-                                                    ):
-                                                        visualization_data = auto_viz
-                                                        yield self._format_stream_message(
-                                                            "visualization", auto_viz
+                                                    if data_summary:
+                                                        auto_viz = viz_tool._run(
+                                                            query=message.user_input,
+                                                            data_summary=data_summary,
                                                         )
+                                                        auto_viz = self._inject_chart_data(
+                                                            auto_viz,
+                                                            tool_call,
+                                                            message.user_input,
+                                                        )
+                                                        if isinstance(
+                                                            auto_viz, dict
+                                                        ) and auto_viz.get(
+                                                            "recommendation"
+                                                        ):
+                                                            visualization_data = auto_viz
+                                                            yield self._format_stream_message(
+                                                                "visualization", auto_viz
+                                                            )
                                             except Exception as auto_viz_e:
                                                 logger.warning(
                                                     f"Streaming visualization failed: {auto_viz_e}"
@@ -439,12 +440,16 @@ class ChatSessionView(ModelViewSet):
                             if not visualization_data:
                                 viz_tool = get_tool_by_name("visualization_analysis")
                                 if viz_tool is not None:
-                                    auto_viz = viz_tool._run(
-                                        query=message.user_input,
-                                        data_summary=self._summarize_tool_data(
-                                            tool_call
-                                        ),
+                                    data_summary = self._summarize_tool_data(
+                                        tool_call
                                     )
+                                    if not data_summary:
+                                        auto_viz = None
+                                    else:
+                                        auto_viz = viz_tool._run(
+                                            query=message.user_input,
+                                            data_summary=data_summary,
+                                        )
                                     # Only attach if it looks valid
                                     if isinstance(auto_viz, dict) and auto_viz.get(
                                         "recommendation"
@@ -806,6 +811,8 @@ class ChatSessionView(ModelViewSet):
                 "columns": table_columns,
                 "rows": table_rows,
             }
+            if len(rows) <= 1:
+                frontend_data["type"] = "none"
 
         # Choose best chart type based on data shape
         chart_type = self._choose_chart_type_from_data(
@@ -815,7 +822,7 @@ class ChatSessionView(ModelViewSet):
             label_key=label_key,
             value_key=value_key,
         )
-        if chart_type:
+        if chart_type and frontend_data.get("type") != "none":
             visualization_data["visualization_type"] = chart_type
             if visualization_data.get("recommendation"):
                 visualization_data["recommendation"]["recommended_chart"] = chart_type
@@ -835,6 +842,8 @@ class ChatSessionView(ModelViewSet):
         try:
             q = (question or "").lower()
             if not rows or not columns:
+                return None
+            if len(rows) <= 1:
                 return None
 
             # Detect date/time columns

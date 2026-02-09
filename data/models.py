@@ -59,6 +59,8 @@ class NoiseDataset(models.Model):
     category = models.ForeignKey(
         Category, on_delete=models.PROTECT, null=True, help_text="Category of the data"
     )
+
+    recording = models.ForeignKey('NoiseRecording', on_delete=models.CASCADE, null=True, blank=True, help_text="The recording that was made")
     time_of_day = models.ForeignKey(
         Time_Of_Day,
         on_delete=models.PROTECT,
@@ -413,3 +415,96 @@ class BulkReprocessingTask(models.Model):
     @property
     def is_running(self):
         return self.status in ["pending", "processing"]
+
+
+class NoiseRecording(models.Model):
+   
+
+    STATUS_CHOICES = [
+        ('pending', 'Pending Processing'),
+        ('processed', 'Processed'),
+        ('failed', 'Failed'),
+    ]
+
+    contributor = models.ForeignKey(
+        CustomUser,
+        on_delete=models.PROTECT,
+        related_name='noise_recordings_contributed',
+        help_text="The person who made this recording",
+        null=True   
+    )
+
+    audio = models.FileField(
+        upload_to="recordings/",
+        help_text="Raw audio recording file",
+         null=True   
+    )
+
+    duration = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Duration of recording in seconds"
+
+    )
+    approved = models.BooleanField(default=False, help_text="Whether the recording has been approved")
+    approved_by = models.ForeignKey(
+        CustomUser,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='noise_recordings_approved',
+        help_text="The person who approved this recording"
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='pending',
+        help_text="Processing status of the recording"
+        
+    )
+
+    # Optional metadata that can be added later
+    recording_date = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When the recording was made"
+    )
+
+    device_info = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Device/browser information (JSON)"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Noise Recording"
+        verbose_name_plural = "Noise Recordings"
+
+    def __str__(self):
+        return f"Recording by {self.collector.username} - {self.created_at.strftime('%Y-%m-%d %H:%M')}"
+
+    def get_audio_hash(self):
+        """Generate MD5 hash of the audio file content safely."""
+        try:
+            if self.audio and self.audio.file:
+                hash_md5 = hashlib.md5()
+                for chunk in self.audio.file.chunks():
+                    hash_md5.update(chunk)
+                return hash_md5.hexdigest()
+        except Exception as e:
+            print(f"Error generating hash for {self.audio.name}: {e}")
+        return None
+
+    @property
+    def audio_size_mb(self):
+        """Return audio file size in MB"""
+        try:
+            return round(self.audio.size / (1024 * 1024), 2)
+        except:
+            return None

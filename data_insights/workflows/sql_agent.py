@@ -52,21 +52,30 @@ from .schema import PostgresSQLInput
 
 from . import UNSAFE_KEYWORDS
 
-USE_LOCAL=os.getenv("USE_SQLITE")
-
-if USE_LOCAL:
-    DB_USER = os.getenv("LOCAL_POSTGRES_USER", "admin")
-    DB_PASSWORD = os.getenv("LOCAL_POSTGRES_PASSWORD", "")
-    DB_HOST = os.getenv("LOCAL_POSTGRES_HOST", "localhost")
-    DB_PORT = int(os.getenv("LOCAL_POSTGRES_PORT", 5432))
-    DB_NAME = os.getenv("LOCAL_POSTGRES_DB", "=iheardatadb")
-
-else:
-    DB_USER = os.getenv("POSTGRES_USER", "admin")
+# Use Docker DB ('db') when available, otherwise localhost for local dev
+postgres_host = os.getenv("POSTGRES_HOST")
+if postgres_host == "db":
+    # We're in Docker, use the Docker DB
+    DB_USER = os.getenv("POSTGRES_USER", "postgres")
     DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
-    DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
+    DB_HOST = "db"
     DB_PORT = int(os.getenv("POSTGRES_PORT", 5432))
-    DB_NAME = os.getenv("POSTGRES_DB", "=iheardatadb")
+    DB_NAME = os.getenv("POSTGRES_DB", "iheardatadb")
+else:
+    # Local development - use local DB config
+    USE_LOCAL = os.getenv("USE_SQLITE")
+    if USE_LOCAL:
+        DB_USER = os.getenv("LOCAL_POSTGRES_USER", "kelvin")
+        DB_PASSWORD = os.getenv("LOCAL_POSTGRES_PASSWORD", "kelvin")
+        DB_HOST = os.getenv("LOCAL_POSTGRES_HOST", "localhost")
+        DB_PORT = int(os.getenv("LOCAL_POSTGRES_PORT", 5432))
+        DB_NAME = os.getenv("LOCAL_POSTGRES_DB", "datacollection")
+    else:
+        DB_USER = os.getenv("POSTGRES_USER", "postgres")
+        DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
+        DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
+        DB_PORT = int(os.getenv("POSTGRES_PORT", 5432))
+        DB_NAME = os.getenv("POSTGRES_DB", "iheardatadb")
 
 
 class AgentState(TypedDict):

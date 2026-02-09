@@ -1,0 +1,1220 @@
+{% extends 'datacollection/layout.html'%}
+
+<!-- Animate.css for smooth transitions -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+
+{% block content %}
+  <nav>
+    <!-- breadcrumb -->
+    <ol style="margin-bottom: 30px;" class="flex flex-wrap pt-1 mr-12 bg-transparent rounded-lg sm:mr-16">
+      <li class="text-sm leading-normal">
+        <a class="text-white opacity-50" href="javascript:;">home</a>
+      </li>
+      <li class="text-sm pl-2 capitalize leading-normal text-white before:float-left before:pr-2 before:text-white before:content-['/']" aria-current="page">Audio Contribution</li>
+    </ol>
+  </nav>
+
+  <!-- Multi-step Form Container -->
+  <div class="flex flex-wrap -mx-3">
+    <div class="w-full px-6 py-6 mx-auto">
+      <div class="w-full max-w-full">
+        <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+
+          {% if messages %}
+            <div class="m-4 top-4 right-4 z-50 w-ful">
+              {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} mb-4 flex items-center justify-between p-4 bg-white dark:bg-slate-800 rounded-lg shadow-lg border-l-4 {% if message.tags == 'error' %}border-red-500{% elif message.tags == 'success' %}border-green-500{% else %}border-blue-500{% endif %}">
+                  <div class="flex items-center">
+                    {% if message.tags == 'success' %}
+                    {% elif message.tags == 'error' %}
+                    {% else %}
+                    {% endif %}
+                    <span class="text-sm font-medium">{{ message }}</span>
+                  </div>
+                  <button class="close-btn ml-4 text-slate-400 hover:text-slate-500">
+                  </button>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+
+          <!-- Progress Indicator -->
+          <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-4">
+            <div class="flex items-center justify-between mb-4">
+              <h6 class="text-xl font-bold">Audio Recording Contribution</h6>
+              <div class="flex items-center space-x-2">
+                <div class="flex items-center">
+                  <div class="step-indicator {% if current_step == 'metadata' %}active{% endif %}" data-step="1">
+                    <span class="step-number">1</span>
+                  </div>
+                  <span class="step-label ml-2">Metadata</span>
+                </div>
+                <div class="w-8 h-0.5 bg-gray-300 mx-2"></div>
+                <div class="flex items-center">
+                  <div class="step-indicator {% if current_step == 'recording' %}active{% endif %}" data-step="2">
+                    <span class="step-number">2</span>
+                  </div>
+                  <span class="step-label ml-2">Recording</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 1: Metadata Collection -->
+          <div id="step-metadata" class="step-content {% if current_step != 'metadata' %}hidden{% endif %}">
+            <div class="flex-auto p-6">
+              <form id="metadata-form">
+                {% csrf_token %}
+
+                <!-- Basic Information -->
+                <p class="leading-normal uppercase dark:text-white dark:opacity-60 text-sm mb-4">Basic Information</p>
+                <div class="flex flex-wrap -mx-3">
+                  <div class="w-full max-w-full px-3 shrink-0 md:w-full md:flex-0 mb-4">
+                    <label for="id_description" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.description.label }}</label>
+                    {{ form.description }}
+                    {% if form.description.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.description.help_text }}</small>
+                    {% endif %}
+                  </div>
+
+                  <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0 mb-4">
+                    <label for="id_category" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.category.label }}</label>
+                    {{ form.category }}
+                    {% if form.category.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.category.help_text }}</small>
+                    {% endif %}
+                  </div>
+
+                  <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0 mb-4">
+                    <label for="id_class_name" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.class_name.label }}</label>
+                    {{ form.class_name }}
+                    {% if form.class_name.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.class_name.help_text }}</small>
+                    {% endif %}
+                  </div>
+
+                  <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0 mb-4">
+                    <label for="id_subclass" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">Sub Class</label>
+                    {{ form.subclass }}
+                    {% if form.subclass.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.subclass.help_text }}</small>
+                    {% endif %}
+                  </div>
+                </div>
+
+                <hr class="h-px mx-0 my-6 bg-transparent border-0 opacity-25 bg-gradient-to-r from-transparent via-black/40 to-transparent dark:bg-gradient-to-r dark:from-transparent dark:via-white dark:to-transparent" />
+
+                <!-- Location Information -->
+                <p class="leading-normal uppercase dark:text-white dark:opacity-60 text-sm mb-4">Location Information</p>
+                <div class="flex flex-wrap -mx-3">
+                  <div class="w-full max-w-full px-3 shrink-0 md:w-4/12 md:flex-0 mb-4">
+                    <label for="id_region" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.region.label }}</label>
+                    {{ form.region }}
+                    {% if form.region.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.region.help_text }}</small>
+                    {% endif %}
+                  </div>
+
+                  <div class="w-full max-w-full px-3 shrink-0 md:w-4/12 md:flex-0 mb-4">
+                    <label for="id_community" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.community.label }}</label>
+                    {{ form.community }}
+                    {% if form.community.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.community.help_text }}</small>
+                    {% endif %}
+                  </div>
+
+                  <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0 mb-4">
+                    <label for="id_time_of_day" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.time_of_day.label }}</label>
+                    {{ form.time_of_day }}
+                    {% if form.time_of_day.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.time_of_day.help_text }}</small>
+                    {% endif %}
+                  </div>
+                </div>
+
+                <hr class="h-px mx-0 my-6 bg-transparent border-0 opacity-25 bg-gradient-to-r from-transparent via-black/40 to-transparent dark:bg-gradient-to-r dark:from-transparent dark:via-white dark:to-transparent " />
+
+                <!-- Recording Information -->
+                <p class="leading-normal uppercase dark:text-white dark:opacity-60 text-sm mb-4">Recording Information</p>
+                <div class="flex flex-wrap -mx-3">
+                  <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0 mb-4">
+                    <label for="id_recording_date" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.recording_date.label }}</label>
+                    {{ form.recording_date }}
+                    {% if form.recording_date.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.recording_date.help_text }}</small>
+                    {% endif %}
+                  </div>
+
+                  <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0 mb-4">
+                    <label for="id_recording_device" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.recording_device.label }}</label>
+                    {{ form.recording_device }}
+                    {% if form.recording_device.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.recording_device.help_text }}</small>
+                    {% endif %}
+                  </div>
+
+                  <div class="w-full max-w-full px-3 shrink-0 md:w-full md:flex-0 mb-4">
+                    <label for="id_microphone_type" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">{{ form.microphone_type.label }} <span class="text-slate-400">(Optional)</span></label>
+                    {{ form.microphone_type }}
+                    {% if form.microphone_type.help_text %}
+                      <small class="text-xs text-slate-500 dark:text-white/60">{{ form.microphone_type.help_text }}</small>
+                    {% endif %}
+                  </div>
+                </div>
+
+                <!-- Next Button -->
+                <div class="flex justify-end mt-8">
+                  <button type="button" id="next-to-recording" class="inline-block px-8 py-3 font-bold leading-normal text-center text-white align-middle transition-all ease-in bg-primary border-0 rounded-lg shadow-md cursor-pointer text-sm tracking-tight-rem hover:shadow-xs hover:-translate-y-px active:opacity-85">
+                    Next: Start Recording
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- Step 2: Audio Recording -->
+          <div id="step-recording" class="step-content {% if current_step != 'recording' %}hidden{% endif %}">
+            <div class="flex-auto p-6">
+              <form id="contribution-form" method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+
+                <!-- Hidden form fields for metadata -->
+                <input type="hidden" name="description" id="hidden_description">
+                <input type="hidden" name="category" id="hidden_category">
+                <input type="hidden" name="class_name" id="hidden_class_name">
+                <input type="hidden" name="subclass" id="hidden_subclass">
+                <input type="hidden" name="region" id="hidden_region">
+                <input type="hidden" name="community" id="hidden_community">
+                <input type="hidden" name="time_of_day" id="hidden_time_of_day">
+                <input type="hidden" name="recording_date" id="hidden_recording_date">
+                <input type="hidden" name="recording_device" id="hidden_recording_device">
+                <input type="hidden" name="microphone_type" id="hidden_microphone_type">
+
+                <!-- Animated Microphone Recording Interface -->
+                <div class="flex flex-col items-center justify-center pb-12">
+                  <!-- Back Button -->
+                  <div style="width: 100%; display: flex; justify-content: flex-start; margin-bottom: 5rem;">
+                    <button type="button" id="back-to-metadata" style="display: inline-flex; align-items: center; padding: 0.5rem 1rem; color: #4b5563; transition: color 0.2s;">
+                      <svg style="width: 1rem; height: 1rem; margin-right: 0.5rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                      </svg>
+                      Back to Metadata
+                    </button>
+                  </div>
+
+                  <!-- Microphone Animation Container -->
+                  <div style="position: relative; margin-bottom: 2rem;">
+                    <!-- Animated Circles (around entire recording area) -->
+                    <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none;">
+                      <div class="mic-circle mic-circle-1"></div>
+                      <div class="mic-circle mic-circle-2"></div>
+                      <div class="mic-circle mic-circle-3"></div>
+                    </div>
+
+                    <!-- Central Microphone -->
+                    <div style="position: relative; z-index: 10; background: linear-gradient(135deg, var(--primary-color, #005450) 0%, var(--secondary-color, #00d553) 100%); border-radius: 100%; padding: 2rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); width: 300px; height: 300px; display: flex; align-items: center; justify-content: center;">
+                      <div style="text-align: center; flex: 1; display: flex; align-items: center; justify-content: center;">
+                      
+                        <div id="recording-status-display" style="color: white; position: relative; display: flex; align-items: center; justify-content: center; flex-direction: column;">
+                           
+
+                          <div id="ready-state" style="text-align: center; width: 100%;">
+                            <div style="display: inline-block;">
+                              </div>
+                            <p style="font-size: 0.875rem; opacity: 0.9;">Click the microphone to start recording</p>
+                          </div>
+                          <div id="recording-state" style="display: none; text-align: center; width: 100%;">
+                            <!-- Audio Waves Animation -->
+                            <div style="display: flex; align-items: center; justify-content: center; gap: 5px; margin-bottom: 1rem;">
+                              <div class="audio-wave wave-1" style="width: 2px; background-color: white; border-radius: 2px; display: none;"></div>
+                              <div class="audio-wave wave-2" style="width: 4px; background-color: white; border-radius: 2.5px; display: none;"></div>
+                              <div class="audio-wave wave-3" style="width: 5px; background-color: white; border-radius: 3px; display: none;"></div>
+                              <div class="audio-wave wave-4" style="width: 6px; background-color: white; border-radius: 3.5px; display: none;"></div>
+                              <div class="audio-wave wave-5" style="width: 5px; background-color: white; border-radius: 3px; display: none;"></div>
+                              <div class="audio-wave wave-6" style="width: 2px; background-color: white; border-radius: 2.5px; display: none;"></div>
+                              <div class="audio-wave wave-7" style="width: 2px; background-color: white; border-radius: 2px; display: none;"></div>
+                            </div>
+                            <h3 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.5rem;"></h3>
+                            <p style="font-size: 0.875rem; opacity: 0.9;" id="recording-timer-display">00:00</p>
+                          </div>
+                          <div id="paused-state" style="display: none; text-align: center; width: 100%;">
+                            <p style="font-size: 0.875rem; opacity: 0.9;">Click to resume</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Recording Controls -->
+                  <div style="display: flex; flex-direction: column; align-items: center; gap: 1rem;">
+                    <button type="button" id="record-button" style="background-color: var(--primary-color, #005450); color: white; font-weight: 700; padding: 1rem; border-radius: 9999px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); transition: all 0.3s; transform: scale(1); outline: none; border: none; width: 4rem; height: 4rem; display: flex; align-items: center; justify-content: center;" title="Start Recording" aria-label="Start Recording">
+                      <div id="record-icon" style="width: 2rem; height: 2rem;">
+                        <svg fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                        </svg>
+                      </div>
+                    </button>
+
+                  </div>
+
+                  <!-- Recording Instructions -->
+                  <div style="margin-top: 2rem; text-align: center; max-width: 28rem; margin-left: auto; margin-right: auto;">
+                    <div id="instructions-ready" style="">
+                      <h4 style="font-size: 1.125rem; font-weight: 600; color: #1f2937; margin-bottom: 0.5rem;">Recording Instructions</h4>
+                      <ul style="font-size: 0.875rem; color: #4b5563; margin: 0; padding-left: 0; list-style: none;">
+                        <li style="margin-bottom: 0.25rem;">• Click "Start Recording" to begin</li>
+                        <li style="margin-bottom: 0.25rem;">• Allow microphone access when prompted</li>
+
+                      </ul>
+                    </div>
+                    <div id="instructions-review" style="display: none;">
+                    
+                      <p style="color: #4b5563; margin-bottom: 1rem;">Review your recording below and submit your contribution.</p>
+
+                      <!-- Audio Playback -->
+                      <div id="audio-playback-section" style="display: none; margin-bottom: 1rem;">
+                        <audio id="recorded-audio-preview" controls style="width: 100%; max-width: 24rem; margin-left: auto; margin-right: auto; border-radius: 0.5rem; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);"></audio>
+                        <div style="display: flex; justify-content: center; margin-top: 0.75rem; gap: 0.75rem;">
+                          <button type="button" id="record-again-btn" style="display: inline-flex; align-items: center; padding: 0.5rem 1rem; background-color: #3b82f6; color: white; font-size: 0.875rem; font-weight: 500; border-radius: 0.5rem; transition: background-color 0.2s;">
+                            Record Again
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Hidden file input for the recorded audio -->
+                  <input type="file" id="recorded-audio" name="audio" class="hidden" accept="audio/*">
+
+                
+
+                     <!-- Next Button -->
+                <div class="flex justify-end w-full " style="margin-top:30px;">
+                    <button type="submit" id="next-to-recording" class="inline-block px-8 py-3 font-bold leading-normal text-center text-white align-middle transition-all ease-in bg-primary border-0 rounded-lg shadow-md cursor-pointer text-sm tracking-tight-rem hover:shadow-xs hover:-translate-y-px active:opacity-85">
+                    Save Contribution
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+// Multi-step form management
+class ContributionForm {
+    constructor() {
+        this.currentStep = 'metadata';
+        this.metadata = {};
+        this.initialize();
+    }
+
+    initialize() {
+        this.setupStepNavigation();
+        this.setupCascadingDropdowns();
+        this.setupRecordingInterface();
+        this.updateProgressIndicators();
+        this.autoPopulateFields();
+    }
+
+    setupStepNavigation() {
+        const nextBtn = document.getElementById('next-to-recording');
+        const backBtn = document.getElementById('back-to-metadata');
+
+        nextBtn.addEventListener('click', () => {
+            if (this.validateMetadataStep()) {
+                this.saveMetadata();
+                this.navigateToStep('recording');
+            }
+        });
+
+        backBtn.addEventListener('click', () => {
+            this.navigateToStep('metadata');
+        });
+    }
+
+    validateMetadataStep() {
+        // Basic validation - ensure required fields are filled
+        const requiredFields = [
+            'id_description', 'id_category', 'id_region', 'id_community',
+            'id_time_of_day', 'id_recording_date', 'id_recording_device'
+        ];
+        let isValid = true;
+
+        requiredFields.forEach(fieldId => {
+            const field = document.getElementById(fieldId);
+            if (!field || !field.value.trim()) {
+                field.classList.add('border-red-500');
+                isValid = false;
+            } else {
+                field.classList.remove('border-red-500');
+            }
+        });
+
+        if (!isValid) {
+            alert('Please fill in all required fields before proceeding.');
+        }
+
+        return isValid;
+    }
+
+    saveMetadata() {
+        // Save form data to hidden fields for submission
+        const fields = [
+            'description', 'category', 'class_name', 'subclass',
+            'region', 'community', 'time_of_day', 'recording_date',
+            'recording_device', 'microphone_type'
+        ];
+
+        fields.forEach(field => {
+            const sourceField = document.getElementById(`id_${field}`);
+            const targetField = document.getElementById(`hidden_${field}`);
+            if (sourceField && targetField) {
+                targetField.value = sourceField.value;
+                this.metadata[field] = sourceField.value;
+            }
+        });
+    }
+
+    navigateToStep(step) {
+        // Hide current step
+        const currentStepEl = document.getElementById(`step-${this.currentStep}`);
+        currentStepEl.classList.add('animate__fadeOut');
+
+        setTimeout(() => {
+            currentStepEl.classList.add('hidden');
+            currentStepEl.classList.remove('animate__fadeOut');
+
+            // Show new step
+            this.currentStep = step;
+            const newStepEl = document.getElementById(`step-${step}`);
+            newStepEl.classList.remove('hidden');
+            newStepEl.classList.add('animate__fadeIn');
+
+            this.updateProgressIndicators();
+        }, 300);
+    }
+
+    updateProgressIndicators() {
+        // Update step indicators
+        document.querySelectorAll('.step-indicator').forEach(indicator => {
+            const stepNum = parseInt(indicator.dataset.step);
+            const isActive = (this.currentStep === 'metadata' && stepNum === 1) ||
+                           (this.currentStep === 'recording' && stepNum === 2);
+
+            if (isActive) {
+                indicator.classList.add('active');
+            } else {
+                indicator.classList.remove('active');
+            }
+        });
+    }
+
+    setupCascadingDropdowns() {
+        const regionSelect = document.getElementById('id_region');
+        const communitySelect = document.getElementById('id_community');
+        const categorySelect = document.getElementById('id_category');
+        const classSelect = document.getElementById('id_class_name');
+        const subclassSelect = document.getElementById('id_subclass');
+
+        // Region-Community relationship
+        if (regionSelect && communitySelect) {
+            regionSelect.addEventListener('change', function() {
+                const regionId = this.value;
+                communitySelect.innerHTML = '<option value="">Select Community</option>';
+
+                if (regionId) {
+                    fetch(`/load-communities/?region_id=${regionId}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            data.forEach(item => {
+                                const option = document.createElement('option');
+                                option.value = item.id;
+                                option.textContent = item.name;
+                                communitySelect.appendChild(option);
+                            });
+                        })
+                        .catch(error => console.error('Error loading communities:', error));
+                }
+            });
+        }
+
+        // Category-Class relationship
+        if (categorySelect && classSelect) {
+            categorySelect.addEventListener('change', function() {
+                const categoryId = this.value;
+                classSelect.innerHTML = '<option value="">Select Class</option>';
+                if (subclassSelect) subclassSelect.innerHTML = '<option value="">Select Sub Class</option>';
+
+                if (categoryId) {
+                    fetch(`/load-classes/?category_id=${categoryId}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            data.forEach(item => {
+                                const option = document.createElement('option');
+                                option.value = item.id;
+                                option.textContent = item.name;
+                                classSelect.appendChild(option);
+                            });
+                        })
+                        .catch(error => console.error('Error loading classes:', error));
+                }
+            });
+        }
+
+        // Class-Subclass relationship
+        if (classSelect && subclassSelect) {
+            classSelect.addEventListener('change', function() {
+                const classId = this.value;
+                subclassSelect.innerHTML = '<option value="">Select Sub Class</option>';
+
+                if (classId) {
+                    fetch(`/load-subclasses/?class_id=${classId}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            data.forEach(item => {
+                                const option = document.createElement('option');
+                                option.value = item.id;
+                                option.textContent = item.name;
+                                subclassSelect.appendChild(option);
+                            });
+                        })
+                        .catch(error => console.error('Error loading subclasses:', error));
+                }
+            });
+        }
+
+        // Trigger change events for pre-selected values
+        if (regionSelect && regionSelect.value) {
+            regionSelect.dispatchEvent(new Event('change'));
+        }
+        if (categorySelect && categorySelect.value) {
+            categorySelect.dispatchEvent(new Event('change'));
+        }
+        if (classSelect && classSelect.value) {
+            setTimeout(() => {
+                classSelect.dispatchEvent(new Event('change'));
+            }, 100);
+        }
+    }
+
+    setupRecordingInterface() {
+        const recordBtn = document.getElementById('record-button');
+        const recordIcon = document.getElementById('record-icon');
+        const recordAgainBtn = document.getElementById('record-again-btn');
+
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let isRecording = false;
+        let startTime = null;
+        let timerInterval = null;
+        let audioContext = null;
+        let analyser = null;
+        let dataArray = null;
+        let animationId = null;
+        let isSpeaking = false;
+        let speechThreshold = 0.03; // Adjust for sensitivity (0.01-0.1 range)
+        let silenceCounter = 0;
+        let silenceThreshold = 10; // Frames of silence before stopping animation
+
+        const updateRecordingState = (recording, paused = false) => {
+            const readyState = document.getElementById('ready-state');
+            const recordingState = document.getElementById('recording-state');
+            const pausedState = document.getElementById('paused-state');
+
+            // Update states
+            readyState.style.display = (recording || paused) ? 'none' : '';
+            recordingState.style.display = (!recording || paused) ? 'none' : '';
+            pausedState.style.display = !paused ? 'none' : '';
+
+            // Update button
+            if (recording) {
+                recordBtn.style.animation = 'recordingPulse 1.5s ease-in-out infinite';
+                // Show waves when recording starts
+                showWaves();
+            } else if (paused) {
+                // Handle paused state if needed
+            } else {
+                recordBtn.style.animation = '';
+                // Hide waves when recording stops
+                hideWaves();
+            }
+
+            // Animate circles
+            document.querySelectorAll('.mic-circle').forEach(circle => {
+                if (recording) {
+                    circle.classList.add('animate');
+                } else {
+                    circle.classList.remove('animate');
+                }
+            });
+        };
+
+        const startTimer = () => {
+            const timerDisplay = document.getElementById('recording-timer-display');
+            timerDisplay.textContent = '00:00'; // Reset timer display
+            timerInterval = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
+                const seconds = (elapsed % 60).toString().padStart(2, '0');
+                timerDisplay.textContent = `${minutes}:${seconds}`;
+            }, 1000);
+        };
+
+        const stopTimer = () => {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        };
+
+        const initializeVoiceDetection = (stream) => {
+            // Create audio context for voice detection
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 256;
+            const bufferLength = analyser.frequencyBinCount;
+            dataArray = new Uint8Array(bufferLength);
+
+            // Connect microphone to analyser
+            const source = audioContext.createMediaStreamSource(stream);
+            source.connect(analyser);
+
+            // Start monitoring voice activity
+            monitorVoiceActivity();
+        };
+
+        const monitorVoiceActivity = () => {
+            if (!analyser || !isRecording) return;
+
+            analyser.getByteFrequencyData(dataArray);
+
+            // Calculate average volume
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                sum += dataArray[i];
+            }
+            const average = sum / dataArray.length;
+
+            // Normalize to 0-1 range
+            const normalizedVolume = average / 255;
+
+            // Detect speech based on threshold
+            const currentlySpeaking = normalizedVolume > speechThreshold;
+
+            if (currentlySpeaking !== isSpeaking) {
+                isSpeaking = currentlySpeaking;
+                updateWaveAnimation(isSpeaking);
+
+                if (currentlySpeaking) {
+                    silenceCounter = 0;
+                }
+            }
+
+            // Handle silence detection for smoother transitions
+            if (!currentlySpeaking) {
+                silenceCounter++;
+                if (silenceCounter > silenceThreshold && isSpeaking) {
+                    isSpeaking = false;
+                    updateWaveAnimation(false);
+                }
+            } else {
+                silenceCounter = 0;
+            }
+
+            // Continue monitoring
+            animationId = requestAnimationFrame(monitorVoiceActivity);
+        };
+
+        // Show waves when recording starts (static, no animation)
+        const showWaves = () => {
+            const waveElements = document.querySelectorAll('.audio-wave');
+            waveElements.forEach((wave) => {
+                wave.style.display = 'block';
+                wave.style.animation = 'none';
+            });
+        };
+
+        // Start/stop wave animation based on speech detection
+        const updateWaveAnimation = (isSpeaking) => {
+            const waveElements = document.querySelectorAll('.audio-wave');
+            waveElements.forEach((wave, index) => {
+                if (isSpeaking) {
+                    // Start animation when speaking
+                    const delays = ['0s', '0.15s', '0.3s', '0.08s', '0.22s', '0.37s', '0.12s'];
+                    const durations = ['3.2s', '2.8s', '3.5s', '2.9s', '3.1s', '3.3s', '2.7s'];
+                    const delay = delays[index] || '0s';
+                    const duration = durations[index] || '3s';
+                    wave.style.animation = `wave ${duration} ease-in-out infinite ${delay}`;
+                } else {
+                    // Stop animation but keep waves visible when not speaking
+                    wave.style.animation = 'none';
+                }
+            });
+        };
+
+        // Hide waves when recording stops
+        const hideWaves = () => {
+            const waveElements = document.querySelectorAll('.audio-wave');
+            waveElements.forEach((wave) => {
+                wave.style.display = 'none';
+                wave.style.animation = 'none';
+            });
+        };
+
+        const stopVoiceDetection = () => {
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            if (audioContext && audioContext.state !== 'closed') {
+                audioContext.close();
+                audioContext = null;
+            }
+            hideWaves();
+            isSpeaking = false;
+            silenceCounter = 0;
+        };
+
+        recordBtn.addEventListener('click', async () => {
+            if (isRecording) {
+                // Stop recording - change to microphone icon
+                if (mediaRecorder && mediaRecorder.state === 'recording') {
+                    mediaRecorder.stop();
+                    stopVoiceDetection();
+                    // Immediately hide recording state and stop timer
+                    isRecording = false; // Set flag immediately
+                    updateRecordingState(false);
+                    stopTimer();
+                    // Change to microphone icon
+                    recordIcon.innerHTML = `
+                        <svg fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                        </svg>
+                    `;
+                    recordBtn.setAttribute('title', 'Start Recording');
+                    recordBtn.setAttribute('aria-label', 'Start Recording');
+                }
+                return;
+            }
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onstop = () => {
+                    stopVoiceDetection();
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    audioChunks = [];
+
+                    // Create file from blob
+                    const audioFile = new File([audioBlob], `recording_${Date.now()}.wav`, { type: 'audio/wav' });
+
+                    // Set file in hidden input
+                    const fileInput = document.getElementById('recorded-audio');
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(audioFile);
+                    fileInput.files = dataTransfer.files;
+
+                    // Show playback and submit button
+                    this.showRecordingComplete(audioUrl);
+
+                    // Hide waves when recording stops
+                    hideWaves();
+
+                    // Stop all tracks
+                    stream.getTracks().forEach(track => track.stop());
+                };
+
+                audioChunks = [];
+                mediaRecorder.start();
+                isRecording = true;
+                startTime = Date.now();
+
+                updateRecordingState(true);
+                startTimer();
+
+                // Change to pause icon
+                recordIcon.innerHTML = `
+                    <svg fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                    </svg>
+                `;
+                recordBtn.setAttribute('title', 'Stop Recording');
+                recordBtn.setAttribute('aria-label', 'Stop Recording');
+
+                // Initialize voice detection
+                initializeVoiceDetection(stream);
+
+            } catch (error) {
+                console.error('Error starting recording:', error);
+                alert('Error accessing microphone. Please check permissions.');
+            }
+        });
+
+        recordAgainBtn.addEventListener('click', () => {
+            // Reset everything
+            const audioPlayback = document.getElementById('audio-playback-section');
+            const recordedPreview = document.getElementById('recorded-audio-preview');
+            const submitBtn = document.getElementById('submit-contribution');
+
+            audioPlayback.style.display = 'none';
+            recordedPreview.src = '';
+            submitBtn.style.display = 'none';
+
+            document.getElementById('recorded-audio').value = '';
+            updateRecordingState(false);
+            stopTimer();
+            stopVoiceDetection();
+            isRecording = false;
+        });
+    }
+
+    showRecordingComplete(audioUrl) {
+        const instructionsReady = document.getElementById('instructions-ready');
+        const instructionsReview = document.getElementById('instructions-review');
+        const audioPlayback = document.getElementById('audio-playback-section');
+        const recordedPreview = document.getElementById('recorded-audio-preview');
+        const submitBtn = document.getElementById('submit-contribution');
+
+        instructionsReady.style.display = 'none';
+        instructionsReview.style.display = '';
+        audioPlayback.style.display = '';
+        recordedPreview.src = audioUrl;
+        submitBtn.style.display = '';
+    }
+
+    autoPopulateFields() {
+        // Auto-populate recording date
+        const recordingDateField = document.getElementById('id_recording_date');
+        if (recordingDateField && !recordingDateField.value) {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            recordingDateField.value = `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+    }
+}
+
+// Audio recording class (enhanced for visual feedback and voice detection)
+class AudioRecorder {
+    constructor() {
+        this.mediaRecorder = null;
+        this.audioChunks = [];
+        this.isRecording = false;
+        this.startTime = null;
+        this.timerInterval = null;
+        this.stream = null;
+        this.audioContext = null;
+        this.analyser = null;
+        this.dataArray = null;
+        this.animationId = null;
+        this.isSpeaking = false;
+        this.speechThreshold = 0.01; // Adjust this threshold for sensitivity
+        this.silenceCounter = 0;
+        this.silenceThreshold = 10; // Frames of silence before stopping animation
+    }
+
+    async startRecording() {
+        try {
+            this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            this.mediaRecorder = new MediaRecorder(this.stream);
+
+            this.mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    this.audioChunks.push(event.data);
+                }
+            };
+
+            this.mediaRecorder.onstop = () => {
+                const audioBlob = new Blob(this.audioChunks, { type: 'audio/wav' });
+                const audioUrl = URL.createObjectURL(audioBlob);
+                this.audioChunks = [];
+
+                const audioFile = new File([audioBlob], `recording_${Date.now()}.wav`, { type: 'audio/wav' });
+                const fileInput = document.getElementById('recorded-audio');
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(audioFile);
+                fileInput.files = dataTransfer.files;
+
+                this.showPlayback(audioUrl);
+
+                if (this.stream) {
+                    this.stream.getTracks().forEach(track => track.stop());
+                }
+            };
+
+            this.audioChunks = [];
+            this.mediaRecorder.start();
+            this.isRecording = true;
+            this.startTime = Date.now();
+            this.startTimer();
+
+            return true;
+        } catch (error) {
+            console.error('Error starting recording:', error);
+            alert('Error accessing microphone. Please check permissions.');
+            return false;
+        }
+    }
+
+    stopRecording() {
+        if (this.mediaRecorder && this.isRecording) {
+            this.mediaRecorder.stop();
+            this.isRecording = false;
+            this.stopTimer();
+        }
+    }
+
+    startTimer() {
+        const timerElement = document.getElementById('recording-timer-display');
+        this.timerInterval = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
+            const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
+            const seconds = (elapsed % 60).toString().padStart(2, '0');
+            timerElement.textContent = `${minutes}:${seconds}`;
+        }, 1000);
+    }
+
+    stopTimer() {
+        if (this.timerInterval) {
+            clearInterval(this.timerInterval);
+            this.timerInterval = null;
+        }
+    }
+
+    showPlayback(audioUrl) {
+        const audioPreview = document.getElementById('recorded-audio-preview');
+        const playbackSection = document.getElementById('audio-playback-section');
+
+        audioPreview.src = audioUrl;
+        playbackSection.classList.remove('hidden');
+    }
+
+    recordAgain() {
+        const audioPlayback = document.getElementById('audio-playback-section');
+        const recordedPreview = document.getElementById('recorded-audio-preview');
+        const submitBtn = document.getElementById('submit-contribution');
+
+        audioPlayback.classList.add('hidden');
+        recordedPreview.src = '';
+        document.getElementById('recorded-audio').value = '';
+
+        submitBtn.classList.add('hidden');
+    }
+}
+
+// Initialize the contribution form
+let contributionForm;
+
+document.addEventListener('DOMContentLoaded', function() {
+    contributionForm = new ContributionForm();
+
+    // Alert dismissal
+    document.querySelectorAll('.close-btn').forEach(button => {
+        button.addEventListener('click', (e) => {
+            e.target.closest('.alert').remove();
+        });
+    });
+
+    setTimeout(() => {
+        document.querySelectorAll('.alert').forEach(alert => {
+            alert.remove();
+        });
+    }, 10000);
+});
+</script>
+
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+  <style>
+    /* Multi-step form styles */
+    .step-indicator {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: #e5e7eb;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    }
+
+    .step-indicator.active {
+      background: linear-gradient(135deg, #005450 0%, #00d553 100%);
+      color: white;
+      transform: scale(1.1);
+      box-shadow: 0 4px 12px rgba(0, 84, 80, 0.3);
+    }
+
+    .step-label {
+      font-size: 0.875rem;
+      color: #6b7280;
+      margin-top: 0.5rem;
+    }
+
+    .step-indicator.active + .step-label {
+      color: #005450;
+      font-weight: 600;
+    }
+
+    /* Step animations */
+    .step-content {
+      transition: all 0.3s ease-in-out;
+    }
+
+    .step-content.hidden {
+      opacity: 0;
+      transform: translateX(-20px);
+    }
+
+    .step-content.animate__fadeIn {
+      animation: fadeIn 0.5s ease-in-out;
+    }
+
+    .step-content.animate__fadeOut {
+      animation: fadeOut 0.3s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes fadeOut {
+      from {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      to {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+    }
+
+    /* Microphone interface animations */
+    .mic-circle {
+      border: 2px solid var(--primary-color, #005450);
+      border-radius: 50%;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      opacity: 0;
+    }
+
+    .mic-circle-1 {
+      width: 120px;
+      height: 120px;
+    }
+
+    .mic-circle-2 {
+      width: 160px;
+      height: 160px;
+    }
+
+    .mic-circle-3 {
+      width: 200px;
+      height: 200px;
+    }
+
+    .mic-circle.animate {
+      opacity: 0.6;
+      animation: micPulse 2s ease-in-out infinite;
+    }
+
+    .mic-circle.animate.mic-circle-1 {
+      animation-delay: 0s;
+    }
+
+    .mic-circle.animate.mic-circle-2 {
+      animation-delay: 0.5s;
+    }
+
+    .mic-circle.animate.mic-circle-3 {
+      animation-delay: 1s;
+    }
+
+    @keyframes micPulse {
+      0%, 100% {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 0.6;
+      }
+      50% {
+        transform: translate(-50%, -50%) scale(1.1);
+        opacity: 0.3;
+      }
+    }
+
+    .mic-container {
+      transition: all 0.3s ease;
+    }
+
+    .record-button.recording {
+      animation: recordingPulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes recordingPulse {
+      0%, 100% {
+        transform: scale(1);
+      }
+      50% {
+        transform: scale(1.05);
+      }
+    }
+
+
+    /* Recording states */
+    .ready-state, .recording-state, .paused-state {
+      transition: opacity 0.3s ease;
+    }
+
+    .ready-state.hidden,
+    .recording-state.hidden,
+    .paused-state.hidden {
+      opacity: 0;
+    }
+
+    /* Submit button animation */
+    .submit-contribution {
+      animation: submitGlow 2s ease-in-out infinite;
+    }
+
+    @keyframes submitGlow {
+      0%, 100% {
+        box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+      }
+      50% {
+        box-shadow: 0 0 30px rgba(34, 197, 94, 0.6);
+      }
+    }
+
+    /* Progress line animation */
+    .progress-line {
+      height: 2px;
+      background: linear-gradient(90deg, #005450 0%, #00d553 100%);
+      transition: width 0.5s ease;
+    }
+
+    /* Form validation */
+    .border-red-500 {
+      border-color: #ef4444 !important;
+    }
+
+    /* Animations for microphone recording interface */
+
+    @keyframes recordingPulse {
+      0%, 100% {
+        transform: scale(1);
+      }
+      50% {
+        transform: scale(1.05);
+      }
+    }
+
+
+    /* Audio waves animation - more natural and varied */
+    @keyframes wave {
+      0%, 100% {
+        height: 8px;
+        opacity: 0.6;
+      }
+      12% {
+        height: 16px;
+        opacity: 0.8;
+      }
+      25% {
+        height: 28px;
+        opacity: 1;
+      }
+      37% {
+        height: 12px;
+        opacity: 0.85;
+      }
+      50% {
+        height: 6px;
+        opacity: 0.5;
+      }
+      62% {
+        height: 22px;
+        opacity: 0.95;
+      }
+      75% {
+        height: 14px;
+        opacity: 0.8;
+      }
+      87% {
+        height: 26px;
+        opacity: 0.9;
+      }
+    }
+
+    .audio-wave {
+      animation-fill-mode: both;
+      height: 8px;
+      transition: all 0.3s ease;
+      width: 2px;
+    }
+
+    /* Individual wave variations for more natural look */
+    .wave-1 { height: 6px; }
+    .wave-2 { height: 8px; }
+    .wave-3 { height: 10px; }
+    .wave-4 { height: 12px; }
+    .wave-5 { height: 10px; }
+    .wave-6 { height: 8px; }
+    .wave-7 { height: 6px; }
+
+    
+
+    #back-to-metadata:hover {
+      color: #1f2937 !important;
+    }
+
+    #record-again-btn:hover {
+      background-color: #2563eb !important;
+    }
+
+    #record-button:hover {
+      transform: scale(1.05);
+    }
+
+    #record-button:focus {
+      box-shadow: 0 0 0 4px rgba(0, 84, 80, 0.3) !important;
+    }
+
+
+    #submit-contribution:hover {
+      background-color: #15803d !important;
+      transform: scale(1.05) !important;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+      .mic-circle-1 { width: 100px !important; height: 100px !important; }
+      .mic-circle-2 { width: 140px !important; height: 140px !important; }
+      .mic-circle-3 { width: 180px !important; height: 180px !important; }
+    }
+  </style>
+{% endblock %}

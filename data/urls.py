@@ -9,6 +9,8 @@ urlpatterns = [
     path("dashboard/", views.DashboardView.as_view(), name="dashboardapi"),
     path("datasetlist/", views.NoiseDatasetListView.as_view(), name="datasetlist"),
     path("dataset-create/", views.noise_dataset_create, name="noise_dataset_create"),
+    path("contribute/", views.contribute_audio, name="contribute_audio"),
+    path("save-recording/", views.save_noise_recording, name="save_noise_recording"),
     path(
         "dataset/detail/<int:dataset_id>/",
         views.noise_detail,

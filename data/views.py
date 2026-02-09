@@ -14,7 +14,7 @@ import hashlib
 from django.views.generic import DeleteView, ListView
 from django.urls import reverse_lazy
 from django.contrib import messages
-from .models import NoiseDataset, AudioFeature
+from .models import NoiseDataset, AudioFeature, NoiseRecording
 from datetime import timedelta
 from django.db.models import Q
 from .models import BulkAudioUpload
@@ -772,6 +772,117 @@ def noise_dataset_create(request):
 
     context = {"form": form}
     return render(request, "data/AddNewData.html", context)
+
+
+@login_required
+def contribute_audio(request):
+    """View for audio contribution with microphone recording"""
+    if request.method == "POST":
+        form = NoiseDatasetForm(request.POST, request.FILES)
+        if form.is_valid():
+            try:
+                noise_dataset = form.save(commit=False)
+                noise_dataset.collector = request.user
+
+                # Generate the new noise ID format
+                noise_dataset.noise_id = generate_noise_id(request.user)
+
+                # Generate dataset name
+                noise_dataset.name = generate_dataset_name(noise_dataset)
+
+                # Handle recorded audio file
+                if "audio" in request.FILES:
+                    audio_file = request.FILES["audio"]
+
+                    # Generate hash of the new audio file for duplicate checking
+                    hash_md5 = hashlib.md5()
+                    for chunk in audio_file.chunks():
+                        hash_md5.update(chunk)
+
+                    # Reset file pointer again before processing
+                    audio_file.seek(0)
+
+                    # Get file extension
+                    file_extension = audio_file.name.split(".")[-1].lower()
+
+                    # Generate new filename using noise_id
+                    new_filename = f"{noise_dataset.noise_id}.{file_extension}"
+
+                    # Create a renamed file object
+                    renamed_file = RenamedFile(audio_file, new_filename)
+
+                    # Replace the file in the form data
+                    request.FILES["audio"] = renamed_file
+
+                noise_dataset.save()
+                form.save_m2m()
+
+                messages.success(
+                    request,
+                    f'Audio contribution "{noise_dataset.name}" saved successfully!',
+                )
+                return redirect("data:contribute_audio")
+
+            except Exception as e:
+                messages.error(request, f"Error saving contribution: {str(e)}")
+                print(f"Error creating audio contribution: {e}")
+    else:
+        form = NoiseDatasetForm()
+
+    context = {
+        "form": form,
+        "current_step": "metadata"  # Start with metadata collection
+    }
+    return render(request, "contribute/contribute.html", context)
+
+
+@login_required
+def save_noise_recording(request):
+    """
+    Simple view to save raw noise recordings without processing.
+    This creates a NoiseRecording instance with minimal metadata.
+    """
+    if request.method == "POST":
+        try:
+            # Check if audio file is provided
+            if "audio" not in request.FILES:
+                messages.error(request, "No audio file provided")
+                return redirect("data:contribute_audio")
+
+            audio_file = request.FILES["audio"]
+
+            # Get duration if provided (optional)
+            duration = request.POST.get('duration')
+            duration = float(duration) if duration else None
+
+            # Create NoiseRecording instance
+            noise_recording = NoiseRecording.objects.create(
+                collector=request.user,
+                audio=audio_file,
+                duration=duration,
+                status='pending',  # Ready for later processing
+                device_info={
+                    'user_agent': request.META.get('HTTP_USER_AGENT', ''),
+                    'ip_address': request.META.get('REMOTE_ADDR', ''),
+                    'timestamp': str(timezone.now()),
+                }
+            )
+
+            messages.success(
+                request,
+                f'Noise recording saved successfully! Recording ID: {noise_recording.id}'
+            )
+
+            # Redirect back to contribution page
+            return redirect("data:contribute_audio")
+
+        except Exception as e:
+            messages.error(request, f"Error saving recording: {str(e)}")
+            print(f"Error saving noise recording: {e}")
+            return redirect("data:contribute_audio")
+
+    # GET request - redirect to contribution page
+    return redirect("data:contribute_audio")
 
 
 @login_required

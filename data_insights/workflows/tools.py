@@ -175,14 +175,39 @@ DB_CONFIG = AI_CONFIG.get("DATABASE", {})
 AGENT_CONFIG = AI_CONFIG.get("AGENT", {})
 SECURITY_CONFIG = AI_CONFIG.get("SECURITY", {})
 
-# Built from AI_INSIGHT["DATABASE"] in settings: local DB when USE_SQLITE=true, Docker DB when false
-DB_URI = (
-    f"postgresql://{DB_CONFIG.get('USER', 'postgres')}:"
-    f"{DB_CONFIG.get('PASSWORD', '')}@"
-    f"{DB_CONFIG.get('HOST', 'localhost')}:"
-    f"{DB_CONFIG.get('PORT', 5432)}/"
-    f"{DB_CONFIG.get('NAME', 'iheardatadb')}"
-)
+# Use Docker DB ('db') when available, otherwise Django's default
+def _get_data_insights_db_uri():
+    """Use Docker DB ('db') when available, otherwise Django's default."""
+    # Check if Docker DB is available (POSTGRES_HOST=db in env)
+    postgres_host = os.getenv("POSTGRES_HOST")
+    if postgres_host == "db":
+        # We're in Docker, use the Docker DB
+        return (
+            f"postgresql://{os.getenv('POSTGRES_USER', 'postgres')}:"
+            f"{os.getenv('POSTGRES_PASSWORD', '')}@"
+            f"db:{os.getenv('POSTGRES_PORT', 5432)}/"
+            f"{os.getenv('POSTGRES_DB', 'iheardatadb')}"
+        )
+
+    # Otherwise use Django's default database (works for local dev)
+    db = settings.DATABASES.get("default", {})
+    if "postgresql" in (db.get("ENGINE") or ""):
+        return (
+            f"postgresql://{db.get('USER', 'postgres')}:"
+            f"{db.get('PASSWORD', '')}@"
+            f"{db.get('HOST', 'localhost')}:"
+            f"{db.get('PORT', 5432)}/"
+            f"{db.get('NAME', 'postgres')}"
+        )
+    return (
+        f"postgresql://{DB_CONFIG.get('USER', 'postgres')}:"
+        f"{DB_CONFIG.get('PASSWORD', '')}@"
+        f"{DB_CONFIG.get('HOST', 'localhost')}:"
+        f"{DB_CONFIG.get('PORT', 5432)}/"
+        f"{DB_CONFIG.get('NAME', 'iheardatadb')}"
+    )
+
+DB_URI = _get_data_insights_db_uri()
 from data.models import (
     NoiseDataset,
     AudioFeature,

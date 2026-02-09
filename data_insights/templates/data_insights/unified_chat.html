@@ -934,10 +934,19 @@ class UnifiedAudioDataChat {
                 if (container.dataset.rendered === 'true') {
                     return;
                 }
-                const chartId = `chart-${messageId}-${Date.now()}`;
+                const chartType = this.normalizeChartType(visualizationData?.frontend_data?.type);
                 const tableData = visualizationData?.frontend_data?.table;
                 const tableHtml = this.buildTableHtml(tableData);
                 const hasTable = !!tableHtml;
+                const hasData = Array.isArray(visualizationData?.frontend_data?.labels)
+                    && visualizationData.frontend_data.labels.length > 0
+                    && Array.isArray(visualizationData?.frontend_data?.data)
+                    && visualizationData.frontend_data.data.length > 0;
+                const hasChart = chartType && chartType !== 'none' && hasData;
+                if (!hasChart && !hasTable) {
+                    return;
+                }
+                const chartId = `chart-${messageId}-${Date.now()}`;
                 const vizDiv = document.createElement('div');
                 vizDiv.className = 'visualization mb-6 p-4 bg-gradient-to-r from-green-600 to-lime-400 rounded-lg ';
                 const layoutStyle = hasTable ? "display:flex; gap:12px; flex-wrap:wrap;" : "";
@@ -949,11 +958,11 @@ class UnifiedAudioDataChat {
                         <h4 class="font-semibold text-white text-gray-800"> ${visualizationData.visualization_name || 'Data Visualization'}</h4>
                     </div>
                     <div style="${layoutStyle}">
-                        <div style="${chartWrapStyle}">
+                        ${hasChart ? `<div style="${chartWrapStyle}">
                             <div class="chart-container bg-white p-4 rounded-lg shadow-sm">
                                 <canvas id="${chartId}" width="400" height="200"></canvas>
                             </div>
-                        </div>
+                        </div>` : ''}
                         ${hasTable ? `<div style="${tableWrapStyle}">${tableHtml}</div>` : ''}
                     </div>
                     <div class="mt-3   text-base  text-white text-gray-600">
@@ -962,10 +971,12 @@ class UnifiedAudioDataChat {
                 `;
                 container.appendChild(vizDiv);
 
-                // Create the chart with actual data
-                setTimeout(() => {
-                    this.createChart(visualizationData, chartId, toolResponses);
-                }, 100);
+                if (hasChart) {
+                    // Create the chart with actual data
+                    setTimeout(() => {
+                        this.createChart(visualizationData, chartId, toolResponses);
+                    }, 100);
+                }
                 container.dataset.rendered = 'true';
             }
         }
@@ -978,6 +989,12 @@ class UnifiedAudioDataChat {
         try {
             const frontendData = visualizationData.frontend_data;
             const chartType = this.normalizeChartType(frontendData.type);
+            if (chartType === 'none') {
+                return;
+            }
+            if (!frontendData?.labels?.length || !frontendData?.data?.length) {
+                return;
+            }
 
             // Extract actual data from the tool responses
             const actualData = this.extractChartData(visualizationData, toolResponses);
