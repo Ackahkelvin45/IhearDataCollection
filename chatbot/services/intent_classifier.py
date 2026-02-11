@@ -22,7 +22,8 @@ NUMERIC_KEYWORDS = [
     "how many", "count", "total", "number of", "average", "sum", "maximum", "minimum",
     "how much", "statistics", "dataset", "datasets", "recordings", "documents",
     "category", "categories", "region", "regions", "community", "communities",
-    "class", "subclass",
+    "class", "subclass", "top", "highest", "lowest", "rank", "ranking",
+    "decibel", "db", "by class", "per class", "by subclass", "per subclass",
 ]
 EXPLANATORY_KEYWORDS = ["what is", "explain", "tell me about", "who", "why", "when", "where", "how does"]
 
@@ -105,6 +106,16 @@ Return JSON only, no markdown:
         return self._classify_by_keywords(question_lower)
 
     def _classify_by_keywords(self, question_lower: str) -> Dict[str, Any]:
+        # Strong numeric intent should win even for prompts starting with "what is ..."
+        strong_numeric_patterns = [
+            r"\btop\s+\d+\b",
+            r"\b(highest|lowest)\b",
+            r"\b(by|per)\s+(class|subclass|category|region|community|device)\b",
+            r"\b(decibel|db)\b",
+        ]
+        if any(re.search(pattern, question_lower) for pattern in strong_numeric_patterns):
+            return {"intent": "NUMERIC", "confidence": 0.9, "reasoning": "strong numeric pattern"}
+
         # Word-boundary match so "show" doesn't match "how", etc.
         has_numeric = any(re.search(rf"\b{re.escape(k)}\b", question_lower) for k in NUMERIC_KEYWORDS)
         has_explanatory = any(re.search(rf"\b{re.escape(k)}\b", question_lower) for k in EXPLANATORY_KEYWORDS)

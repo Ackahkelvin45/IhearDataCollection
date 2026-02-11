@@ -112,6 +112,53 @@
 
 <!-- Load widget styles and scripts -->
 <link rel="stylesheet" href="{% static 'chatbot/css/widget.css' %}">
+<style>
+  /* Markdown tables inside chat bubbles */
+  #chatWidget .message-content table {
+    width: 100%;
+    border-collapse: collapse;
+    border-spacing: 0;
+    display: block;            /* allow horizontal scroll in narrow widget */
+    overflow-x: auto;
+    max-width: 100%;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #ffffff;
+  }
+
+  #chatWidget .message-content thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f3f4f6;
+    color: #111827;
+    font-weight: 700;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  #chatWidget .message-content th,
+  #chatWidget .message-content td {
+    border: 1px solid #e5e7eb;
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.35;
+    text-align: left;
+    vertical-align: top;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  #chatWidget .message-content tbody tr:nth-child(even) td {
+    background: #fafafa;
+  }
+
+  /* Keep tables from visually “breaking” paragraphs */
+  #chatWidget .message-content table + * {
+    margin-top: 12px;
+  }
+</style>
 <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js"></script>
 <script src="{% static 'chatbot/js/widget.js' %}"></script>

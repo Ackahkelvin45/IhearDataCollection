@@ -251,6 +251,10 @@ class DatasetService:
         grouping_keywords = [
             "by region",
             "by category",
+            "by class",
+            "by classes",
+            "by subclass",
+            "by subclasses",
             "by community",
             "by time of day",
             "by time",
@@ -260,6 +264,10 @@ class DatasetService:
             "by type",
             "per region",
             "per category",
+            "per class",
+            "per classes",
+            "per subclass",
+            "per subclasses",
             "per community",
             "per time",
             "per device",
@@ -279,6 +287,18 @@ class DatasetService:
                 return result
             except Exception as e:
                 logger.error(f"Error in grouping query: {e}", exc_info=True)
+
+        # Top-N ranking by decibel (common analytics question)
+        if (
+            any(token in question_lower for token in ["top", "highest", "loudest"])
+            and any(token in question_lower for token in ["decibel", "db"])
+        ):
+            try:
+                result = self._get_top_decibel_noise_datasets(question_lower)
+                cache.set(cache_key, result, NUMERIC_CACHE_TTL_SECONDS)
+                return result
+            except Exception as e:
+                logger.error(f"Error in top decibel query: {e}", exc_info=True)
 
         # Check for statistical questions about audio features
         audio_features = [
@@ -1215,6 +1235,34 @@ class DatasetService:
                             answer += f"• {category['category__name']}: {category['count']} recordings\\n"
                     answer += "\\n"
 
+            # Class distribution
+            if "class" in question_lower:
+                classes = (
+                    NoiseDataset.objects.values("class_name__name")
+                    .annotate(count=Count("id"))
+                    .order_by("-count")
+                )
+                if classes:
+                    answer += "🏷️ **By Class:**\\n"
+                    for cls in classes:
+                        if cls["class_name__name"]:
+                            answer += f"• {cls['class_name__name']}: {cls['count']} recordings\\n"
+                    answer += "\\n"
+
+            # Subclass distribution
+            if "subclass" in question_lower or "sub-class" in question_lower or "sub class" in question_lower:
+                subclasses = (
+                    NoiseDataset.objects.values("subclass__name")
+                    .annotate(count=Count("id"))
+                    .order_by("-count")
+                )
+                if subclasses:
+                    answer += "🔖 **By Subclass:**\\n"
+                    for sub in subclasses:
+                        if sub["subclass__name"]:
+                            answer += f"• {sub['subclass__name']}: {sub['count']} recordings\\n"
+                    answer += "\\n"
+
             # Time of day distribution
             if "time" in question_lower or "day" in question_lower:
                 times = (
@@ -1291,6 +1339,70 @@ class DatasetService:
                 "data_used": {"type": "error", "error": str(e)},
                 "sources": [],
             }
+
+    def _get_top_decibel_noise_datasets(self, question_lower: str) -> Dict[str, Any]:
+        """Return top-N noise datasets ranked by max decibel."""
+        from django.db.models import Q
+        from data.models import NoiseAnalysis
+
+        limit_match = re.search(r"\btop\s+(\d{1,3})\b", question_lower)
+        limit = int(limit_match.group(1)) if limit_match else 5
+        limit = max(1, min(limit, 50))
+
+        rows_qs = (
+            NoiseAnalysis.objects.select_related(
+                "noise_dataset",
+                "noise_dataset__category",
+                "noise_dataset__class_name",
+            )
+            .filter(~Q(max_db=None))
+            .order_by("-max_db")[:limit]
+        )
+
+        rows = []
+        for item in rows_qs:
+            dataset = item.noise_dataset
+            rows.append(
+                {
+                    "dataset_id": dataset.id if dataset else None,
+                    "dataset_name": dataset.name if dataset and dataset.name else f"Dataset {dataset.id}" if dataset else "Unknown",
+                    "max_db": round(float(item.max_db), 2) if item.max_db is not None else None,
+                    "mean_db": round(float(item.mean_db), 2) if item.mean_db is not None else None,
+                    "category": dataset.category.name if dataset and dataset.category else "",
+                    "class": dataset.class_name.name if dataset and dataset.class_name else "",
+                }
+            )
+
+        if not rows:
+            return {
+                "answer": "I couldn't find analyzed noise datasets with decibel values yet.",
+                "table": {
+                    "columns": ["dataset_id", "dataset_name", "max_db", "mean_db", "category", "class"],
+                    "rows": [],
+                    "page": 1,
+                    "page_size": limit,
+                    "offset": 0,
+                    "row_count": 0,
+                    "has_more": False,
+                },
+                "data_used": {"type": "database_query", "method": "top_decibel_ranking"},
+                "sources": [],
+            }
+
+        return {
+            "answer": f"Here are the top **{len(rows)}** noise datasets with the highest decibel levels.",
+            "table": {
+                "columns": ["dataset_id", "dataset_name", "max_db", "mean_db", "category", "class"],
+                "rows": rows,
+                "page": 1,
+                "page_size": limit,
+                "offset": 0,
+                "row_count": len(rows),
+                "has_more": False,
+            },
+            "data_used": {"type": "database_query", "method": "top_decibel_ranking"},
+            "sources": [],
+        }
 
     def _get_audio_feature_statistics(self, question_lower):
         """Get statistics about audio features"""
@@ -2225,6 +2337,14 @@ Response:"""
 
         This routes to the existing RAG service for document-based questions
         """
+        context = context or {}
+        question_lower = (question or "").lower()
+
+        # Guardrail: if a database/numeric-style question was misrouted as explanatory,
+        # answer it via numeric pipeline instead of returning generic RAG text.
+        if self._looks_like_database_question(question_lower):
+            return self._handle_numeric_query(question, context)
+
         if not self.rag_service:
             self.rag_service = RAGService()
 
@@ -2267,25 +2387,41 @@ Response:"""
         # First, get numeric data
         numeric_result = self._handle_numeric_query(question, context)
 
-        # Then, get explanatory analysis
+        # If numeric already has structured output, prefer it to avoid noisy duplication.
+        if numeric_result.get("table") or numeric_result.get("data_used", {}).get("type") in {
+            "database_query",
+            "tool_sql_agent",
+            "llm_generated_sql",
+            "distribution_analysis",
+        }:
+            return numeric_result
+
         explanatory_result = self._handle_explanatory_query(
             f"Analyze and explain: {question}. Numeric data: {numeric_result.get('answer', '')}",
             context,
         )
-
-        # Combine results
         combined_answer = (
-            f"{numeric_result['answer']}\n\n{explanatory_result['answer']}"
+            f"{numeric_result.get('answer', '').strip()}\n\n{explanatory_result.get('answer', '').strip()}".strip()
         )
-
         return {
             "answer": combined_answer,
             "data_used": {
-                "numeric_part": numeric_result["data_used"],
-                "explanatory_part": explanatory_result["data_used"],
+                "numeric_part": numeric_result.get("data_used", {}),
+                "explanatory_part": explanatory_result.get("data_used", {}),
             },
             "combined_analysis": True,
+            "sources": explanatory_result.get("sources", []),
         }
+
+    def _looks_like_database_question(self, question_lower: str) -> bool:
+        """Detect questions that should be answered from dataset tables."""
+        db_signals = [
+            "how many", "count", "total", "number of", "top", "highest", "lowest",
+            "by class", "by category", "by region", "per class", "per category", "per region",
+            "dataset", "datasets", "recording", "recordings", "noise", "decibel", "db",
+            "average", "max", "min", "breakdown", "distribution",
+        ]
+        return any(signal in question_lower for signal in db_signals)
 
     def _convert_dataset_to_chunks(self, context: Dict = None) -> List[Dict[str, Any]]:
         """

@@ -1593,15 +1593,15 @@ class DataAnalysisTool(BaseTool):
                         "recording_date",
                         "recording_device",
                     ]
-                return {
-                    "analysis_type": "highest_decibel",
-                    "rows": rows,
-                    "columns": columns,
-                    "row_count": len(rows),
-                    "limit": limit,
-                    "offset": 0,
-                    "has_more": False,
-                }
+                    return {
+                        "analysis_type": "highest_decibel",
+                        "rows": rows,
+                        "columns": columns,
+                        "row_count": len(rows),
+                        "limit": limit,
+                        "offset": 0,
+                        "has_more": False,
+                    }
 
                 if any(word in query_lower for word in ["lowest", "min", "bottom"]):
                     limit = self._extract_top_n(query_lower, default=1)
@@ -1641,14 +1641,31 @@ class DataAnalysisTool(BaseTool):
                         "recording_date",
                         "recording_device",
                     ]
+                    return {
+                        "analysis_type": "lowest_decibel",
+                        "rows": rows,
+                        "columns": columns,
+                        "row_count": len(rows),
+                        "limit": limit,
+                        "offset": 0,
+                        "has_more": False,
+                    }
+
+                # Decibel query without an explicit ranking direction
+                # Return a compact summary instead of falling through.
+                stats = NoiseAnalysis.objects.exclude(mean_db__isnull=True).aggregate(
+                    avg_db=models.Avg("mean_db"),
+                    max_db=models.Max("mean_db"),
+                    min_db=models.Min("mean_db"),
+                    total=models.Count("id"),
+                )
                 return {
-                    "analysis_type": "lowest_decibel",
-                    "rows": rows,
-                    "columns": columns,
-                    "row_count": len(rows),
-                    "limit": limit,
-                    "offset": 0,
-                    "has_more": False,
+                    "analysis_type": "decibel_summary",
+                    "total_count": stats.get("total", 0) or 0,
+                    "avg_db": stats.get("avg_db"),
+                    "max_db": stats.get("max_db"),
+                    "min_db": stats.get("min_db"),
+                    "skip_visualization": True,
                 }
 
             # Extract simple filters for fast ORM operations

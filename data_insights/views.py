@@ -422,14 +422,14 @@ class ChatSessionView(ModelViewSet):
                 except Exception as stream_error:
                     # If there's an error in streaming, log it but continue to save
                     error_str = str(stream_error)
-                    logger.warning(f"Error in streaming process: {error_str}")
-
-                    # If it's a HumanMessage serialization error, don't treat it as a failure
+                    # If it's a HumanMessage serialization error, don't treat it as a failure.
+                    # This may occur at graph checkpoint serialization after response streaming.
                     if "HumanMessage" in error_str and "JSON serializable" in error_str:
                         logger.info(
-                            "HumanMessage serialization error detected - treating as successful completion"
+                            "HumanMessage serialization warning ignored after stream completion"
                         )
                     else:
+                        logger.warning(f"Error in streaming process: {error_str}")
                         logger.error(f"Genuine streaming error: {error_str}")
 
                 finally:
