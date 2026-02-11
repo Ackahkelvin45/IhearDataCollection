@@ -93,7 +93,7 @@
                     {% endif %}
                   </div>
 
-                  <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0 mb-4">
+                  <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0 mb-4" style="display: none;">
                     <label for="id_subclass" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">Sub Class</label>
                     {{ form.subclass }}
                     {% if form.subclass.help_text %}
@@ -182,7 +182,7 @@
                 <input type="hidden" name="description" id="hidden_description">
                 <input type="hidden" name="category" id="hidden_category">
                 <input type="hidden" name="class_name" id="hidden_class_name">
-                <input type="hidden" name="subclass" id="hidden_subclass">
+                <input type="hidden" name="subclass" id="hidden_subclass" value="">
                 <input type="hidden" name="region" id="hidden_region">
                 <input type="hidden" name="community" id="hidden_community">
                 <input type="hidden" name="time_of_day" id="hidden_time_of_day">
@@ -418,7 +418,7 @@ class ContributionForm {
         const communitySelect = document.getElementById('id_community');
         const categorySelect = document.getElementById('id_category');
         const classSelect = document.getElementById('id_class_name');
-        const subclassSelect = document.getElementById('id_subclass');
+        // const subclassSelect = document.getElementById('id_subclass'); // Not used for clean speech
 
         // Region-Community relationship
         if (regionSelect && communitySelect) {
@@ -442,15 +442,30 @@ class ContributionForm {
             });
         }
 
-        // Category-Class relationship
+        // Load clean speech categories on page load
+        if (categorySelect) {
+            fetch('/load-clean-speech-categories/')
+                .then(response => response.json())
+                .then(data => {
+                    categorySelect.innerHTML = '<option value="">Select Category</option>';
+                    data.forEach(item => {
+                        const option = document.createElement('option');
+                        option.value = item.id;
+                        option.textContent = item.name;
+                        categorySelect.appendChild(option);
+                    });
+                })
+                .catch(error => console.error('Error loading clean speech categories:', error));
+        }
+
+        // Clean Speech Category-Class relationship (no subclasses for clean speech)
         if (categorySelect && classSelect) {
             categorySelect.addEventListener('change', function() {
                 const categoryId = this.value;
                 classSelect.innerHTML = '<option value="">Select Class</option>';
-                if (subclassSelect) subclassSelect.innerHTML = '<option value="">Select Sub Class</option>';
 
                 if (categoryId) {
-                    fetch(`/load-classes/?category_id=${categoryId}`)
+                    fetch(`/load-clean-speech-classes/?category_id=${categoryId}`)
                         .then(response => response.json())
                         .then(data => {
                             data.forEach(item => {
@@ -460,29 +475,7 @@ class ContributionForm {
                                 classSelect.appendChild(option);
                             });
                         })
-                        .catch(error => console.error('Error loading classes:', error));
-                }
-            });
-        }
-
-        // Class-Subclass relationship
-        if (classSelect && subclassSelect) {
-            classSelect.addEventListener('change', function() {
-                const classId = this.value;
-                subclassSelect.innerHTML = '<option value="">Select Sub Class</option>';
-
-                if (classId) {
-                    fetch(`/load-subclasses/?class_id=${classId}`)
-                        .then(response => response.json())
-                        .then(data => {
-                            data.forEach(item => {
-                                const option = document.createElement('option');
-                                option.value = item.id;
-                                option.textContent = item.name;
-                                subclassSelect.appendChild(option);
-                            });
-                        })
-                        .catch(error => console.error('Error loading subclasses:', error));
+                        .catch(error => console.error('Error loading clean speech classes:', error));
                 }
             });
         }

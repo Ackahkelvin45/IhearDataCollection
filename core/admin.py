@@ -17,6 +17,29 @@ class RegionAdmin(ModelAdmin):
     pass
 
 
+@admin.register(CleanSpeechCategory)
+class CleanSpeechCategoryAdmin(ModelAdmin):
+    list_display = ("name", "description")
+    search_fields = ("name",)
+
+@admin.register(CleanSpeechClass)
+class CleanSpeechClassAdmin(ModelAdmin):
+    list_display = ("name", "category", "description")
+    list_filter = ("category",)
+    search_fields = ("name", "category__name")
+
+@admin.register(CleanSpeechSubClass)
+class CleanSpeechSubClassAdmin(ModelAdmin):
+    list_display = ("name", "parent_class", "get_category")
+    list_filter = ("parent_class__category", "parent_class")
+    search_fields = ("name", "parent_class__name")
+
+    def get_category(self, obj):
+        return obj.parent_class.category
+
+    get_category.short_description = "Category"
+    get_category.admin_order_field = "parent_class__category"
+    
 models_to_register = [Community, Microphone_Type, Time_Of_Day]
 
 for model in models_to_register:

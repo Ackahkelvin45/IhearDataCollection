@@ -7,9 +7,10 @@ from django.db import models
 import uuid
 import logging
 import os
+import re
 from langchain_core.tools import BaseTool
 from django.utils import timezone
-from datetime import timedelta
+from datetime import timedelta, datetime
 from data_insights.models import QueryCacheModel
 from langchain_openai import ChatOpenAI
 from django.conf import settings
@@ -209,6 +210,7 @@ def _get_data_insights_db_uri():
 
 DB_URI = _get_data_insights_db_uri()
 from data.models import (
+    Dataset as AudioDataset,
     NoiseDataset,
     AudioFeature,
     NoiseAnalysis,
@@ -216,6 +218,7 @@ from data.models import (
     BulkAudioUpload,
     BulkReprocessingTask,
 )
+from core.models import Region, Community, Category, Class, SubClass
 
 
 class NoiseDatasetSearchInput(BaseModel):
@@ -419,7 +422,23 @@ class NoiseDatasetSearchTool(BaseTool):
                     "query_id": query_id,
                     "total_count": total_count,
                     "sample_data": sample_data,
+                    "rows": sample_data,
+                    "columns": list(sample_data[0].keys()) if sample_data else [],
                     "message": f'Found {total_count} noise datasets. Use query_id "{query_id}" for bulk operations.',
+                    "analysis_type": "dataset_search_sample",
+                    "filter_criteria": filter_criteria,
+                    "limit": limit,
+                    "offset": offset,
+                    "has_more": total_count > (offset + limit),
+                    "pagination": {
+                        "limit": limit,
+                        "offset": offset,
+                        "has_more": total_count > (offset + limit),
+                        "total_count": total_count,
+                        "query_kind": "dataset_search",
+                        "filter_criteria": filter_criteria,
+                    },
+                    "skip_visualization": True,
                 }
 
             else:
@@ -470,8 +489,24 @@ class NoiseDatasetSearchTool(BaseTool):
 
                 return {
                     "datasets": result_data,
+                    "rows": result_data,
+                    "columns": list(result_data[0].keys()) if result_data else [],
                     "total_count": total_count,
                     "returned_count": len(result_data),
+                    "analysis_type": "dataset_search_results",
+                    "filter_criteria": filter_criteria,
+                    "limit": limit,
+                    "offset": offset,
+                    "has_more": total_count > (offset + limit),
+                    "pagination": {
+                        "limit": limit,
+                        "offset": offset,
+                        "has_more": total_count > (offset + limit),
+                        "total_count": total_count,
+                        "query_kind": "dataset_search",
+                        "filter_criteria": filter_criteria,
+                    },
+                    "skip_visualization": True,
                 }
 
         except Exception as e:
@@ -1346,11 +1381,480 @@ class DataAnalysisTool(BaseTool):
             include_tables=allowed_tables,
             top_k=top_k,
             ai_answer=False,
+            sample_rows_in_table_info=0,
+            max_string_length=40,
         ).compile_workflow()
         return data
 
+    def _is_count_query(self, query_lower: str) -> bool:
+        return bool(
+            re.search(
+                r"\b(how many|count|number of|total|quantity of)\b", query_lower
+            )
+        )
+
+    def _extract_top_n(self, query_lower: str, default: int = 1) -> int:
+        top_match = re.search(r"\b(top|highest|lowest)\s+(\d{1,3})\b", query_lower)
+        if top_match:
+            return max(1, min(int(top_match.group(2)), 50))
+        alt_match = re.search(r"\b(\d{1,3})\s+(highest|lowest|top)\b", query_lower)
+        if alt_match:
+            return max(1, min(int(alt_match.group(1)), 50))
+        return default
+
+    def _match_entity_name(self, query_lower: str, names: List[str]) -> Optional[str]:
+        if not names:
+            return None
+        for name in sorted([n for n in names if n], key=len, reverse=True):
+            name_lower = str(name).lower()
+            if name_lower and name_lower in query_lower:
+                return str(name)
+        return None
+
+    def _match_dataset_type(self, query_lower: str) -> Optional[str]:
+        try:
+            for value, label in getattr(AudioDataset, "DATASET_TYPES", []):
+                tokens = []
+                if value:
+                    tokens.append(str(value).lower())
+                    tokens.append(str(value).lower().replace("_", " "))
+                if label:
+                    tokens.append(str(label).lower())
+                if any(token and token in query_lower for token in tokens):
+                    return str(value)
+        except Exception:
+            return None
+        return None
+
+    def _extract_device_value(self, query_lower: str) -> Optional[str]:
+        device_match = re.search(
+            r"(?:recording device|device|recorded with|recorded on|using)\s+([a-z0-9\s\-\+\.]+?)(?:\b(in|from|during|between|after|before|on|at|for|with)\b|$)",
+            query_lower,
+        )
+        if device_match:
+            return device_match.group(1).strip()
+
+        device_keywords = [
+            "iphone",
+            "samsung",
+            "pixel",
+            "android",
+            "huawei",
+            "tecno",
+            "infinix",
+            "xiaomi",
+            "oppo",
+            "vivo",
+        ]
+        for keyword in device_keywords:
+            if keyword in query_lower:
+                return keyword
+        return None
+
+    def _extract_date_filters(self, query_lower: str) -> Dict[str, Any]:
+        date_filters: Dict[str, Any] = {}
+        date_matches = re.findall(r"\b(20\d{2}-\d{1,2}-\d{1,2})\b", query_lower)
+        if len(date_matches) >= 2:
+            try:
+                start = datetime.strptime(date_matches[0], "%Y-%m-%d").date()
+                end = datetime.strptime(date_matches[1], "%Y-%m-%d").date()
+                date_filters["recording_date__date__range"] = (start, end)
+                return date_filters
+            except Exception:
+                return date_filters
+        if len(date_matches) == 1:
+            try:
+                single_date = datetime.strptime(date_matches[0], "%Y-%m-%d").date()
+                date_filters["recording_date__date"] = single_date
+                return date_filters
+            except Exception:
+                return date_filters
+
+        year_matches = re.findall(r"\b(20\d{2})\b", query_lower)
+        if year_matches:
+            years = [int(y) for y in year_matches]
+            if any(word in query_lower for word in ["between", "from", "to", "through"]):
+                date_filters["recording_date__year__gte"] = min(years)
+                date_filters["recording_date__year__lte"] = max(years)
+            else:
+                date_filters["recording_date__year"] = years[0]
+        return date_filters
+
+    def _get_group_field(self, query_lower: str) -> Optional[str]:
+        group_mappings = {
+            "region": "region__name",
+            "community": "community__name",
+            "category": "category__name",
+            "class": "class_name__name",
+            "subclass": "subclass__name",
+            "dataset type": "dataset_type__name",
+            "dataset_type": "dataset_type__name",
+            "recording device": "recording_device",
+            "device": "recording_device",
+        }
+
+        for key, field in group_mappings.items():
+            if key in query_lower and any(
+                phrase in query_lower
+                for phrase in ["by ", "per ", "grouped by", "distribution", "breakdown"]
+            ):
+                return field
+
+        return None
+
     def _run(self, query: str, **kwargs) -> Dict[str, Any]:
         try:
+            query_lower = (query or "").lower()
+
+            # Fast-path: recent N datasets (no LLM)
+            recent_match = re.search(r"\b(recent|latest|last)\s+(\d{1,3})\b", query_lower)
+            if recent_match and any(word in query_lower for word in ["dataset", "data", "recording", "collected"]):
+                limit = int(recent_match.group(2))
+                limit = max(1, min(limit, 200))
+                qs = NoiseDataset.objects.select_related(
+                    "region",
+                    "community",
+                    "category",
+                    "dataset_type",
+                ).order_by("-recording_date", "-created_at")
+                total_count = qs.count()
+                qs = qs[:limit]
+
+                rows = []
+                for item in qs:
+                    rows.append(
+                        {
+                            "name": item.name,
+                            "region": item.region.name if item.region else None,
+                            "community": item.community.name if item.community else None,
+                            "category": item.category.name if item.category else None,
+                            "recording_date": item.recording_date,
+                            "recording_device": item.recording_device,
+                        }
+                    )
+
+                columns = ["name", "region", "community", "category", "recording_date", "recording_device"]
+                return {
+                    "analysis_type": "recent_datasets",
+                    "rows": rows,
+                    "columns": columns,
+                    "row_count": len(rows),
+                    "limit": limit,
+                    "offset": 0,
+                    "total_count": total_count,
+                    "has_more": total_count > limit,
+                    "pagination": {
+                        "limit": limit,
+                        "offset": 0,
+                        "has_more": total_count > limit,
+                        "total_count": total_count,
+                        "query_kind": "recent_datasets",
+                    },
+                    "skip_visualization": True,
+                }
+
+            # Fast-path: highest/lowest decibel levels
+            if any(word in query_lower for word in ["decibel", "db"]):
+                if any(word in query_lower for word in ["highest", "max", "top"]):
+                    limit = self._extract_top_n(query_lower, default=1)
+                    qs = (
+                        NoiseAnalysis.objects.select_related(
+                            "noise_dataset",
+                            "noise_dataset__region",
+                            "noise_dataset__community",
+                            "noise_dataset__category",
+                            "noise_dataset__dataset_type",
+                        )
+                        .exclude(mean_db__isnull=True)
+                        .order_by("-mean_db")
+                    )[:limit]
+
+                    rows = []
+                    for item in qs:
+                        ds = item.noise_dataset
+                        rows.append(
+                            {
+                                "name": ds.name if ds else None,
+                                "mean_db": item.mean_db,
+                                "region": ds.region.name if ds and ds.region else None,
+                                "community": ds.community.name if ds and ds.community else None,
+                                "category": ds.category.name if ds and ds.category else None,
+                                "recording_date": ds.recording_date if ds else None,
+                                "recording_device": ds.recording_device if ds else None,
+                            }
+                        )
+
+                    columns = [
+                        "name",
+                        "mean_db",
+                        "region",
+                        "community",
+                        "category",
+                        "recording_date",
+                        "recording_device",
+                    ]
+                return {
+                    "analysis_type": "highest_decibel",
+                    "rows": rows,
+                    "columns": columns,
+                    "row_count": len(rows),
+                    "limit": limit,
+                    "offset": 0,
+                    "has_more": False,
+                }
+
+                if any(word in query_lower for word in ["lowest", "min", "bottom"]):
+                    limit = self._extract_top_n(query_lower, default=1)
+                    qs = (
+                        NoiseAnalysis.objects.select_related(
+                            "noise_dataset",
+                            "noise_dataset__region",
+                            "noise_dataset__community",
+                            "noise_dataset__category",
+                            "noise_dataset__dataset_type",
+                        )
+                        .exclude(mean_db__isnull=True)
+                        .order_by("mean_db")
+                    )[:limit]
+
+                    rows = []
+                    for item in qs:
+                        ds = item.noise_dataset
+                        rows.append(
+                            {
+                                "name": ds.name if ds else None,
+                                "mean_db": item.mean_db,
+                                "region": ds.region.name if ds and ds.region else None,
+                                "community": ds.community.name if ds and ds.community else None,
+                                "category": ds.category.name if ds and ds.category else None,
+                                "recording_date": ds.recording_date if ds else None,
+                                "recording_device": ds.recording_device if ds else None,
+                            }
+                        )
+
+                    columns = [
+                        "name",
+                        "mean_db",
+                        "region",
+                        "community",
+                        "category",
+                        "recording_date",
+                        "recording_device",
+                    ]
+                return {
+                    "analysis_type": "lowest_decibel",
+                    "rows": rows,
+                    "columns": columns,
+                    "row_count": len(rows),
+                    "limit": limit,
+                    "offset": 0,
+                    "has_more": False,
+                }
+
+            # Extract simple filters for fast ORM operations
+            filters: Dict[str, Any] = {}
+            filter_meta: Dict[str, Any] = {}
+            filter_hits = 0
+
+            region_name = self._match_entity_name(
+                query_lower, list(Region.objects.values_list("name", flat=True))
+            )
+            if not region_name and "region" in query_lower:
+                region_match = re.search(
+                    r"(?:from|in|within|inside)\s+(?:the\s+)?([a-z0-9\s-]+?)\s+region",
+                    query_lower,
+                )
+                if region_match:
+                    candidate = region_match.group(1).strip()
+                    region_obj = Region.objects.filter(
+                        name__icontains=candidate
+                    ).first()
+                    if region_obj:
+                        region_name = region_obj.name
+            if region_name:
+                filters["region__name__iexact"] = region_name
+                filter_meta["region"] = region_name
+                filter_hits += 1
+
+            community_name = self._match_entity_name(
+                query_lower, list(Community.objects.values_list("name", flat=True))
+            )
+            if not community_name and "community" in query_lower:
+                community_match = re.search(
+                    r"(?:from|in|within|inside)\s+(?:the\s+)?([a-z0-9\s-]+?)\s+community",
+                    query_lower,
+                )
+                if community_match:
+                    candidate = community_match.group(1).strip()
+                    community_obj = Community.objects.filter(
+                        name__icontains=candidate
+                    ).first()
+                    if community_obj:
+                        community_name = community_obj.name
+            if community_name:
+                filters["community__name__iexact"] = community_name
+                filter_meta["community"] = community_name
+                filter_hits += 1
+
+            category_name = self._match_entity_name(
+                query_lower, list(Category.objects.values_list("name", flat=True))
+            )
+            if category_name:
+                filters["category__name__iexact"] = category_name
+                filter_meta["category"] = category_name
+                filter_hits += 1
+
+            class_name = self._match_entity_name(
+                query_lower, list(Class.objects.values_list("name", flat=True))
+            )
+            if class_name:
+                filters["class_name__name__iexact"] = class_name
+                filter_meta["class"] = class_name
+                filter_hits += 1
+
+            subclass_name = self._match_entity_name(
+                query_lower, list(SubClass.objects.values_list("name", flat=True))
+            )
+            if subclass_name:
+                filters["subclass__name__iexact"] = subclass_name
+                filter_meta["subclass"] = subclass_name
+                filter_hits += 1
+
+            dataset_type_value = self._match_dataset_type(query_lower)
+            if dataset_type_value and "dataset" in query_lower:
+                filters["dataset_type__name__iexact"] = dataset_type_value
+                filter_meta["dataset_type"] = dataset_type_value
+                filter_hits += 1
+
+            device_value = self._extract_device_value(query_lower)
+            if device_value:
+                filter_meta["recording_device"] = device_value
+                filters["recording_device__icontains"] = device_value
+                filter_hits += 1
+
+            date_filters = self._extract_date_filters(query_lower)
+            if date_filters:
+                filters.update(date_filters)
+                filter_meta["recording_date"] = True
+                filter_hits += 1
+
+            # Group-by counts (region/community/category/etc.)
+            group_field = self._get_group_field(query_lower)
+            if group_field:
+                qs = NoiseDataset.objects
+                if filters:
+                    qs = qs.filter(**{k: v for k, v in filters.items() if k != group_field})
+                group_rows = (
+                    qs.values(group_field)
+                    .annotate(count=models.Count("id"))
+                    .order_by("-count")
+                )
+                rows = list(group_rows[:25])
+                columns = [group_field, "count"]
+                return {
+                    "analysis_type": "group_count",
+                    "rows": rows,
+                    "columns": columns,
+                    "row_count": len(rows),
+                    "limit": 25,
+                    "offset": 0,
+                    "has_more": False,
+                }
+
+            # Distinct category count
+            if self._is_count_query(query_lower) and "category" in query_lower and "dataset" in query_lower:
+                distinct_categories = (
+                    NoiseDataset.objects.values("category__name")
+                    .exclude(category__name__isnull=True)
+                    .distinct()
+                )
+                rows = list(distinct_categories[:50])
+                columns = ["category__name"]
+                return {
+                    "analysis_type": "category_count",
+                    "rows": rows,
+                    "columns": columns,
+                    "row_count": len(rows),
+                    "total_count": distinct_categories.count(),
+                    "limit": 50,
+                    "offset": 0,
+                    "has_more": distinct_categories.count() > 50,
+                    "pagination": {
+                        "limit": 50,
+                        "offset": 0,
+                        "has_more": distinct_categories.count() > 50,
+                        "total_count": distinct_categories.count(),
+                        "query_kind": "category_count",
+                    },
+                    "skip_visualization": True,
+                }
+
+            # Count questions (single filter -> ORM; multi-filter -> SQL)
+            if self._is_count_query(query_lower):
+                if filter_hits >= 2:
+                    response = self.agent.invoke({"messages": [HumanMessage(content=query)]})
+                    # Safely extract message content
+                    if response and "messages" in response and response["messages"]:
+                        last_message = response["messages"][-1]
+                        if hasattr(last_message, "content"):
+                            msg = str(last_message.content) if last_message.content else ""
+                        else:
+                            msg = str(last_message) if last_message else ""
+                    else:
+                        msg = "No response received"
+                    return {"message": msg}
+
+                qs = NoiseDataset.objects
+                if filters:
+                    qs = qs.filter(**filters)
+
+                # Apply fuzzy device filter if present
+                if device_value:
+                    try:
+                        from django.contrib.postgres.search import TrigramSimilarity
+
+                        qs = (
+                            qs.annotate(
+                                similarity=TrigramSimilarity(
+                                    "recording_device", device_value
+                                )
+                            )
+                            .filter(similarity__gt=0.2)
+                            .order_by("-similarity")
+                        )
+                    except Exception:
+                        qs = qs.filter(recording_device__icontains=device_value)
+
+                total_count = qs.count()
+                return {
+                    "analysis_type": "dataset_count",
+                    "total_count": total_count,
+                    "filters": filter_meta,
+                    "limit": 0,
+                    "offset": 0,
+                    "has_more": False,
+                    "skip_visualization": True,
+                }
+
+            # Fast-path: region with most data collected
+            if "region" in query_lower and any(word in query_lower for word in ["most", "highest", "top", "max"]):
+                region_counts = (
+                    NoiseDataset.objects.values("region__name")
+                    .annotate(count=models.Count("id"))
+                    .order_by("-count")
+                )
+                rows = list(region_counts[:10])
+                columns = ["region__name", "count"]
+                return {
+                    "analysis_type": "region_counts",
+                    "rows": rows,
+                    "columns": columns,
+                    "row_count": len(rows),
+                    "limit": 10,
+                    "offset": 0,
+                    "has_more": False,
+                }
+
             response = self.agent.invoke({"messages": [HumanMessage(content=query)]})
 
             # Safely extract message content

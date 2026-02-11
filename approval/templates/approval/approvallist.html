@@ -1,0 +1,490 @@
+{% extends 'datacollection/layout.html'%}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+{% endblock %}
+<style>
+  .swal2-popup {
+    font-family: inherit;
+    border-radius: 0.5rem;
+  }
+  .dark .swal2-popup {
+    background: #1e293b;
+    color: white;
+  }
+  .dark .swal2-title {
+    color: white;
+  }
+  .dark .swal2-content {
+    color: #e2e8f0;
+  }
+  .swal2-confirm {
+    margin-right: 10px;
+  }
+
+  /* Custom Filter Styling */
+  .filter-container {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .filter-select, .filter-input {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(5px);
+    transition: all 0.3s ease;
+  }
+
+  .filter-select:focus, .filter-input:focus {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  }
+
+  .filter-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    transition: all 0.3s ease;
+    transform: translateY(0);
+  }
+
+  .filter-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+  }
+
+  .clear-btn {
+    transition: all 0.3s ease;
+  }
+
+  .clear-btn:hover {
+    background-color: #dc2626;
+    color: white;
+  }
+
+  /* Pagination Styles */
+  .pagination-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 2rem;
+    padding: 1rem;
+  }
+
+  .pagination-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.5rem;
+    height: 2.5rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #d1d5db;
+    background-color: white;
+    color: #374151;
+    text-decoration: none;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+  }
+
+  .pagination-btn:hover {
+    background-color: #f3f4f6;
+    border-color: #9ca3af;
+  }
+
+  .pagination-btn.active {
+    background-color: #6366f1;
+    color: white;
+    border-color: #6366f1;
+  }
+
+  .pagination-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  .pagination-dots {
+    padding: 0.5rem;
+    color: #6b7280;
+  }
+
+  .page-info {
+    margin-left: 2rem;
+    color: #6b7280;
+    font-size: 0.875rem;
+  }
+
+  /* Filter Tags */
+  .filter-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    margin: 0.25rem;
+    border-radius: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: rgba(255, 255, 255, 0.1);
+    color: #6366f1;
+    border: 1px solid rgba(99, 102, 241, 0.3);
+  }
+
+  .filter-tag button {
+    background: none;
+    border: none;
+    color: #6366f1;
+    margin-left: 0.5rem;
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+  }
+
+  .filter-tag button:hover {
+    color: #4f46e5;
+  }
+</style>
+
+{% block content %}
+  <nav>
+    <!-- breadcrumb -->
+    <ol style="margin-bottom: 30px;" class="flex flex-wrap pt-1 mr-12 bg-transparent rounded-lg sm:mr-16">
+      <li class="text-sm leading-normal">
+        <a class="text-white opacity-50" href="javascript:;">home</a>
+      </li>
+      <li class="text-sm pl-2 capitalize leading-normal text-white before:float-left before:pr-2 before:text-white before:content-['/']" aria-current="page">Clean Speech Approvals</li>
+    </ol>
+
+    <div class="flex flex-row justify-between">
+      <h6 class="mb-0 font-bold text-white capitalize">Clean Speech Recording Approvals</h6>
+
+      <div class="flex gap-2">
+        <a href="{% url 'data:contribute_audio' %}" class="inline-block px-5 py-2.5 font-bold leading-normal text-center text-white align-middle transition-all bg-slate-700 border-0 rounded-lg cursor-pointer text-sm ease-in shadow-md bg-150hover:shadow-xs active:opacity-85 hover:-translate-y-px tracking-tight-rem bg-x-25">
+          <i class="fas fa-plus" aria-hidden="true"></i>&nbsp;&nbsp;Back to Contribution
+        </a>
+      </div>
+
+    </div>
+  </nav>
+
+
+
+  <!-- row 1 -->
+  <div class="flex flex-wrap -mx-3">
+    <!-- card1 -->
+    <div class="w-full px-6 py-6 mx-auto">
+      <!-- table 1 -->
+      <div class="flex flex-wrap -mx-3">
+        <div class="flex-none w-full max-w-full px-3">
+          <div class="relative flex flex-col min-w-0 mb-6 break-words bg-white border-0 border-transparent border-solid shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
+            {% if messages %}
+<div class="fixed top-4 right-4 z-50 w-full max-w-xs">
+  {% for message in messages %}
+  <div class="alert alert-{{ message.tags }} mb-4 p-4 rounded-lg shadow-lg border-l-4 {% if message.tags == 'success' %}bg-green-100 border-green-500 text-green-700{% elif message.tags == 'error' %}bg-red-100 border-red-500 text-red-700{% else %}bg-blue-100 border-blue-500 text-blue-700{% endif %}">
+    <div class="flex items-center">
+      <span class="mr-2">
+        {% if message.tags == 'success' %}
+        <i class="fas fa-check-circle"></i>
+        {% elif message.tags == 'error' %}
+        <i class="fas fa-exclamation-circle"></i>
+        {% else %}
+        <i class="fas fa-info-circle"></i>
+        {% endif %}
+      </span>
+      <span>{{ message }}</span>
+      <button onclick="this.parentElement.parentElement.remove()" class="ml-auto text-lg">&times;</button>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+            <div class="p-6 pb-0 mb-0 border-b-0 border-b-solid rounded-t-2xl border-b-transparent">
+              <div class="flex justify-between items-center">
+                <h6 class="dark:text-white text-xl">Clean Speech Recordings Pending Approval</h6>
+                <h6 class=" text-gray-500 dark:text-gray-400">
+                  Total: {{ paginator.count }} recordings
+                </h6>
+              </div>
+            </div>
+
+              <!-- Advanced Filters -->
+ <div class="filter-container rounded-2xl p-6  backdrop-blur-lg">
+    <form method="GET" class="space-y-4">
+      <div class="flex flex-wrap items-center gap-4">
+        <!-- Search Input -->
+        <div  style="min-width: 120px;" style="margin-bottom: 3px;" class="flex-1 min-w-64">
+          <div class="relative flex flex-wrap items-stretch w-full transition-all rounded-lg ease">
+           <span class="text-sm ease leading-5.6 absolute z-50 -ml-px flex h-full items-center whitespace-nowrap rounded-lg rounded-tr-none rounded-br-none border border-r-0 border-transparent bg-transparent py-2 px-2.5 text-center font-normal text-slate-500 transition-all">
+      <i class="fas fa-search" aria-hidden="true"></i>
+    </span>
+            <input
+              type="text"
+              name="search"
+              value="{{ current_filters.search|default:'' }}"
+              placeholder="Search by Contributor or ID..."
+              class="pl-9 text-sm filter-input  mr-2 focus:shadow-primary-outline ease w-1/100 leading-5.6 relative -ml-px block min-w-0 flex-auto rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding py-2 pr-3 text-gray-700 transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none focus:transition-shadow" placeholder="Type here..."
+            />
+          </div>
+        </div>
+
+        <!-- Category Filter -->
+        <div class="mr-2" style="margin-bottom: 3px;">
+          <select name="category" class="focus:shadow-primary-outline text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
+            <option value="">All Categories</option>
+            {% for category in categories %}
+              <option value="{{ category.name }}" {% if current_filters.category == category.name %}selected{% endif %}>
+                {{ category.name|title }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Class Filter -->
+        <div class="mr-2" style="margin-bottom: 3px;">
+          <select name="class_name" class="focus:shadow-primary-outline text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
+            <option value="">All Classes</option>
+            {% for class_item in classes %}
+              <option value="{{ class_item.name }}" {% if current_filters.class_name == class_item.name %}selected{% endif %}>
+                {{ class_item.name|title }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Date Range Filter -->
+        <div class="mr-2" style="margin-bottom: 3px;">
+          <select name="date_range" class="focus:shadow-primary-outline text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
+            <option value="">All Time</option>
+            <option value="today" {% if current_filters.date_range == 'today' %}selected{% endif %}>Today</option>
+            <option value="week" {% if current_filters.date_range == 'week' %}selected{% endif %}>This Week</option>
+            <option value="month" {% if current_filters.date_range == 'month' %}selected{% endif %}>This Month</option>
+            <option value="year" {% if current_filters.date_range == 'year' %}selected{% endif %}>This Year</option>
+          </select>
+        </div>
+
+        <!-- Page Size Selector -->
+        <div class="mr-2" style="margin-bottom: 3px;">
+          <select name="page_size" class="filter-select focus:shadow-primary-outline text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none">
+            <option value="50" {% if current_filters.page_size == '50' %}selected{% endif %}>50 per page</option>
+            <option value="100" {% if current_filters.page_size == '100' %}selected{% endif %}>100 per page</option>
+            <option value="200" {% if current_filters.page_size == '200' or not current_filters.page_size %}selected{% endif %}>200 per page</option>
+            <option value="300" {% if current_filters.page_size == '300' %}selected{% endif %}>300 per page</option>
+          </select>
+        </div>
+
+        <!-- Filter Buttons -->
+        <div class="flex gap-2" >
+          <button type="submit" class="filter-btn px-6 py-2.5 mr-2 border border-primary  rounded-lg text-primary font-medium">
+            <i class="fas fa-filter mr-2"></i>Filter
+          </button>
+          <a href="{% url 'approval:clean_speech_approval_list' %}" class="clear-btn px-6    border border-red-600 rounded-lg text-red-600 font-medium inline-flex items-center">
+            <i class="fas fa-times mr-2"></i>Clear
+          </a>
+        </div>
+      </div>
+
+      <!-- Active Filters Display -->
+      <div style="margin-top: 20px;" class="flex flex-wrap items-center">
+        {% if current_filters.search %}
+        <div style="font-size: 12px;" class="filter-tag border  rounded-lg px-1 py-1 text-primary border-primary">
+            Search: {{ current_filters.search }}
+            <button  style="font-size: 16px;" type="button" onclick="clearFilter('search')">&times;</button>
+        </div>
+        {% endif %}
+        {% if current_filters.category %}
+          <div style="font-size: 12px;" class="filter-tag border  rounded-lg px-1 py-1 text-primary border-primary">
+            Category: {{ current_filters.category|title }}
+            <button type="button" onclick="clearFilter('category')">&times;</button>
+          </div>
+        {% endif %}
+        {% if current_filters.class_name %}
+          <div style="font-size: 12px;" class="filter-tag border  rounded-lg px-1 py-1 text-primary border-primary">
+            Class: {{ current_filters.class_name|title }}
+            <button type="button" onclick="clearFilter('class_name')">&times;</button>
+          </div>
+        {% endif %}
+        {% if current_filters.date_range %}
+          <div style="font-size: 12px;" class="filter-tag border  rounded-lg px-1 py-1 text-primary border-primary">
+            Date: {{ current_filters.date_range|title }}
+            <button type="button" onclick="clearFilter('date_range')">&times;</button>
+          </div>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+
+              <div class="block w-full overflow-x-auto">
+                <table class="items-center w-full bg-transparent border-collapse">
+                  <thead>
+                    <tr>
+                      <th class="px-6 py-3 font-bold text-left uppercase align-middle bg-transparent border-b border-gray-200 shadow-none dark:border-white/40 dark:text-white text-xxs border-b-solid tracking-none whitespace-nowrap text-slate-400 opacity-70">ID</th>
+                      <th class="px-6 py-3 font-bold text-left uppercase align-middle bg-transparent border-b border-gray-200 shadow-none dark:border-white/40 dark:text-white text-xxs border-b-solid tracking-none whitespace-nowrap text-slate-400 opacity-70">Contributor</th>
+                      <th class="px-6 py-3 font-bold text-left uppercase align-middle bg-transparent border-b border-gray-200 shadow-none dark:border-white/40 dark:text-white text-xxs border-b-solid tracking-none whitespace-nowrap text-slate-400 opacity-70">Type</th>
+                      <th class="px-6 py-3 font-bold text-left uppercase align-middle bg-transparent border-b border-gray-200 shadow-none dark:border-white/40 dark:text-white text-xxs border-b-solid tracking-none whitespace-nowrap text-slate-400 opacity-70">Duration</th>
+                      <th class="px-6 py-3 font-bold text-left uppercase align-middle bg-transparent border-b border-gray-200 shadow-none dark:border-white/40 dark:text-white text-xxs border-b-solid tracking-none whitespace-nowrap text-slate-400 opacity-70">Category</th>
+                      <th class="px-6 py-3 font-bold text-left uppercase align-middle bg-transparent border-b border-gray-200 shadow-none dark:border-white/40 dark:text-white text-xxs border-b-solid tracking-none whitespace-nowrap text-slate-400 opacity-70">Class</th>
+                      <th class="px-6 py-3 font-bold text-left uppercase align-middle bg-transparent border-b border-gray-200 shadow-none dark:border-white/40 dark:text-white text-xxs border-b-solid tracking-none whitespace-nowrap text-slate-400 opacity-70">Date</th>
+                      <th class="px-6 py-3 font-bold text-left uppercase align-middle bg-transparent border-b border-gray-200 shadow-none dark:border-white/40 dark:text-white text-xxs border-b-solid tracking-none whitespace-nowrap text-slate-400 opacity-70">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for recording in recordings %}
+                    <tr>
+                      <td class="p-2 align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+                        <div class="flex px-2 py-1">
+                          <div class="flex flex-col justify-center">
+                            <h6 class="mb-0 text-sm leading-normal dark:text-white">{{ recording.id }}</h6>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td class="p-2 align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+                        <div class="flex px-2 py-1">
+                          <div class="flex flex-col justify-center">
+                            <h6 class="mb-0 text-sm leading-normal dark:text-white">{{ recording.contributor.username }}</h6>
+                            <p class="mb-0 text-xs leading-tight dark:text-white dark:opacity-80 text-slate-400">{{ recording.contributor.email }}</p>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td class="p-2 text-sm leading-normal text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+                        <span class="bg-gradient-to-tl from-purple-500 to-pink-400 px-2.5 text-xs rounded-1.8 py-1.4 inline-block whitespace-nowrap text-center align-baseline font-bold uppercase leading-none text-white">
+                          {{ recording.get_recording_type_display }}
+                        </span>
+                      </td>
+
+                      <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+                        <span class="text-sm font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">
+                          {% if recording.duration %}
+                            {{ recording.duration|floatformat:1 }}s
+                          {% else %}
+                            N/A
+                          {% endif %}
+                        </span>
+                      </td>
+
+                      <td class="p-2 text-sm leading-normal text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+                        {% with dataset=recording.cleanspeechdataset_set.first %}
+                          {% if dataset and dataset.category %}
+                            <span class="bg-gradient-to-tl from-emerald-500 to-teal-400 px-2.5 text-xs rounded-1.8 py-1.4 inline-block whitespace-nowrap text-center align-baseline font-bold uppercase leading-none text-white">
+                              {{ dataset.category.name }}
+                            </span>
+                          {% else %}
+                            <span class="text-xs text-gray-500">No dataset</span>
+                          {% endif %}
+                        {% endwith %}
+                      </td>
+
+                      <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+                        {% with dataset=recording.cleanspeechdataset_set.first %}
+                          {% if dataset and dataset.class_name %}
+                            <span class="text-sm font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">{{ dataset.class_name.name }}</span>
+                          {% else %}
+                            <span class="text-xs text-gray-500">No dataset</span>
+                          {% endif %}
+                        {% endwith %}
+                      </td>
+
+                      <td class="p-2 text-center align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+                        <span class="text-sm font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400">
+                          {{ recording.created_at|date:"d M Y, h:i A" }}
+                        </span>
+                      </td>
+
+                      <td class="p-2 align-middle bg-transparent border-b dark:border-white/40 whitespace-nowrap shadow-transparent">
+                        <div class="flex flex-row items-center justify-center gap-4">
+                          <a href="{% url 'approval:clean_speech_approval_review' recording.id %}" class="text-sm mr-2 font-semibold leading-tight dark:text-white dark:opacity-80 text-slate-400 hover:text-blue-500">Review</a>
+                        </div>
+                      </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                      <td colspan="8" class="p-4 text-center text-gray-500">
+                        No recordings pending approval.
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+
+              </div>
+
+              <!-- Modern Pagination -->
+              {% if is_paginated %}
+              <div class="pagination-container  mx-2 mt-2">
+                {% if page_obj.has_previous %}
+                  <a href="?page=1{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class_name %}&class_name={{ request.GET.class_name }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}{% if request.GET.page_size %}&page_size={{ request.GET.page_size }}{% endif %}"
+                     class="pagination-btn">
+                    <i class="fas fa-angle-double-left"></i>
+                  </a>
+                  <a href="?page={{ page_obj.previous_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class_name %}&class_name={{ request.GET.class_name }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}{% if request.GET.page_size %}&page_size={{ request.GET.page_size }}{% endif %}"
+                     class="pagination-btn">
+                    <i class="fas fa-angle-left"></i>
+                  </a>
+                {% else %}
+                  <span class="pagination-btn disabled">
+                    <i class="fas fa-angle-double-left"></i>
+                  </span>
+                  <span class="pagination-btn disabled">
+                    <i class="fas fa-angle-left"></i>
+                  </span>
+                {% endif %}
+
+                {% for num in page_obj.paginator.page_range %}
+                  {% if num == page_obj.number %}
+                    <span class="pagination-btn active">{{ num }}</span>
+                  {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                    <a href="?page={{ num }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class_name %}&class_name={{ request.GET.class_name }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}{% if request.GET.page_size %}&page_size={{ request.GET.page_size }}{% endif %}"
+                       class="pagination-btn">{{ num }}</a>
+                  {% elif num == 1 or num == page_obj.paginator.num_pages %}
+                    <a href="?page={{ num }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class_name %}&class_name={{ request.GET.class_name }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}{% if request.GET.page_size %}&page_size={{ request.GET.page_size }}{% endif %}"
+                       class="pagination-btn">{{ num }}</a>
+                  {% elif num == 2 and page_obj.number > 5 %}
+                    <span class="pagination-dots">...</span>
+                  {% elif num == page_obj.paginator.num_pages|add:'-1' and page_obj.number < page_obj.paginator.num_pages|add:'-4' %}
+                    <span class="pagination-dots">...</span>
+                  {% endif %}
+                {% endfor %}
+
+                {% if page_obj.has_next %}
+                  <a href="?page={{ page_obj.next_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class_name %}&class_name={{ request.GET.class_name }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}{% if request.GET.page_size %}&page_size={{ request.GET.page_size }}{% endif %}"
+                     class="pagination-btn">
+                    <i class="fas fa-angle-right"></i>
+                  </a>
+                  <a href="?page={{ page_obj.paginator.num_pages }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.class_name %}&class_name={{ request.GET.class_name }}{% endif %}{% if request.GET.date_range %}&date_range={{ request.GET.date_range }}{% endif %}{% if request.GET.page_size %}&page_size={{ request.GET.page_size }}{% endif %}"
+                     class="pagination-btn">
+                    <i class="fas fa-angle-double-right"></i>
+                  </a>
+                {% else %}
+                  <span class="pagination-btn disabled">
+                    <i class="fas fa-angle-right"></i>
+                  </span>
+                  <span class="pagination-btn disabled">
+                    <i class="fas fa-angle-double-right"></i>
+                  </span>
+                {% endif %}
+
+                <div class="page-info">
+                  Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                </div>
+              </div>
+              {% endif %}
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+function clearFilter(filterName) {
+    const url = new URL(window.location);
+    url.searchParams.delete(filterName);
+    window.location.href = url.toString();
+}
+</script>
+
+{% endblock %}

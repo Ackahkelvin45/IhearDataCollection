@@ -41,7 +41,9 @@ from typing import Any, Dict, cast, List, Optional
 from django.conf import settings
 
 from data_insights.workflows.agent_workflow import create_data_insights_agent
-from data_insights.workflows.tools import get_tool_by_name
+from data_insights.workflows.tools import get_tool_by_name, allowed_tables
+from data_insights.workflows.sql_agent import SQLDatabaseWrapper, TextToSQLAgent
+from sqlalchemy import create_engine
 from data_insights.workflows.prompt import SYSTEM_TEMPLATE
 from rest_framework.response import Response
 
@@ -61,26 +63,6 @@ DB_URI = (
 )
 
 
-def home(request):
-    """Landing page for the insights chat UI."""
-    # Order suggestions so the first one maps to a chart
-    suggestions = [
-        "Which region has the most data collected?",
-        "Show me recent 20 data collected",
-        "Which data has the highest decibel level?",
-        "Which community has the lowest decibel level?",
-    ]
-    ml_suggestions = [
-        "Show label distribution by category",
-        "How many datasets have audio features?",
-        "What is the feature coverage percentage?",
-        "Recommend a train/val/test split size",
-    ]
-    return render(
-        request,
-        "data_insights/home.html",
-        {"suggestions": suggestions, "ml_suggestions": ml_suggestions},
-    )
 
 
 def unified_chat(request):
@@ -271,6 +253,34 @@ class ChatSessionView(ModelViewSet):
                                 except Exception:
                                     pass
 
+                                if isinstance(tool_call, dict) and tool_call.get(
+                                    "skip_visualization"
+                                ):
+                                    last_data_tool_response = tool_call
+                                    try:
+                                        yield self._format_stream_message(
+                                            "tool_response",
+                                            self._strip_sensitive_fields(tool_call),
+                                        )
+                                    except Exception as tool_e:
+                                        logger.warning(
+                                            f"Error formatting tool response: {tool_e}"
+                                        )
+                                        yield self._format_stream_message(
+                                            "tool_response",
+                                            {"error": "Tool response formatting error"},
+                                        )
+
+                                    table_viz = self._build_table_visualization(
+                                        tool_call, title="Results"
+                                    )
+                                    if table_viz:
+                                        visualization_data = table_viz
+                                        yield self._format_stream_message(
+                                            "visualization", table_viz
+                                        )
+                                    continue
+
                                 # Check if this is a visualization analysis tool response
                                 if (
                                     isinstance(tool_call, dict)
@@ -299,7 +309,8 @@ class ChatSessionView(ModelViewSet):
                                     last_data_tool_response = tool_call
                                     try:
                                         yield self._format_stream_message(
-                                            "tool_response", tool_call
+                                            "tool_response",
+                                            self._strip_sensitive_fields(tool_call),
                                         )
                                         # Stream a visualization as soon as tool data is available
                                         if visualization_data is None and isinstance(
@@ -576,6 +587,192 @@ class ChatSessionView(ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="messages/(?P<message_id>[^/.]+)/paginate",
+    )
+    def paginate_message(self, request, pk=None, message_id=None):
+        session = self.get_object()
+        message = ChatMessage.objects.filter(session=session, id=message_id).first()
+        if not message:
+            return Response({"error": "Message not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        tool_data = message.tool_called or {}
+        pagination_meta = (
+            tool_data.get("pagination") if isinstance(tool_data, dict) else {}
+        ) or {}
+
+        try:
+            limit = int(request.data.get("limit") or pagination_meta.get("limit") or 20)
+        except (TypeError, ValueError):
+            limit = 20
+        try:
+            offset = int(request.data.get("offset") or 0)
+        except (TypeError, ValueError):
+            offset = 0
+
+        limit = max(1, min(limit, 200))
+        offset = max(0, offset)
+
+        result = self._paginate_from_tool_data(tool_data, limit, offset)
+        if not result:
+            return Response(
+                {"error": "Pagination not available for this result"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(result, status=status.HTTP_200_OK)
+
+    def _paginate_from_tool_data(
+        self, tool_data: Any, limit: int, offset: int
+    ) -> Optional[Dict[str, Any]]:
+        if not isinstance(tool_data, dict):
+            return None
+
+        analysis_type = tool_data.get("analysis_type")
+        query_kind = tool_data.get("query_kind")
+        filter_criteria = tool_data.get("filter_criteria") or tool_data.get(
+            "pagination", {}
+        ).get("filter_criteria")
+
+        if analysis_type == "recent_datasets" or query_kind == "recent_datasets":
+            qs = NoiseDataset.objects.select_related(
+                "region",
+                "community",
+                "category",
+                "dataset_type",
+            ).order_by("-recording_date", "-created_at")
+            total_count = qs.count()
+            rows = []
+            for item in qs[offset : offset + limit]:
+                rows.append(
+                    {
+                        "name": item.name,
+                        "region": item.region.name if item.region else None,
+                        "community": item.community.name if item.community else None,
+                        "category": item.category.name if item.category else None,
+                        "recording_date": item.recording_date,
+                        "recording_device": item.recording_device,
+                    }
+                )
+            columns = [
+                "name",
+                "region",
+                "community",
+                "category",
+                "recording_date",
+                "recording_device",
+            ]
+            return {
+                "rows": rows,
+                "columns": columns,
+                "row_count": len(rows),
+                "limit": limit,
+                "offset": offset,
+                "has_more": total_count > (offset + limit),
+                "total_count": total_count,
+                "title": "Recent Datasets",
+            }
+
+        if analysis_type in {"dataset_search_results", "dataset_search_sample"} or query_kind == "dataset_search":
+            qs = NoiseDataset.objects.select_related(
+                "region",
+                "community",
+                "category",
+                "time_of_day",
+                "class_name",
+                "subclass",
+                "microphone_type",
+                "dataset_type",
+                "collector",
+            )
+            filter_criteria = filter_criteria or {}
+            if isinstance(filter_criteria, dict):
+                if "name" in filter_criteria:
+                    qs = qs.filter(name__icontains=filter_criteria["name"])
+                if "region" in filter_criteria:
+                    qs = qs.filter(region__name__icontains=filter_criteria["region"])
+                if "community" in filter_criteria:
+                    qs = qs.filter(
+                        community__name__icontains=filter_criteria["community"]
+                    )
+                if "date_from" in filter_criteria:
+                    qs = qs.filter(recording_date__gte=filter_criteria["date_from"])
+                if "date_to" in filter_criteria:
+                    qs = qs.filter(recording_date__lte=filter_criteria["date_to"])
+
+            total_count = qs.count()
+            rows = []
+            for dataset in qs[offset : offset + limit]:
+                rows.append(
+                    {
+                        "id": dataset.id,
+                        "name": dataset.name,
+                        "region": dataset.region.name if dataset.region else None,
+                        "community": dataset.community.name if dataset.community else None,
+                        "category": dataset.category.name if dataset.category else None,
+                        "recording_date": dataset.recording_date,
+                        "recording_device": dataset.recording_device,
+                    }
+                )
+            columns = [
+                "id",
+                "name",
+                "region",
+                "community",
+                "category",
+                "recording_date",
+                "recording_device",
+            ]
+            return {
+                "rows": rows,
+                "columns": columns,
+                "row_count": len(rows),
+                "limit": limit,
+                "offset": offset,
+                "has_more": total_count > (offset + limit),
+                "total_count": total_count,
+                "title": "Datasets",
+            }
+
+        if query_kind == "sql" and tool_data.get("query_sql"):
+            query_sql = tool_data.get("query_sql")
+            try:
+                engine = create_engine(DB_URI)
+                db = SQLDatabaseWrapper(
+                    engine,
+                    include_tables=allowed_tables,
+                    sample_rows_in_table_info=0,
+                    indexes_in_table_info=False,
+                    max_string_length=60,
+                    lazy_table_reflection=True,
+                    enable_cache=True,
+                )
+                safe_query = TextToSQLAgent._validate_sql_query(
+                    query_sql,
+                    db.get_usable_table_names(),
+                    max_limit=limit,
+                    default_offset=offset,
+                )
+                rows = db.run(safe_query, include_columns=True)
+                columns = list(rows[0].keys()) if rows else []
+                return {
+                    "rows": rows,
+                    "columns": columns,
+                    "row_count": len(rows),
+                    "limit": limit,
+                    "offset": offset,
+                    "has_more": len(rows) == limit,
+                    "total_count": None,
+                    "title": "Results",
+                }
+            except Exception as e:
+                logger.warning(f"Pagination SQL error: {e}")
+                return None
+
+        return None
+
     def _create_ai_agent(self, ai_answer: bool = False, mode: str = "analysis"):
         llm = ChatOpenAI(
             model=AGENT_CONFIG.get("MODEL", "o4-mini"),
@@ -652,12 +849,31 @@ class ChatSessionView(ModelViewSet):
 
         return data
 
+    def _strip_sensitive_fields(self, data: Any) -> Any:
+        """Remove sensitive fields (e.g., raw SQL) before streaming to the client."""
+        if data is None:
+            return None
+        if isinstance(data, dict):
+            cleaned = {}
+            for key, value in data.items():
+                if key in {"query_sql"}:
+                    continue
+                cleaned[key] = self._strip_sensitive_fields(value)
+            return cleaned
+        if isinstance(data, list):
+            return [self._strip_sensitive_fields(item) for item in data]
+        return data
+
     def _summarize_tool_data(self, tool_data: Any) -> Optional[str]:
         try:
             if isinstance(tool_data, dict):
+                if tool_data.get("skip_visualization"):
+                    return None
                 if tool_data.get("analysis_type"):
                     return f"tool:{tool_data.get('analysis_type')}"
-                if tool_data.get("total_count") is not None:
+                if tool_data.get("total_count") is not None and not tool_data.get(
+                    "rows"
+                ) and not tool_data.get("datasets"):
                     return f"total_count:{tool_data.get('total_count')}"
                 if tool_data.get("rows"):
                     cols = (
@@ -667,11 +883,71 @@ class ChatSessionView(ModelViewSet):
                         else []
                     )
                     return f"rows:{len(tool_data.get('rows', []))} cols:{cols}"
+                if (
+                    tool_data.get("message")
+                    and tool_data.get("total_count") is None
+                    and not tool_data.get("datasets")
+                ):
+                    return None
                 return "tool:dict"
             if isinstance(tool_data, list):
                 cols = list(tool_data[0].keys()) if tool_data else []
                 return f"rows:{len(tool_data)} cols:{cols}"
             return None
+        except Exception:
+            return None
+
+    def _build_table_visualization(
+        self, tool_data: Any, title: str = "Results"
+    ) -> Optional[Dict[str, Any]]:
+        try:
+            rows: List[Dict[str, Any]] = []
+            columns: List[str] = []
+
+            if isinstance(tool_data, dict) and isinstance(tool_data.get("rows"), list):
+                rows = [r for r in tool_data.get("rows", []) if isinstance(r, dict)]
+                columns = list(tool_data.get("columns") or (rows[0].keys() if rows else []))
+            elif isinstance(tool_data, dict) and isinstance(tool_data.get("datasets"), list):
+                rows = [r for r in tool_data.get("datasets", []) if isinstance(r, dict)]
+                columns = list(rows[0].keys()) if rows else []
+            elif isinstance(tool_data, list):
+                rows = [r for r in tool_data if isinstance(r, dict)]
+                columns = list(rows[0].keys()) if rows else []
+
+            if not rows or not columns:
+                return None
+
+            max_rows = 20
+            rows = rows[:max_rows]
+            table_rows = []
+            for row in rows:
+                table_rows.append({c: row.get(c) for c in columns})
+
+            pagination = None
+            if isinstance(tool_data, dict):
+                pagination = tool_data.get("pagination") or {
+                    "limit": tool_data.get("limit"),
+                    "offset": tool_data.get("offset"),
+                    "has_more": tool_data.get("has_more"),
+                    "total_count": tool_data.get("total_count"),
+                    "query_kind": tool_data.get("analysis_type") or tool_data.get("query_kind"),
+                }
+
+            return {
+                "visualization_type": "table",
+                "visualization_name": "Table",
+                "frontend_data": {
+                    "type": "none",
+                    "title": title,
+                    "table": {
+                        "columns": columns,
+                        "rows": table_rows,
+                        "title": title,
+                        "pagination": pagination,
+                    },
+                    "description": "Table results",
+                },
+            }
         except Exception:
             return None
 
@@ -810,6 +1086,7 @@ class ChatSessionView(ModelViewSet):
             frontend_data["table"] = {
                 "columns": table_columns,
                 "rows": table_rows,
+                "title": frontend_data.get("title") or "Results",
             }
             if len(rows) <= 1:
                 frontend_data["type"] = "none"

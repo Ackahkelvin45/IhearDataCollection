@@ -1,14 +1,9 @@
 from django.urls import path
-from django.shortcuts import render
+from . import views
 
 app_name = "approval"
 
-
-def review(request):
-    # UI-only stub view to render the approval template
-    return render(request, "approval/approval_review.html")
-
-
 urlpatterns = [
-    path("", review, name="review"),
+    path("clean-speech/", views.clean_speech_approval_list, name="clean_speech_approval_list"),
+    path("clean-speech/<int:recording_id>/", views.clean_speech_approval_review, name="clean_speech_approval_review"),
 ]

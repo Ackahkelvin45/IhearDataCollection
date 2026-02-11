@@ -454,6 +454,8 @@ class DatasetService:
                 ai_answer=True,
                 top_k=pagination.get("page_size", DEFAULT_PAGE_SIZE),
                 default_offset=pagination.get("offset", 0),
+                sample_rows_in_table_info=0,
+                max_string_length=40,
             )
 
             workflow = agent.compile_workflow()
@@ -501,10 +503,15 @@ class DatasetService:
             return None
 
         data = None
+        columns = None
         if isinstance(content, list):
             data = content
         elif isinstance(content, dict):
-            data = [content]
+            if "rows" in content and isinstance(content.get("rows"), list):
+                data = content.get("rows")
+                columns = content.get("columns")
+            else:
+                data = [content]
         elif isinstance(content, str):
             if content.lower().startswith("error"):
                 return None
@@ -517,7 +524,8 @@ class DatasetService:
             return None
 
         rows = [row for row in data if isinstance(row, dict)]
-        columns = list(rows[0].keys()) if rows else []
+        if columns is None:
+            columns = list(rows[0].keys()) if rows else []
         page_size = int(pagination.get("page_size", DEFAULT_PAGE_SIZE))
         page = int(pagination.get("page", 1))
         offset = int(pagination.get("offset", 0))
@@ -2137,6 +2145,8 @@ Response:"""
                     include_tables=allowed_tables,
                     ai_answer=True,  # Let LLM format the answer
                     top_k=100,
+                    sample_rows_in_table_info=0,
+                    max_string_length=40,
                 )
                 
                 # Compile workflow

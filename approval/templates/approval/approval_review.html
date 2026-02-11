@@ -10,10 +10,10 @@
         <a class="text-white opacity-50" href="javascript:;">Home</a>
       </li>
       <li class="text-sm pl-2 capitalize leading-normal text-white before:float-left before:pr-2 before:text-white before:content-['/']">
-        <a href="javascript:;" class="text-white">Approvals</a>
+        <a href="{% url 'approval:clean_speech_approval_list' %}" class="text-white">Clean Speech Approvals</a>
       </li>
       <li class="text-sm pl-2 capitalize leading-normal text-white before:float-left before:pr-2 before:text-white before:content-['/']" aria-current="page">
-        Review Audio
+        Review Recording #{{ recording.id }}
       </li>
     </ol>
   </nav>
@@ -30,15 +30,29 @@
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h5 class="mb-1 dark:text-white">Audio Review</h5>
-            <p class="mb-0 font-semibold leading-normal dark:text-white/60 text-sm">Dataset: <span class="text-primary">{{ object.name|default:'Sample name' }}</span> • Noise ID: {{ object.noise_id|default:'NS-XXXX' }}</p>
+            <p class="mb-0 font-semibold leading-normal dark:text-white/60 text-sm">
+              {% if clean_speech_dataset %}
+                Dataset: <span class="text-primary">{{ clean_speech_dataset.name|default:'Sample name' }}</span> • Recording ID: {{ recording.id }}
+              {% else %}
+                Recording ID: {{ recording.id }} • No associated dataset
+              {% endif %}
+            </p>
           </div>
           <div class="mt-4 sm:mt-0 flex gap-2">
-            <button id="btnApprove" class="px-4 py-2 rounded-lg text-white bg-secondary hover:opacity-90 shadow-sm">
-              <i class="fa-solid fa-check mr-2"></i>Approve
-            </button>
-            <button id="btnReject" class="px-4 py-2 rounded-lg  bg-red-600 hover:bg-red-700 shadow-sm">
-              <i class="fa-solid fa-xmark mr-2"></i>Reject
-            </button>
+            <form method="post" style="display: inline;">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="approve">
+              <button type="submit" class="px-4 py-2 rounded-lg text-white bg-secondary hover:opacity-90 shadow-sm">
+                <i class="fa-solid fa-check mr-2"></i>Approve
+              </button>
+            </form>
+            <form method="post" style="display: inline;">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="reject">
+              <button type="submit" class="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 shadow-sm">
+                <i class="fa-solid fa-xmark mr-2"></i>Reject
+              </button>
+            </form>
           </div>
         </div>
       </div>
@@ -55,11 +69,17 @@
           <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-0">
             <div class="flex items-center justify-between">
               <p class="mb-0 dark:text-white/80">Description</p>
-              <span class="text-xs text-slate-500">Submitted {{ object.created_at|timesince|default:'3 days ago' }} ago</span>
+              <span class="text-xs text-slate-500">Submitted {{ recording.created_at|timesince|default:'3 days ago' }} ago</span>
             </div>
           </div>
           <div class="flex-auto p-6">
-            <p class="text-gray-700 dark:text-gray-300">{{ object.description|default:'No description provided for this audio. Please verify the content and quality before approval.' }}</p>
+            <p class="text-gray-700 dark:text-gray-300">
+              {% if clean_speech_dataset and clean_speech_dataset.description %}
+                {{ clean_speech_dataset.description }}
+              {% else %}
+                No description provided for this recording. Please verify the content and quality before approval.
+              {% endif %}
+            </p>
           </div>
         </div>
 
@@ -85,8 +105,8 @@
           <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-0">
             <div class="flex items-center justify-between">
               <p class="mb-0 dark:text-white/80">Audio Recording</p>
-              {% if object.audio %}
-              <a href="{{ object.audio.url }}" class="text-primary text-xs"><i class="fa fa-download mr-1"></i>Download</a>
+              {% if recording.audio %}
+              <a href="{{ recording.audio.url }}" class="text-primary text-xs"><i class="fa fa-download mr-1"></i>Download</a>
               {% else %}
               <span class="text-slate-400 text-xs"><i class="fa fa-download mr-1"></i>No audio</span>
               {% endif %}
@@ -94,20 +114,75 @@
           </div>
           <div class="flex-auto p-6">
             <audio controls class="w-full rounded-lg" id="approvalAudio">
-              {% if object.audio %}
-              <source src="{{ object.audio.url }}" type="audio/mpeg">
+              {% if recording.audio %}
+              <source src="{{ recording.audio.url }}" type="audio/mpeg">
               {% else %}
               <source src="{% static 'assets/img/placeholder.mp3' %}" type="audio/mpeg">
               {% endif %}
               Your browser does not support the audio element.
             </audio>
             <div class="grid grid-cols-3 gap-3 mt-4 text-sm text-slate-600">
-              <div class="p-3 rounded-lg bg-slate-50"><span class="block text-xs text-slate-500">Region</span>{{ object.region.name|default:'-' }}</div>
-              <div class="p-3 rounded-lg bg-slate-50"><span class="block text-xs text-slate-500">Category</span>{{ object.category.name|default:'-' }}</div>
-              <div class="p-3 rounded-lg bg-slate-50"><span class="block text-xs text-slate-500">Recorded</span>{{ object.recording_date|date:'M d, Y'|default:'-' }}</div>
+              <div class="p-3 rounded-lg bg-slate-50"><span class="block text-xs text-slate-500">Contributor</span>{{ recording.contributor.username }}</div>
+            <div class="p-3 rounded-lg bg-slate-50"><span class="block text-xs text-slate-500">Recording Type</span>{{ recording.get_recording_type_display }}</div>
+            <div class="p-3 rounded-lg bg-slate-50"><span class="block text-xs text-slate-500">Duration</span>{% if recording.duration %}{{ recording.duration|floatformat:1 }}s{% else %}N/A{% endif %}</div>
+            <div class="p-3 rounded-lg bg-slate-50"><span class="block text-xs text-slate-500">Status</span>{{ recording.get_status_display }}</div>
+            {% if clean_speech_dataset %}
+            <div class="p-3 rounded-lg bg-slate-50"><span class="block text-xs text-slate-500">Region</span>{{ clean_speech_dataset.region.name|default:'-' }}</div>
+            <div class="p-3 rounded-lg bg-slate-50"><span class="block text-xs text-slate-500">Category</span>{{ clean_speech_dataset.category.name|default:'-' }}</div>
+            <div class="p-3 rounded-lg bg-slate-50"><span class="block text-xs text-slate-500">Class</span>{{ clean_speech_dataset.class_name.name|default:'-' }}</div>
+            <div class="p-3 rounded-lg bg-slate-50"><span class="block text-xs text-slate-500">Recorded</span>{{ clean_speech_dataset.recording_date|date:'M d, Y'|default:'-' }}</div>
+            {% endif %}
             </div>
           </div>
         </div>
+
+        <!-- Audio Features Panel (only show if processed) -->
+        {% if clean_speech_dataset and clean_speech_dataset.audio_features %}
+        <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border mt-6">
+          <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-0">
+            <div class="flex items-center">
+              <p class="mb-0 dark:text-white/80">Audio Features</p>
+            </div>
+          </div>
+          <div class="flex-auto p-6">
+            <div class="grid grid-cols-4 gap-3 mt-4 text-sm text-slate-600">
+              <div class="p-3 rounded-lg bg-green-50"><span class="block text-xs text-green-600">Duration</span>{{ clean_speech_dataset.audio_features.duration|floatformat:2 }}s</div>
+              <div class="p-3 rounded-lg bg-blue-50"><span class="block text-xs text-blue-600">Sample Rate</span>{{ clean_speech_dataset.audio_features.sample_rate }} Hz</div>
+              <div class="p-3 rounded-lg bg-purple-50"><span class="block text-xs text-purple-600">RMS Energy</span>{{ clean_speech_dataset.audio_features.rms_energy|floatformat:4 }}</div>
+              <div class="p-3 rounded-lg bg-orange-50"><span class="block text-xs text-orange-600">Zero Crossing</span>{{ clean_speech_dataset.audio_features.zero_crossing_rate|floatformat:4 }}</div>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Analysis Panel (only show if processed) -->
+        {% if clean_speech_dataset and clean_speech_dataset.analysis %}
+        <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border mt-6">
+          <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-0">
+            <div class="flex items-center">
+              <p class="mb-0 dark:text-white/80">Speech Analysis</p>
+            </div>
+          </div>
+          <div class="flex-auto p-6">
+            {% for analysis in clean_speech_dataset.analysis.all %}
+            <div class="mb-4">
+              <h6 class="text-sm font-semibold text-slate-700 mb-2">{{ analysis.get_analysis_type_display }}</h6>
+              <div class="grid grid-cols-3 gap-3 text-sm text-slate-600">
+                {% if analysis.snr %}
+                <div class="p-3 rounded-lg bg-indigo-50"><span class="block text-xs text-indigo-600">SNR</span>{{ analysis.snr|floatformat:1 }} dB</div>
+                {% endif %}
+                {% if analysis.speech_rate %}
+                <div class="p-3 rounded-lg bg-teal-50"><span class="block text-xs text-teal-600">Speech Rate</span>{{ analysis.speech_rate|floatformat:1 }} wpm</div>
+                {% endif %}
+                {% if analysis.overall_quality_score %}
+                <div class="p-3 rounded-lg bg-emerald-50"><span class="block text-xs text-emerald-600">Quality Score</span>{{ analysis.overall_quality_score|floatformat:1 }}/100</div>
+                {% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
 
         <!-- Decision Panel -->
         <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">

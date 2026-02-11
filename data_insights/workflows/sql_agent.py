@@ -1,5 +1,6 @@
 import os
 import re
+import json
 from functools import lru_cache
 from operator import add
 from typing import (
@@ -436,6 +437,7 @@ class TextToSQLAgent:
         top_k: int = 100,
         default_offset: int = 0,
         max_retries: int = 1,
+        max_string_length: int = 60,
     ):
         db_user = DB_USER
         db_password = DB_PASSWORD
@@ -473,7 +475,7 @@ class TextToSQLAgent:
             include_tables=include_tables,
             sample_rows_in_table_info=sample_rows_in_table_info,
             indexes_in_table_info=indexes_in_table_info,
-            max_string_length=90,
+            max_string_length=max_string_length,
             lazy_table_reflection=lazy_table_reflection,
             enable_cache=True,
         )
@@ -700,10 +702,19 @@ class TextToSQLAgent:
                 tool_name = tool_call["type"]
                 tool_id = tool_call["id"]
                 if isinstance(res, list):
-                    df = pd.DataFrame(res)
-                    cat_col = df.select_dtypes(exclude="number").columns
-                    df[cat_col] = df[cat_col].astype(str)
-                    res = df.to_json(orient="records", index=False)
+                    rows = res
+                    columns = list(rows[0].keys()) if rows and isinstance(rows[0], dict) else []
+                    payload = {
+                        "rows": rows,
+                        "columns": columns,
+                        "row_count": len(rows),
+                        "limit": self.top_k,
+                        "offset": self.default_offset,
+                        "has_more": len(rows) == self.top_k,
+                        "query_kind": "sql",
+                        "query_sql": query,
+                    }
+                    res = json.dumps(payload)
 
                 message_obj = ToolMessage(
                     content=res,

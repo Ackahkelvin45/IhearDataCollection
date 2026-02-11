@@ -279,6 +279,22 @@
       const classSelect = document.getElementById('id_class_name');
       const subclassSelect = document.getElementById('id_subclass');
 
+      // Load categories on page load
+      if (categorySelect) {
+          fetch('/load-categories/')
+              .then(response => response.json())
+              .then(data => {
+                  categorySelect.innerHTML = '<option value="">Select Category</option>';
+                  data.forEach(item => {
+                      const option = document.createElement('option');
+                      option.value = item.id;
+                      option.textContent = item.name;
+                      categorySelect.appendChild(option);
+                  });
+              })
+              .catch(error => console.error('Error loading categories:', error));
+      }
+
       // Region-Community relationship
       if (regionSelect && communitySelect) {
           regionSelect.addEventListener('change', function() {

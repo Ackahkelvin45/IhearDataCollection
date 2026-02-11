@@ -4,7 +4,7 @@ import hashlib
 import logging
 from typing import List, Dict, Any, Optional, Generator
 
-import faiss
+import faiss  # Temporarily commented out for migration
 from django.conf import settings
 from django.core.cache import cache
 

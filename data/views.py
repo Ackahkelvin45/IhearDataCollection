@@ -1,5 +1,5 @@
 from django.shortcuts import render, redirect
-from .forms import NoiseDatasetForm, BulkAudioUploadForm
+from .forms import NoiseDatasetForm, CleanSpeechDatasetForm, BulkAudioUploadForm
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from core.models import Class, SubClass, Community, Category, Region
@@ -14,14 +14,21 @@ import hashlib
 from django.views.generic import DeleteView, ListView
 from django.urls import reverse_lazy
 from django.contrib import messages
-from .models import NoiseDataset, AudioFeature, NoiseRecording
+from django.core.paginator import Paginator
+from .models import NoiseDataset, CleanSpeechDataset, AudioFeature, Recording
 from datetime import timedelta
 from django.db.models import Q
 from .models import BulkAudioUpload
 from .tasks import process_bulk_upload
 import logging
 import os
-from .utils import generate_dataset_name, generate_noise_id
+from .utils import (
+    generate_dataset_name,
+    generate_noise_id,
+    generate_clean_speech_dataset_name,
+    generate_clean_speech_id,
+)
+from .audio_processing import get_audio_duration
 import glob
 from django.conf import settings
 from plotly.utils import PlotlyJSONEncoder
@@ -36,6 +43,9 @@ from django.utils.encoding import smart_str
 import time
 import math
 from django.db import connection
+from core.models import CleanSpeechCategory
+from core.models import CleanSpeechClass
+
 
 try:
     import openpyxl
@@ -348,6 +358,19 @@ class NoiseDatasetDeleteView(LoginRequiredMixin, DeleteView):
         response = super().delete(request, *args, **kwargs)
         messages.success(
             request, f'Dataset "{self.object.noise_id}" was deleted successfully.'
+        )
+        return response
+
+
+class CleanSpeechDatasetDeleteView(LoginRequiredMixin, DeleteView):
+    model = CleanSpeechDataset
+    success_url = reverse_lazy("data:clean_speech_dataset_list")
+
+    def delete(self, request, *args, **kwargs):
+        response = super().delete(request, *args, **kwargs)
+        dataset_id = self.object.clean_speech_id or self.object.id
+        messages.success(
+            request, f'Clean speech dataset "{dataset_id}" was deleted successfully.'
         )
         return response
 
@@ -776,58 +799,75 @@ def noise_dataset_create(request):
 
 @login_required
 def contribute_audio(request):
-    """View for audio contribution with microphone recording"""
+    """View for audio contribution with microphone recording - creates Clean Speech Dataset"""
     if request.method == "POST":
-        form = NoiseDatasetForm(request.POST, request.FILES)
+        form = CleanSpeechDatasetForm(request.POST, request.FILES)
         if form.is_valid():
             try:
-                noise_dataset = form.save(commit=False)
-                noise_dataset.collector = request.user
+                clean_speech_dataset = form.save(commit=False)
+                clean_speech_dataset.collector = request.user
 
-                # Generate the new noise ID format
-                noise_dataset.noise_id = generate_noise_id(request.user)
+                # Generate clean_speech_id
+                clean_speech_dataset.clean_speech_id = generate_clean_speech_id()
 
                 # Generate dataset name
-                noise_dataset.name = generate_dataset_name(noise_dataset)
+                clean_speech_dataset.name = generate_clean_speech_dataset_name(clean_speech_dataset)
 
-                # Handle recorded audio file
+                clean_speech_dataset.save()
+                form.save_m2m()
+
+                # Create a Recording instance linked to this dataset (but don't process yet)
                 if "audio" in request.FILES:
                     audio_file = request.FILES["audio"]
 
-                    # Generate hash of the new audio file for duplicate checking
-                    hash_md5 = hashlib.md5()
-                    for chunk in audio_file.chunks():
-                        hash_md5.update(chunk)
+                    # Calculate duration from audio file
+                    duration = None
+                    if hasattr(audio_file, 'temporary_file_path'):
+                        # File is saved to temporary location
+                        temp_path = audio_file.temporary_file_path()
+                        duration = get_audio_duration(temp_path)
+                    elif hasattr(audio_file, 'file'):
+                        # Try to get duration from the file object
+                        try:
+                            # Save temporarily to get duration
+                            import tempfile
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(audio_file.name)[1]) as temp_file:
+                                for chunk in audio_file.chunks():
+                                    temp_file.write(chunk)
+                                temp_file.flush()
+                                duration = get_audio_duration(temp_file.name)
+                                os.unlink(temp_file.name)
+                        except Exception as e:
+                            logger.warning(f"Could not calculate duration from audio file: {e}")
 
-                    # Reset file pointer again before processing
-                    audio_file.seek(0)
+                    recording = Recording.objects.create(
+                        recording_type='clean_speech',  # Clean speech type
+                        contributor=request.user,
+                        audio=audio_file,
+                        duration=duration,
+                        status='pending',  # Ready for later processing, not processed yet
+                        device_info={
+                            'user_agent': request.META.get('HTTP_USER_AGENT', ''),
+                            'ip_address': request.META.get('REMOTE_ADDR', ''),
+                            'timestamp': str(timezone.now()),
+                        }
+                    )
 
-                    # Get file extension
-                    file_extension = audio_file.name.split(".")[-1].lower()
-
-                    # Generate new filename using noise_id
-                    new_filename = f"{noise_dataset.noise_id}.{file_extension}"
-
-                    # Create a renamed file object
-                    renamed_file = RenamedFile(audio_file, new_filename)
-
-                    # Replace the file in the form data
-                    request.FILES["audio"] = renamed_file
-
-                noise_dataset.save()
-                form.save_m2m()
+                    # Link the recording to the dataset
+                    clean_speech_dataset.recording = recording
+                    clean_speech_dataset.save()
 
                 messages.success(
                     request,
-                    f'Audio contribution "{noise_dataset.name}" saved successfully!',
+                    f'Clean speech contribution "{clean_speech_dataset.name}" saved successfully!',
                 )
                 return redirect("data:contribute_audio")
 
             except Exception as e:
                 messages.error(request, f"Error saving contribution: {str(e)}")
-                print(f"Error creating audio contribution: {e}")
+                print(f"Error creating clean speech contribution: {e}")
     else:
-        form = NoiseDatasetForm()
+        form = CleanSpeechDatasetForm()
 
     context = {
         "form": form,
@@ -837,7 +877,7 @@ def contribute_audio(request):
 
 
 @login_required
-def save_noise_recording(request):
+def save_recording(request):
     """
     Simple view to save raw noise recordings without processing.
     This creates a NoiseRecording instance with minimal metadata.
@@ -851,13 +891,33 @@ def save_noise_recording(request):
 
             audio_file = request.FILES["audio"]
 
-            # Get duration if provided (optional)
-            duration = request.POST.get('duration')
-            duration = float(duration) if duration else None
+            # Calculate duration from audio file
+            duration = None
+            if hasattr(audio_file, 'temporary_file_path'):
+                # File is saved to temporary location
+                temp_path = audio_file.temporary_file_path()
+                duration = get_audio_duration(temp_path)
+            elif hasattr(audio_file, 'file'):
+                # Try to get duration from the file object
+                try:
+                    # Save temporarily to get duration
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(audio_file.name)[1]) as temp_file:
+                        for chunk in audio_file.chunks():
+                            temp_file.write(chunk)
+                        temp_file.flush()
+                        duration = get_audio_duration(temp_file.name)
+                        os.unlink(temp_file.name)
+                except Exception as e:
+                    logger.warning(f"Could not calculate duration from audio file: {e}")
+                    # Fallback to POST data if calculation fails
+                    duration_post = request.POST.get('duration')
+                    duration = float(duration_post) if duration_post else None
 
-            # Create NoiseRecording instance
-            noise_recording = NoiseRecording.objects.create(
-                collector=request.user,
+            # Create Recording instance
+            recording = Recording.objects.create(
+                recording_type='noise',  # Default to noise, can be changed later
+                contributor=request.user,
                 audio=audio_file,
                 duration=duration,
                 status='pending',  # Ready for later processing
@@ -870,7 +930,7 @@ def save_noise_recording(request):
 
             messages.success(
                 request,
-                f'Noise recording saved successfully! Recording ID: {noise_recording.id}'
+                f'Recording saved successfully! Recording ID: {recording.id}'
             )
 
             # Redirect back to contribution page
@@ -1160,8 +1220,177 @@ def load_communities(request):
     return JsonResponse(data, safe=False)
 
 
+def load_categories(request):
+    """Load regular categories for dropdown"""
+    from core.models import Category
+    categories = Category.objects.all().order_by("name")
+    data = [{"id": c.id, "name": c.name} for c in categories]
+    return JsonResponse(data, safe=False)
+
+
+def load_clean_speech_categories(request):
+    """Load clean speech categories for dropdown"""
+
+    categories = CleanSpeechCategory.objects.all().order_by("name")
+    data = [{"id": c.id, "name": c.name} for c in categories]
+    return JsonResponse(data, safe=False)
+
+
+def load_clean_speech_classes(request):
+    category_id = request.GET.get("category_id")
+    classes = CleanSpeechClass.objects.filter(category_id=category_id).order_by("name")
+    data = [{"id": c.id, "name": c.name} for c in classes]
+    return JsonResponse(data, safe=False)
+
+
+@login_required
+def clean_speech_dataset_list(request):
+    """List all approved clean speech datasets"""
+    # Get all approved clean speech datasets
+    datasets = CleanSpeechDataset.objects.filter(
+        collector=request.user
+    ).select_related('category', 'class_name', 'region', 'community').order_by('-created_at')
+
+    # Apply filters
+    search_query = request.GET.get('search', '')
+    category_filter = request.GET.get('category', '')
+    class_filter = request.GET.get('class_name', '')
+    date_range = request.GET.get('date_range', '')
+    page_size = request.GET.get('page_size', '50')
+
+    if search_query:
+        datasets = datasets.filter(
+            Q(name__icontains=search_query) |
+            Q(clean_speech_id__icontains=search_query) |
+            Q(description__icontains=search_query)
+        )
+
+    if category_filter:
+        datasets = datasets.filter(category__name=category_filter)
+
+    if class_filter:
+        datasets = datasets.filter(class_name__name=class_filter)
+
+    # Date range filtering
+    if date_range:
+        now = timezone.now()
+        if date_range == 'today':
+            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            datasets = datasets.filter(created_at__gte=start_date)
+        elif date_range == 'week':
+            start_date = now - timedelta(days=7)
+            datasets = datasets.filter(created_at__gte=start_date)
+        elif date_range == 'month':
+            start_date = now - timedelta(days=30)
+            datasets = datasets.filter(created_at__gte=start_date)
+        elif date_range == 'year':
+            start_date = now - timedelta(days=365)
+            datasets = datasets.filter(created_at__gte=start_date)
+
+    # Pagination
+    paginator = Paginator(datasets, int(page_size))
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    # Get filter options
+    categories = CleanSpeechCategory.objects.all().order_by('name')
+    classes = CleanSpeechClass.objects.all().order_by('name')
+
+    context = {
+        'page_obj': page_obj,
+        'paginator': paginator,
+        'datasets': page_obj,
+        'categories': categories,
+        'classes': classes,
+        'current_filters': {
+            'search': search_query,
+            'category': category_filter,
+            'class_name': class_filter,
+            'date_range': date_range,
+            'page_size': page_size,
+        },
+        'is_paginated': page_obj.has_other_pages(),
+        'dataset_type': 'clean_speech',
+    }
+
+    return render(request, 'data/clean_speech_list.html', context)
+
+
 def show_pages(request):
     return render(request, "data/datasetlist.html")
+
+
+@login_required
+def clean_speech_detail(request, dataset_id):
+    """Detail view for clean speech datasets"""
+    dataset = get_object_or_404(CleanSpeechDataset, pk=dataset_id)
+
+    audio_features = getattr(dataset, "audio_features", None)
+    clean_speech_analysis = dataset.analysis.first() if dataset.analysis.exists() else None
+
+    safe_audio_url = None
+    safe_audio_size = None
+    safe_audio_ext = None
+    audio_exists = False
+
+    try:
+        if dataset.audio:
+            try:
+                safe_audio_url = dataset.audio.url
+                audio_exists = True
+            except Exception as url_exc:
+                print(
+                    f"[clean_speech_detail] Failed to resolve audio URL for {dataset.pk}: {url_exc}"
+                )
+                safe_audio_url = None
+                audio_exists = False
+
+            # Size and extension are optional in UI; compute only if URL exists
+            if audio_exists:
+                try:
+                    safe_audio_size = dataset.audio.size
+                except Exception as size_exc:
+                    print(
+                        f"[clean_speech_detail] Failed to resolve audio size for {dataset.pk}: {size_exc}"
+                    )
+                    safe_audio_size = None
+
+                try:
+                    audio_name = dataset.audio.name or ""
+                    safe_audio_ext = (
+                        audio_name[-4:].upper()
+                        if len(audio_name) >= 4
+                        else audio_name.upper()
+                    ) or None
+                except Exception as ext_exc:
+                    print(
+                        f"[clean_speech_detail] Failed to resolve audio extension for {dataset.pk}: {ext_exc}"
+                    )
+                    safe_audio_ext = None
+    except Exception as audio_exc:
+        print(
+            f"[clean_speech_detail] Unexpected audio resolution error for {dataset.pk}: {audio_exc}"
+        )
+        safe_audio_url = None
+        safe_audio_size = None
+        safe_audio_ext = None
+        audio_exists = False
+
+    # Prepare visualization data
+    visualization_presets = dataset.visualization_presets.all() if hasattr(dataset, 'visualization_presets') else []
+
+    context = {
+        "clean_speech_dataset": dataset,
+        "audio_features": audio_features,
+        "clean_speech_analysis": clean_speech_analysis,
+        "safe_audio_url": safe_audio_url,
+        "safe_audio_size": safe_audio_size,
+        "safe_audio_ext": safe_audio_ext,
+        "audio_exists": audio_exists,
+        "visualization_presets": visualization_presets,
+    }
+
+    return render(request, "data/clean_speech_detail.html", context)
 
 
 @login_required

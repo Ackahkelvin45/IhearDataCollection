@@ -121,18 +121,6 @@
                 </div>
 
 
-                <div class="w-full max-w-full px-3 shrink-0 md:w-6/12 md:flex-0">
-    <div class="mb-4">
-        <label for="id_subclass" class="inline-block mb-2 ml-1 font-bold text-xs text-slate-700 dark:text-white/80">Sub Class</label>
-        {{ form.subclass }}
-        {% if form.subclass.help_text %}
-            <small class="text-xs text-slate-500 dark:text-white/60">{{ form.subclass.help_text }}</small>
-        {% endif %}
-        {% if form.subclass.errors %}
-            <div class="text-red-500 text-xs mt-1">{{ form.subclass.errors }}</div>
-        {% endif %}
-    </div>
-</div>
               </div>
 
               <hr class="h-px mx-0 my-4 bg-transparent border-0 opacity-25 bg-gradient-to-r from-transparent via-black/40 to-transparent dark:bg-gradient-to-r dark:from-transparent dark:via-white dark:to-transparent " />
@@ -297,7 +285,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const communitySelect = document.getElementById('id_community');
     const categorySelect = document.getElementById('id_category');
     const classSelect = document.getElementById('id_class_name');
-    const subclassSelect = document.getElementById('id_subclass');
 
     // Region-Community relationship
     if (regionSelect && communitySelect) {
@@ -321,15 +308,30 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Category-Class relationship
+    // Load clean speech categories on page load
+    if (categorySelect) {
+        fetch('/load-clean-speech-categories/')
+            .then(response => response.json())
+            .then(data => {
+                categorySelect.innerHTML = '<option value="">Select Category</option>';
+                data.forEach(item => {
+                    const option = document.createElement('option');
+                    option.value = item.id;
+                    option.textContent = item.name;
+                    categorySelect.appendChild(option);
+                });
+            })
+            .catch(error => console.error('Error loading clean speech categories:', error));
+    }
+
+    // Clean Speech Category-Class relationship (no subclasses for clean speech)
     if (categorySelect && classSelect) {
         categorySelect.addEventListener('change', function() {
             const categoryId = this.value;
             classSelect.innerHTML = '<option value="">Select Class</option>';
-            if (subclassSelect) subclassSelect.innerHTML = '<option value="">Select Sub Class</option>';
 
             if (categoryId) {
-                fetch(`/load-classes/?category_id=${categoryId}`)
+                fetch(`/load-clean-speech-classes/?category_id=${categoryId}`)
                     .then(response => response.json())
                     .then(data => {
                         data.forEach(item => {
@@ -339,29 +341,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             classSelect.appendChild(option);
                         });
                     })
-                    .catch(error => console.error('Error loading classes:', error));
-            }
-        });
-    }
-
-    // Class-Subclass relationship
-    if (classSelect && subclassSelect) {
-        classSelect.addEventListener('change', function() {
-            const classId = this.value;
-            subclassSelect.innerHTML = '<option value="">Select Sub Class</option>';
-
-            if (classId) {
-                fetch(`/load-subclasses/?class_id=${classId}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        data.forEach(item => {
-                            const option = document.createElement('option');
-                            option.value = item.id;
-                            option.textContent = item.name;
-                            subclassSelect.appendChild(option);
-                        });
-                    })
-                    .catch(error => console.error('Error loading subclasses:', error));
+                    .catch(error => console.error('Error loading clean speech classes:', error));
             }
         });
     }
@@ -372,12 +352,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     if (categorySelect && categorySelect.value) {
         categorySelect.dispatchEvent(new Event('change'));
-    }
-    if (classSelect && classSelect.value) {
-        // Add a small delay to ensure classes are loaded first
-        setTimeout(() => {
-            classSelect.dispatchEvent(new Event('change'));
-        }, 100);
     }
 });
 

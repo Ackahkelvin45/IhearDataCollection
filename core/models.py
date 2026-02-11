@@ -29,6 +29,44 @@ class Category(models.Model):
         return self.name
 
 
+class CleanSpeechCategory(models.Model):
+    name = models.CharField(max_length=255, unique=True, null=True)
+    description = models.TextField(blank=True, null=True)
+
+    def __str__(self):
+        return self.name
+class CleanSpeechClass(models.Model):
+    name = models.CharField(max_length=255, null=True)
+    category = models.ForeignKey(
+        CleanSpeechCategory, 
+        on_delete=models.PROTECT,
+        related_name='classes',
+
+         null=True
+    )
+    description = models.TextField(blank=True, null=True)
+    class Meta:
+        unique_together = ('name', 'category')  
+
+    def __str__(self):
+        return f"{self.name}"
+    
+class CleanSpeechSubClass(models.Model):
+    name = models.CharField(max_length=255)
+    parent_class = models.ForeignKey(
+        CleanSpeechClass, 
+        on_delete=models.PROTECT,
+        related_name='subclasses',
+        null=True
+    )
+    description = models.TextField(blank=True, null=True)
+    class Meta:
+        unique_together = ('name', 'parent_class')  
+
+    def __str__(self):
+        return self.name
+    
+
 class Class(models.Model):
     name = models.CharField(max_length=255, null=True)
     category = models.ForeignKey(

@@ -6,6 +6,7 @@ from .models import (
     VisualizationPreset,
     BulkReprocessingTask,
     Dataset,
+    Recording,
 )
 from unfold.admin import ModelAdmin
 from django.shortcuts import render, redirect
@@ -13,6 +14,7 @@ from django.contrib import messages
 from django.urls import path
 from django.http import HttpResponseRedirect, JsonResponse
 from django.db.models import Q
+from django.utils import timezone
 from .tasks import process_audio_task, bulk_reprocess_audio_analysis
 from celery import group
 import logging
@@ -553,3 +555,116 @@ class BulkReprocessingTaskAdmin(ModelAdmin):
 
     def has_add_permission(self, request):
         return False  # Tasks should only be created by the system
+
+
+@admin.register(Recording)
+class RecordingAdmin(ModelAdmin):
+    list_display = (
+        "id",
+        "recording_type",
+        "contributor",
+        "status",
+        "approved",
+        "duration",
+        "audio_size_mb",
+        "recording_date",
+        "created_at",
+    )
+    list_filter = (
+        "recording_type",
+        "status",
+        "approved",
+        "recording_date",
+        "created_at",
+        "approved_by",
+    )
+    search_fields = (
+        "contributor__username",
+        "contributor__email",
+        "recording_type",
+        "device_info",
+    )
+    list_select_related = ("contributor", "approved_by")
+    readonly_fields = (
+        "id",
+        "created_at",
+        "updated_at",
+        "audio_size_mb",
+        "recording_date",
+    )
+    date_hierarchy = "recording_date"
+
+    fieldsets = (
+        (
+            "Basic Information",
+            {
+                "fields": (
+                    "id",
+                    "recording_type",
+                    "contributor",
+                    "audio",
+                    "duration",
+                    "status",
+                    "approved",
+                    "approved_by",
+                    "approved_at",
+                )
+            },
+        ),
+        (
+            "Metadata",
+            {
+                "fields": (
+                    "device_info",
+                    "recording_date",
+                    "created_at",
+                    "updated_at",
+                )
+            },
+        ),
+    )
+
+    def audio_size_mb(self, obj):
+        """Display audio file size in MB"""
+        return obj.audio_size_mb
+
+    audio_size_mb.short_description = "Audio Size (MB)"
+    audio_size_mb.admin_order_field = "audio__size"
+
+    def has_delete_permission(self, request, obj=None):
+        """Allow deletion of unapproved recordings, but protect approved ones"""
+        if obj and obj.approved:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    actions = ["mark_as_approved", "mark_as_unapproved"]
+
+    def mark_as_approved(self, request, queryset):
+        """Mark selected recordings as approved"""
+        updated = queryset.filter(approved=False).update(
+            approved=True,
+            approved_by=request.user,
+            approved_at=timezone.now()
+        )
+        self.message_user(
+            request,
+            f"Approved {updated} recording(s).",
+            messages.SUCCESS
+        )
+
+    mark_as_approved.short_description = "Mark selected recordings as approved"
+
+    def mark_as_unapproved(self, request, queryset):
+        """Mark selected recordings as unapproved"""
+        updated = queryset.filter(approved=True).update(
+            approved=False,
+            approved_by=None,
+            approved_at=None
+        )
+        self.message_user(
+            request,
+            f"Unapproved {updated} recording(s).",
+            messages.SUCCESS
+        )
+
+    mark_as_unapproved.short_description = "Mark selected recordings as unapproved"

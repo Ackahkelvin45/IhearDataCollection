@@ -49,6 +49,28 @@ def is_supported_extension(ext: str) -> bool:
     return any(ext in extensions for extensions in SUPPORTED_FORMATS.values())
 
 
+def get_audio_duration(audio_path: str) -> Optional[float]:
+    """Get audio file duration without loading the full file"""
+    try:
+        logger.info(f"Getting duration for audio file: {audio_path}")
+
+        # Check if file exists
+        if not os.path.exists(audio_path):
+            logger.error(f"Audio file does not exist: {audio_path}")
+            return None
+
+        # Use audioread to get duration (fast metadata read)
+        with audioread.audio_open(audio_path) as audio_file:
+            duration = audio_file.duration
+
+        logger.info(f"Audio duration: {duration} seconds")
+        return float(duration)
+
+    except Exception as e:
+        logger.error(f"Error getting audio duration: {e}")
+        return None
+
+
 def load_audio_file(audio_path: str, ext: str) -> Tuple[np.ndarray, int]:
     """Load audio file using soundfile and audioread with better error handling"""
     try:

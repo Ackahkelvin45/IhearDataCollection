@@ -1,6 +1,6 @@
 from django import forms
 from django.forms.widgets import DateTimeInput
-from .models import NoiseDataset
+from .models import NoiseDataset, CleanSpeechDataset
 from core.models import (
     Community,
     Class,
@@ -9,6 +9,8 @@ from core.models import (
     Microphone_Type,
     Category,
     Region,
+    CleanSpeechCategory,
+    CleanSpeechClass,
 )
 
 
@@ -408,3 +410,119 @@ class BulkAudioUploadForm(forms.Form):
         else:
             # Otherwise, show empty subclass queryset
             self.fields["subclass"].queryset = SubClass.objects.none()
+
+
+class CleanSpeechDatasetForm(forms.ModelForm):
+    class Meta:
+        model = CleanSpeechDataset
+        fields = [
+            "description",
+            "region",
+            "category",
+            "time_of_day",
+            "community",
+            "class_name",
+            "microphone_type",
+            "audio",
+            "recording_date",
+            "recording_device",
+        ]
+
+        widgets = {
+            "description": forms.Textarea(
+                attrs={
+                    "class": "focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none",
+                    "rows": 3,
+                    "placeholder": "Any additional notes about this recording",
+                }
+            ),
+            "region": forms.Select(
+                attrs={
+                    "class": "focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
+                }
+            ),
+            "category": forms.Select(
+                attrs={
+                    "class": "focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
+                }
+            ),
+            "time_of_day": forms.Select(
+                attrs={
+                    "class": "focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
+                }
+            ),
+            "community": forms.Select(
+                attrs={
+                    "class": "focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
+                }
+            ),
+            "class_name": forms.Select(
+                attrs={
+                    "class": "focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
+                }
+            ),
+            "microphone_type": forms.Select(
+                attrs={
+                    "class": "focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
+                }
+            ),
+            "recording_date": DateTimeInput(
+                attrs={
+                    "class": "focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none",
+                    "type": "datetime-local",
+                }
+            ),
+            "recording_device": forms.TextInput(
+                attrs={
+                    "class": "focus:shadow-primary-outline dark:bg-slate-850 dark:text-white text-sm leading-5.6 ease block w-full appearance-none rounded-lg border border-solid border-gray-300 bg-white bg-clip-padding px-3 py-2 font-normal text-gray-700 outline-none transition-all placeholder:text-gray-500 focus:border-blue-500 focus:outline-none",
+                    "placeholder": "e.g., iPhone 16, Zoom H4n, etc.",
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Set initial querysets for ForeignKey fields
+        self.fields["region"].queryset = Region.objects.all().order_by("name")
+        self.fields["category"].queryset = CleanSpeechCategory.objects.all().order_by("name")
+        self.fields["time_of_day"].queryset = Time_Of_Day.objects.all().order_by("name")
+        self.fields["community"].queryset = Community.objects.all().order_by("name")
+        self.fields["class_name"].queryset = CleanSpeechClass.objects.all().order_by("name")
+        self.fields["microphone_type"].queryset = Microphone_Type.objects.all().order_by("name")
+
+        # Handle dynamic filtering for community based on region
+        if "region" in self.data:
+            try:
+                region_id = int(self.data.get("region"))
+                self.fields["community"].queryset = Community.objects.filter(
+                    region_id=region_id
+                ).order_by("name")
+            except (ValueError, TypeError):
+                pass  # invalid input from the client; ignore and fallback to empty queryset
+        elif self.initial.get("region"):
+            # If initial region is provided, show its communities
+            self.fields["community"].queryset = self.initial[
+                "region"
+            ].communities.order_by("name")
+        else:
+            # Otherwise, show empty community queryset
+            self.fields["community"].queryset = Community.objects.none()
+
+        # Handle dynamic filtering for class_name based on category
+        if "category" in self.data:
+            try:
+                category_id = int(self.data.get("category"))
+                self.fields["class_name"].queryset = CleanSpeechClass.objects.filter(
+                    category_id=category_id
+                ).order_by("name")
+            except (ValueError, TypeError):
+                pass  # invalid input from the client; ignore and fallback to empty queryset
+        elif self.initial.get("category"):
+            # If initial category is provided, show its classes
+            self.fields["class_name"].queryset = self.initial[
+                "category"
+            ].clean_speech_classes.order_by("name")
+        else:
+            # Otherwise, show empty class queryset
+            self.fields["class_name"].queryset = CleanSpeechClass.objects.none()

@@ -214,6 +214,7 @@ class UnifiedAudioDataChat {
             lastUpdate: Date.now(),
             updateTimes: []
         };
+        this.messageIdMap = new Map();
 
         this.initializeEventListeners();
         this.updateModeUI();
@@ -264,6 +265,53 @@ class UnifiedAudioDataChat {
         messageInput.addEventListener('input', () => {
             this.autoResizeTextarea(messageInput);
         });
+
+        const messagesContainer = document.getElementById('messagesContainer');
+        if (messagesContainer) {
+            messagesContainer.addEventListener('click', (e) => {
+                const btn = e.target.closest('[data-pagination-action]');
+                if (!btn) return;
+                const messageId = btn.dataset.messageId;
+                if (!messageId) return;
+                const action = btn.dataset.paginationAction;
+                const limit = parseInt(btn.dataset.limit || '20', 10);
+                const offset = parseInt(btn.dataset.offset || '0', 10);
+                let newOffset = offset;
+                if (action === 'next') newOffset = offset + limit;
+                if (action === 'prev') newOffset = Math.max(0, offset - limit);
+                this.fetchTablePage(messageId, limit, newOffset, btn);
+            });
+
+            messagesContainer.addEventListener('change', (e) => {
+                const select = e.target.closest('[data-pagination-limit]');
+                if (!select) return;
+                const messageId = select.dataset.messageId;
+                if (!messageId) return;
+                const limit = parseInt(select.value || '20', 10);
+                this.fetchTablePage(messageId, limit, 0, select);
+            });
+
+            messagesContainer.addEventListener('click', (e) => {
+                const toggle = e.target.closest('[data-viz-toggle]');
+                if (!toggle) return;
+                const mode = toggle.dataset.vizToggle;
+                const viz = toggle.closest('.visualization');
+                if (!viz) return;
+                const chartWrap = viz.querySelector('[data-viz-chart]');
+                const tableWrap = viz.querySelector('[data-viz-table]');
+                if (!chartWrap || !tableWrap) return;
+                if (mode === 'chart') {
+                    chartWrap.style.display = '';
+                    tableWrap.style.display = 'none';
+                } else if (mode === 'table') {
+                    chartWrap.style.display = 'none';
+                    tableWrap.style.display = '';
+                } else {
+                    chartWrap.style.display = '';
+                    tableWrap.style.display = '';
+                }
+            });
+        }
     }
 
     autoResizeTextarea(textarea) {
@@ -1620,6 +1668,7 @@ class UnifiedAudioDataChat {
         if (!tableData || !Array.isArray(tableData.columns) || !Array.isArray(tableData.rows) || tableData.rows.length === 0) {
             return '';
         }
+        const tableTitle = tableData.title || 'Results';
         const columns = tableData.columns;
         const rows = tableData.rows;
         const header = columns.map(col => `<th style="text-align:left; padding:6px 8px; border-bottom:1px solid #e5e7eb; font-size:12px; color:#374151;">${this.escapeHtml(String(col))}</th>`).join('');
@@ -1629,7 +1678,7 @@ class UnifiedAudioDataChat {
         }).join('');
         return `
             <div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:10px; overflow:hidden; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
-                <div style="padding:8px 10px; font-weight:600; font-size:12px; color:#374151; border-bottom:1px solid #e5e7eb;">Top Results</div>
+                <div style="padding:8px 10px; font-weight:600; font-size:12px; color:#374151; border-bottom:1px solid #e5e7eb;">${this.escapeHtml(String(tableTitle))}</div>
                 <div style="max-height:260px; overflow:auto;">
                     <table style="width:100%; border-collapse:collapse;">
                         <thead><tr>${header}</tr></thead>
@@ -1849,6 +1898,11 @@ class UnifiedAudioDataChat {
             // Remove chart reasoning sections
             formattedText = formattedText.replace(/### Recommended Visualization:[\s\S]*?(?=###|$)/g, '');
             formattedText = formattedText.replace(/#### [^:]*Chart Configuration:[\s\S]*?(?=###|####|$)/g, '');
+            formattedText = formattedText.replace(/^\s*Recommended Visualization[\s\S]*?(?=\n\s*\n|$)/gmi, '');
+            formattedText = formattedText.replace(/^\s*Visualization:\s*[\s\S]*?(?=\n\s*\n|$)/gmi, '');
+            formattedText = formattedText.replace(/^\s*Recommended Chart[\s\S]*?(?=\n\s*\n|$)/gmi, '');
+            formattedText = formattedText.replace(/^\s*A (bar|line|pie|scatter|box|area|heatmap) chart.*$/gmi, '');
+            formattedText = formattedText.replace(/^\s*Bar Chart.*$/gmi, '');
 
             // Process tables first (before other formatting)
             formattedText = this.formatTables(formattedText);

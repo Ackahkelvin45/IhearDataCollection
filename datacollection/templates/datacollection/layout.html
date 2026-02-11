@@ -181,7 +181,7 @@
                   </a>
                 </li>
                 <li>
-                  <a class="dropdown-item block px-4 py-2 text-sm text-slate-700 dark:text-white transition-colors">
+                  <a  href="{% url 'data:clean_speech_dataset_list' %}" class="dropdown-item block px-4 py-2 text-sm text-slate-700 dark:text-white transition-colors">
                     <i class="fas fa-microphone mr-2 text-xs text-secondary"></i>
                     Clean Speech
                   </a>
@@ -302,7 +302,7 @@
         <!-- Approval link -->
         {% if user.user_type == "researcher"  or request.user.is_superuser %}
          <li class="mt-0.5 w-full">
-           <a href="/approval/"
+           <a href="/approval/clean-speech/"
              class="py-2.7 text-sm ease-nav-brand my-0 mx-2 flex items-center whitespace-nowrap px-4 transition-colors hover-primary
                     {% if 'approval' in request.path %}
                       nav-active

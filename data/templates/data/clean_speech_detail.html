@@ -1,0 +1,285 @@
+{% extends 'datacollection/layout.html'%}
+
+{% block content %}
+<div class="relative w-full mx-auto">
+  <!-- Breadcrumb -->
+  <nav class="mb-6">
+    <ol class="flex flex-wrap pt-1 mr-12 bg-transparent rounded-lg sm:mr-16">
+      <li class="text-sm leading-normal">
+        <a class="text-white opacity-50" href="javascript:;">Home</a>
+      </li>
+      <li class="text-sm pl-2 capitalize leading-normal text-white before:float-left before:pr-2 before:text-white before:content-['/']">
+        <a href="{% url 'data:clean_speech_dataset_list' %}" class="text-white">Clean Speech Datasets</a>
+      </li>
+      <li class="text-sm pl-2 capitalize leading-normal text-white before:float-left before:pr-2 before:text-white before:content-['/']" aria-current="page">
+        {{ clean_speech_dataset.name }}
+      </li>
+    </ol>
+  </nav>
+
+  <!-- Main Card -->
+  <div class="relative flex flex-col flex-auto min-w-0 p-4 mx-6 overflow-hidden break-words bg-white border-0 dark:bg-slate-850 dark:shadow-dark-xl shadow-3xl rounded-2xl bg-clip-border">
+    <div class="flex flex-wrap -mx-3">
+      <div class="flex-none w-auto max-w-full px-3">
+        <div class="relative inline-flex items-center justify-center text-white transition-all duration-200 ease-in-out text-base h-19 w-19 rounded-xl">
+          <i class="fas fa-microphone text-4xl text-green-500"></i>
+        </div>
+      </div>
+      <div class="flex-none w-auto max-w-full px-3 my-auto">
+        <div class="h-full">
+          <h5 class="mb-1 dark:text-white">{{ clean_speech_dataset.name }}</h5>
+          <p class="mb-0 font-semibold leading-normal dark:text-white dark:opacity-60 text-sm">
+            Clean Speech ID: {{ clean_speech_dataset.clean_speech_id }}
+          </p>
+        </div>
+      </div>
+      <div class="w-full max-w-full px-3 mx-auto mt-4 sm:my-auto sm:mr-0 md:w-1/2 md:flex-none lg:w-4/12">
+        <div class="relative right-0">
+          <div class="flex justify-end space-x-2">
+            <a href="{% url 'data:clean_speech_dataset_list' %}" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg transition-colors duration-200 text-sm">
+              <i class="fas fa-arrow-left mr-2"></i>Back
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Content Grid -->
+  <div class="w-full p-6 mx-auto">
+    <div class="flex flex-wrap -mx-3">
+
+      <!-- Left Column -->
+      <div class="w-full max-w-full px-3 shrink-0 md:w-8/12 md:flex-0">
+
+        <!-- Audio Player Section -->
+        {% if audio_exists %}
+        <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border mb-6">
+          <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-0">
+            <div class="flex items-center justify-between">
+              <p class="mb-0 dark:text-white/80">Audio Playback</p>
+              <div class="flex items-center space-x-2">
+                {% if safe_audio_size %}
+                <span class="text-xs text-slate-500">{{ safe_audio_size|filesizeformat }}</span>
+                {% endif %}
+                {% if safe_audio_ext %}
+                <span class="px-2 py-1 text-xs font-semibold text-green-600 bg-green-100 rounded-full">{{ safe_audio_ext }}</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          <div class="flex-auto p-6">
+            <audio controls class="w-full" preload="metadata">
+              <source src="{{ safe_audio_url }}" type="audio/mpeg">
+              <source src="{{ safe_audio_url }}" type="audio/wav">
+              <source src="{{ safe_audio_url }}" type="audio/ogg">
+              Your browser does not support the audio element.
+            </audio>
+
+            {% if safe_audio_url %}
+            <div class="mt-4">
+              <a href="{{ safe_audio_url }}" download class="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors duration-200">
+                <i class="fas fa-download mr-2"></i>Download Audio
+              </a>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Audio Features Section -->
+        {% if audio_features %}
+        <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border mb-6">
+          <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-0">
+            <div class="flex items-center justify-between">
+              <p class="mb-0 dark:text-white/80">Audio Features</p>
+              <span class="text-xs text-slate-500">Extracted from audio analysis</span>
+            </div>
+          </div>
+          <div class="flex-auto p-6">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div class="p-4 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg">
+                <div class="text-2xl font-bold text-blue-600">{{ audio_features.duration|floatformat:2 }}</div>
+                <div class="text-sm text-blue-600/70">Duration (s)</div>
+              </div>
+              <div class="p-4 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg">
+                <div class="text-2xl font-bold text-green-600">{{ audio_features.sample_rate|floatformat:0 }}</div>
+                <div class="text-sm text-green-600/70">Sample Rate (Hz)</div>
+              </div>
+              <div class="p-4 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-lg">
+                <div class="text-2xl font-bold text-purple-600">{{ audio_features.rms_energy|floatformat:4 }}</div>
+                <div class="text-sm text-purple-600/70">RMS Energy</div>
+              </div>
+              <div class="p-4 bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20 rounded-lg">
+                <div class="text-2xl font-bold text-orange-600">{{ audio_features.zero_crossing_rate|floatformat:4 }}</div>
+                <div class="text-sm text-orange-600/70">Zero Crossing Rate</div>
+              </div>
+            </div>
+
+            {% if audio_features.spectral_centroid and audio_features.spectral_bandwidth %}
+            <div class="mt-6 grid grid-cols-2 gap-4">
+              <div class="p-4 bg-gradient-to-br from-indigo-50 to-indigo-100 dark:from-indigo-900/20 dark:to-indigo-800/20 rounded-lg">
+                <div class="text-xl font-bold text-indigo-600">{{ audio_features.spectral_centroid|floatformat:0 }}</div>
+                <div class="text-sm text-indigo-600/70">Spectral Centroid (Hz)</div>
+              </div>
+              <div class="p-4 bg-gradient-to-br from-pink-50 to-pink-100 dark:from-pink-900/20 dark:to-pink-800/20 rounded-lg">
+                <div class="text-xl font-bold text-pink-600">{{ audio_features.spectral_bandwidth|floatformat:0 }}</div>
+                <div class="text-sm text-pink-600/70">Spectral Bandwidth (Hz)</div>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Speech Analysis Section -->
+        {% if clean_speech_analysis %}
+        <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border mb-6">
+          <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-0">
+            <div class="flex items-center justify-between">
+              <p class="mb-0 dark:text-white/80">Speech Quality Analysis</p>
+              <span class="text-xs text-slate-500">{{ clean_speech_analysis.get_analysis_type_display }}</span>
+            </div>
+          </div>
+          <div class="flex-auto p-6">
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {% if clean_speech_analysis.overall_quality_score %}
+              <div class="p-4 bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/20 dark:to-emerald-800/20 rounded-lg">
+                <div class="text-2xl font-bold text-emerald-600">{{ clean_speech_analysis.overall_quality_score|floatformat:1 }}</div>
+                <div class="text-sm text-emerald-600/70">Quality Score</div>
+              </div>
+              {% endif %}
+              {% if clean_speech_analysis.snr %}
+              <div class="p-4 bg-gradient-to-br from-cyan-50 to-cyan-100 dark:from-cyan-900/20 dark:to-cyan-800/20 rounded-lg">
+                <div class="text-2xl font-bold text-cyan-600">{{ clean_speech_analysis.snr|floatformat:1 }}</div>
+                <div class="text-sm text-cyan-600/70">Signal-to-Noise (dB)</div>
+              </div>
+              {% endif %}
+              {% if clean_speech_analysis.speech_rate %}
+              <div class="p-4 bg-gradient-to-br from-violet-50 to-violet-100 dark:from-violet-900/20 dark:to-violet-800/20 rounded-lg">
+                <div class="text-2xl font-bold text-violet-600">{{ clean_speech_analysis.speech_rate|floatformat:1 }}</div>
+                <div class="text-sm text-violet-600/70">Speech Rate (wpm)</div>
+              </div>
+              {% endif %}
+            </div>
+
+            {% if clean_speech_analysis.recommendations %}
+            <div class="mt-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+              <h6 class="text-sm font-semibold text-yellow-800 dark:text-yellow-200 mb-2">Recommendations</h6>
+              <p class="text-sm text-yellow-700 dark:text-yellow-300">{{ clean_speech_analysis.recommendations }}</p>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+
+      </div>
+
+      <!-- Right Column -->
+      <div class="w-full max-w-full px-3 shrink-0 md:w-4/12 md:flex-0">
+
+        <!-- Dataset Information -->
+        <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border mb-6">
+          <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-0">
+            <div class="flex items-center justify-between">
+              <p class="mb-0 dark:text-white/80">Dataset Information</p>
+            </div>
+          </div>
+          <div class="flex-auto p-6">
+            <div class="space-y-4">
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Dataset ID:</span>
+                <span class="text-sm font-mono text-slate-900 dark:text-white">{{ clean_speech_dataset.clean_speech_id }}</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Name:</span>
+                <span class="text-sm text-slate-900 dark:text-white">{{ clean_speech_dataset.name }}</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Contributor:</span>
+                <span class="text-sm text-slate-900 dark:text-white">{{ clean_speech_dataset.collector.username }}</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Region:</span>
+                <span class="text-sm text-slate-900 dark:text-white">{{ clean_speech_dataset.region.name|default:"-" }}</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Category:</span>
+                <span class="text-sm text-slate-900 dark:text-white">{{ clean_speech_dataset.category.name|default:"-" }}</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Class:</span>
+                <span class="text-sm text-slate-900 dark:text-white">{{ clean_speech_dataset.class_name.name|default:"-" }}</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Time of Day:</span>
+                <span class="text-sm text-slate-900 dark:text-white">{{ clean_speech_dataset.time_of_day.name|default:"-" }}</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Recording Date:</span>
+                <span class="text-sm text-slate-900 dark:text-white">{{ clean_speech_dataset.recording_date|date:"M d, Y"|default:"-" }}</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Device:</span>
+                <span class="text-sm text-slate-900 dark:text-white">{{ clean_speech_dataset.recording_device|default:"-" }}</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Created:</span>
+                <span class="text-sm text-slate-900 dark:text-white">{{ clean_speech_dataset.created_at|date:"M d, Y H:i" }}</span>
+              </div>
+              {% if clean_speech_dataset.description %}
+              <div class="pt-4 border-t border-slate-200 dark:border-slate-700">
+                <span class="text-sm font-medium text-slate-600 dark:text-slate-400 block mb-2">Description:</span>
+                <p class="text-sm text-slate-900 dark:text-white">{{ clean_speech_dataset.description }}</p>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        <!-- Recording Information -->
+        {% if clean_speech_dataset.recording %}
+        <div class="relative flex flex-col min-w-0 break-words bg-white border-0 shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border mb-6">
+          <div class="border-black/12.5 rounded-t-2xl border-b-0 border-solid p-6 pb-0">
+            <div class="flex items-center justify-between">
+              <p class="mb-0 dark:text-white/80">Recording Details</p>
+            </div>
+          </div>
+          <div class="flex-auto p-6">
+            <div class="space-y-4">
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Recording ID:</span>
+                <span class="text-sm font-mono text-slate-900 dark:text-white">{{ clean_speech_dataset.recording.id }}</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Type:</span>
+                <span class="text-sm text-slate-900 dark:text-white">{{ clean_speech_dataset.recording.get_recording_type_display }}</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Duration:</span>
+                <span class="text-sm text-slate-900 dark:text-white">{{ clean_speech_dataset.recording.duration|floatformat:1 }}s</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Status:</span>
+                <span class="text-sm text-slate-900 dark:text-white">{{ clean_speech_dataset.recording.get_status_display }}</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Approved:</span>
+                <span class="text-sm text-slate-900 dark:text-white">{{ clean_speech_dataset.recording.approved|yesno:"Yes,No" }}</span>
+              </div>
+              {% if clean_speech_dataset.recording.approved_by %}
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Approved By:</span>
+                <span class="text-sm text-slate-900 dark:text-white">{{ clean_speech_dataset.recording.approved_by.username }}</span>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
