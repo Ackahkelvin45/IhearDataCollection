@@ -753,12 +753,26 @@ class UnifiedAudioDataChat {
                 // Store tool responses for chart data extraction
                 assistantMessage.toolResponses = assistantMessage.toolResponses || [];
                 if (data !== null && data !== undefined) {
-                    assistantMessage.toolResponses.push(data);
+                    const lastToolResponse = assistantMessage.toolResponses.length
+                        ? assistantMessage.toolResponses[assistantMessage.toolResponses.length - 1]
+                        : null;
+                    if (!this.areToolResponsesEquivalent(lastToolResponse, data)) {
+                        assistantMessage.toolResponses.push(data);
+                    }
                 }
 
                 // Show a subtle indicator that tools are working
                 this.showToolActivity(assistantMessage.id);
                 this.updateStreamStatus(assistantMessage.id, 'Tool results received.');
+
+                // If this run returns tool-only output (no llm chunk), render a readable fallback
+                if (!assistantMessage.assistant_response && data && typeof data === 'object') {
+                    const synthesizedText = this.buildAssistantTextFromToolResponse(data);
+                    if (synthesizedText) {
+                        assistantMessage.assistant_response = synthesizedText;
+                        this.updateMessageContent(assistantMessage.id, synthesizedText);
+                    }
+                }
                 break;
 
             case 'llm':
@@ -799,6 +813,16 @@ class UnifiedAudioDataChat {
                 this.updateMessageStatus(assistantMessage.id, 'completed');
                 this.hideToolActivity(assistantMessage.id);
 
+                // Final fallback: if no llm content arrived, synthesize from latest tool response
+                if (!assistantMessage.assistant_response && assistantMessage.toolResponses?.length) {
+                    const latestToolResponse = assistantMessage.toolResponses[assistantMessage.toolResponses.length - 1];
+                    const synthesizedText = this.buildAssistantTextFromToolResponse(latestToolResponse);
+                    if (synthesizedText) {
+                        assistantMessage.assistant_response = synthesizedText;
+                        this.updateMessageContent(assistantMessage.id, synthesizedText);
+                    }
+                }
+
                 if (data && data.visualization) {
                     assistantMessage.visualizations = assistantMessage.visualizations || [];
                     assistantMessage.visualizations.push(data.visualization);
@@ -822,6 +846,56 @@ class UnifiedAudioDataChat {
             default:
                 console.debug('Unknown stream action:', action, data);
         }
+    }
+
+    areToolResponsesEquivalent(a, b) {
+        if (a === b) return true;
+        if (!a || !b) return false;
+        try {
+            return JSON.stringify(a) === JSON.stringify(b);
+        } catch (e) {
+            return false;
+        }
+    }
+
+    buildAssistantTextFromToolResponse(toolData) {
+        if (!toolData || typeof toolData !== 'object') return '';
+
+        // Specific synthesis for decibel summary response
+        if (toolData.analysis_type === 'decibel_summary') {
+            const total = Number(toolData.total_count || 0);
+            const avg = Number(toolData.avg_db);
+            const min = Number(toolData.min_db);
+            const max = Number(toolData.max_db);
+
+            const avgText = Number.isFinite(avg) ? avg.toFixed(2) : 'N/A';
+            const minText = Number.isFinite(min) ? min.toFixed(2) : 'N/A';
+            const maxText = Number.isFinite(max) ? max.toFixed(2) : 'N/A';
+
+            return [
+                `Here is the decibel summary across **${total.toLocaleString()}** datasets:`,
+                ``,
+                `- **Average dB:** ${avgText}`,
+                `- **Highest dB:** ${maxText}`,
+                `- **Lowest dB:** ${minText}`,
+            ].join('\n');
+        }
+
+        // Generic synthesis for count/group responses
+        if (toolData.analysis_type === 'dataset_count' && toolData.total_count !== undefined) {
+            return `You have **${Number(toolData.total_count).toLocaleString()}** matching datasets.`;
+        }
+
+        if (Array.isArray(toolData.rows) && toolData.rows.length > 0) {
+            const count = Number(toolData.row_count ?? toolData.rows.length);
+            return `I found **${count.toLocaleString()}** result${count === 1 ? '' : 's'}.`;
+        }
+
+        if (typeof toolData.message === 'string' && toolData.message.trim()) {
+            return toolData.message.trim();
+        }
+
+        return '';
     }
 
  addMessageToUI(message) {
@@ -1088,6 +1162,32 @@ class UnifiedAudioDataChat {
                     break;
 
                 case 'bar_chart':
+                    if (Array.isArray(actualData.datasets) && actualData.datasets.length > 0) {
+                        config = {
+                            type: 'bar',
+                            data: {
+                                labels: actualData.labels || [],
+                                datasets: actualData.datasets
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                scales: {
+                                    x: { stacked: !!actualData.stacked },
+                                    y: { beginAtZero: true, stacked: !!actualData.stacked }
+                                },
+                                plugins: {
+                                    legend: { display: true, position: 'bottom' },
+                                    title: {
+                                        display: true,
+                                        text: actualData.title,
+                                        font: { size: 16, weight: 'bold' }
+                                    }
+                                }
+                            }
+                        };
+                        break;
+                    }
                     config = {
                         type: 'bar',
                         data: {
@@ -1534,6 +1634,36 @@ class UnifiedAudioDataChat {
             // Handle analysis results with different types
             else if (typeof toolResponse === 'object' && toolResponse.analysis_type) {
                 try {
+                    if (toolResponse.analysis_type === 'category_class_count' && Array.isArray(toolResponse.rows) && toolResponse.rows.length > 0) {
+                        const rows = toolResponse.rows.filter(r => r && r.category && r.class);
+                        const categories = [...new Set(rows.map(r => String(r.category)))];
+                        const classes = [...new Set(rows.map(r => String(r.class)))];
+                        const colorPalette = this.generateColors(classes.length);
+
+                        const datasets = classes.map((cls, idx) => {
+                            const dataPoints = categories.map(cat => {
+                                const match = rows.find(r => String(r.category) === cat && String(r.class) === cls);
+                                return Number(match?.count ?? 0);
+                            });
+                            return {
+                                label: cls,
+                                data: dataPoints,
+                                backgroundColor: colorPalette[idx],
+                                borderColor: colorPalette[idx],
+                                borderWidth: 1
+                            };
+                        });
+
+                        extractedData = {
+                            labels: categories,
+                            datasets: datasets,
+                            stacked: true,
+                            colors: colorPalette,
+                            title: 'Category vs Class Count'
+                        };
+                        break;
+                    }
+
                     if (toolResponse.analysis_type === 'energy_analysis' && toolResponse.results) {
                         const results = toolResponse.results;
                         if (Array.isArray(results) && results.length > 0) {

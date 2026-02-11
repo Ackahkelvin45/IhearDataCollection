@@ -15,7 +15,14 @@ from django.views.generic import DeleteView, ListView
 from django.urls import reverse_lazy
 from django.contrib import messages
 from django.core.paginator import Paginator
-from .models import NoiseDataset, CleanSpeechDataset, AudioFeature, Recording
+from .models import (
+    NoiseDataset,
+    CleanSpeechDataset,
+    AudioFeature,
+    Recording,
+    CleanSpeechAudioFeature,
+    CleanSpeechAnalysis,
+)
 from datetime import timedelta
 from django.db.models import Q
 from .models import BulkAudioUpload
@@ -1325,8 +1332,13 @@ def clean_speech_detail(request, dataset_id):
     """Detail view for clean speech datasets"""
     dataset = get_object_or_404(CleanSpeechDataset, pk=dataset_id)
 
-    audio_features = getattr(dataset, "audio_features", None)
-    clean_speech_analysis = dataset.analysis.first() if dataset.analysis.exists() else None
+    # These are OneToOne relations; query safely so missing rows return None.
+    audio_features = CleanSpeechAudioFeature.objects.filter(
+        clean_speech_dataset=dataset
+    ).first()
+    clean_speech_analysis = CleanSpeechAnalysis.objects.filter(
+        clean_speech_dataset=dataset
+    ).first()
 
     safe_audio_url = None
     safe_audio_size = None

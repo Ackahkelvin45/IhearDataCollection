@@ -662,7 +662,7 @@ class TextToSQLAgent:
         if not query and not tool_call:
             return {
                 "messages": [
-                    HumanMessage(
+                    AIMessage(
                         content="Error: Query failed! Please rewrite your query and try again."
                     )
                 ],
@@ -681,7 +681,7 @@ class TextToSQLAgent:
                         tool_call_id=tool_id,
                     )
                 else:
-                    message_obj = HumanMessage(content=error_msg)
+                    message_obj = AIMessage(content=error_msg)
                 return {
                     "messages": [message_obj],
                     "n_trials": n_trials,
@@ -722,7 +722,7 @@ class TextToSQLAgent:
                     tool_call_id=tool_id,
                 )
             else:
-                message_obj = HumanMessage(content=res)
+                message_obj = AIMessage(content=res)
             return {
                 "messages": [message_obj],
                 "n_trials": n_trials,
@@ -739,7 +739,7 @@ class TextToSQLAgent:
                     tool_call_id=tool_id,
                 )
             else:
-                message_obj = HumanMessage(content=error_msg)
+                message_obj = AIMessage(content=error_msg)
             return {
                 "messages": [message_obj],
                 "n_trials": n_trials,

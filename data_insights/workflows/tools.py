@@ -1506,6 +1506,94 @@ class DataAnalysisTool(BaseTool):
         try:
             query_lower = (query or "").lower()
 
+            # Fast-path: category vs class counts (stacked bar/table friendly)
+            if (
+                "category" in query_lower
+                and "class" in query_lower
+                and any(word in query_lower for word in ["count", "counts", "total", "totals", "breakdown", "distribution", "stacked"])
+            ):
+                qs = (
+                    NoiseDataset.objects.values("category__name", "class_name__name")
+                    .annotate(count=models.Count("id"))
+                    .order_by("category__name", "-count")
+                )
+
+                rows = []
+                for item in qs:
+                    category_name = item.get("category__name")
+                    class_name = item.get("class_name__name")
+                    if not category_name or not class_name:
+                        continue
+                    rows.append(
+                        {
+                            "category": category_name,
+                            "class": class_name,
+                            "count": item.get("count", 0),
+                        }
+                    )
+
+                return {
+                    "analysis_type": "category_class_count",
+                    "rows": rows,
+                    "columns": ["category", "class", "count"],
+                    "row_count": len(rows),
+                    "limit": len(rows),
+                    "offset": 0,
+                    "has_more": False,
+                    "skip_visualization": False,
+                }
+
+            # Fast-path: top collectors this month (avoid SQL-agent loop for this common question)
+            if (
+                any(word in query_lower for word in ["collector", "collectors", "contributor", "contributors"])
+                and any(word in query_lower for word in ["month", "this month", "monthly"])
+                and any(word in query_lower for word in ["most", "top", "highest", "contributed", "datasets", "recordings"])
+            ):
+                now = timezone.now()
+                month_qs = NoiseDataset.objects.filter(
+                    collector__isnull=False,
+                    recording_date__year=now.year,
+                    recording_date__month=now.month,
+                )
+
+                collector_rows = list(
+                    month_qs.values(
+                        "collector__id",
+                        "collector__username",
+                        "collector__first_name",
+                        "collector__last_name",
+                    )
+                    .annotate(dataset_count=models.Count("id"))
+                    .order_by("-dataset_count")[:10]
+                )
+
+                rows = []
+                for row in collector_rows:
+                    first = (row.get("collector__first_name") or "").strip()
+                    last = (row.get("collector__last_name") or "").strip()
+                    full_name = f"{first} {last}".strip()
+                    username = row.get("collector__username") or "Unknown"
+                    rows.append(
+                        {
+                            "collector_id": row.get("collector__id"),
+                            "collector": full_name or username,
+                            "username": username,
+                            "dataset_count": row.get("dataset_count", 0),
+                        }
+                    )
+
+                return {
+                    "analysis_type": "top_collectors_monthly",
+                    "rows": rows,
+                    "columns": ["collector_id", "collector", "username", "dataset_count"],
+                    "row_count": len(rows),
+                    "limit": 10,
+                    "offset": 0,
+                    "has_more": False,
+                    "period": now.strftime("%Y-%m"),
+                    "skip_visualization": True,
+                }
+
             # Fast-path: recent N datasets (no LLM)
             recent_match = re.search(r"\b(recent|latest|last)\s+(\d{1,3})\b", query_lower)
             if recent_match and any(word in query_lower for word in ["dataset", "data", "recording", "collected"]):
@@ -1555,6 +1643,66 @@ class DataAnalysisTool(BaseTool):
 
             # Fast-path: highest/lowest decibel levels
             if any(word in query_lower for word in ["decibel", "db"]):
+                # Fast-path: grouped average decibel (e.g., "region vs average decibel")
+                has_avg_intent = any(
+                    word in query_lower for word in ["average", "avg", "mean"]
+                )
+                has_group_intent = any(
+                    word in query_lower
+                    for word in ["by", "per", "group", "grouped", "across", "vs", "versus"]
+                )
+                if has_avg_intent and has_group_intent:
+                    group_field = None
+                    group_label = None
+                    if "region" in query_lower:
+                        group_field = "region__name"
+                        group_label = "region"
+                    elif "community" in query_lower:
+                        group_field = "community__name"
+                        group_label = "community"
+                    elif "category" in query_lower:
+                        group_field = "category__name"
+                        group_label = "category"
+                    elif "class" in query_lower:
+                        group_field = "class_name__name"
+                        group_label = "class"
+                    elif "device" in query_lower or "recording device" in query_lower:
+                        group_field = "recording_device"
+                        group_label = "recording_device"
+
+                    if group_field:
+                        grouped = (
+                            NoiseDataset.objects.exclude(
+                                **{f"{group_field}__isnull": True}
+                            )
+                            .values(group_field)
+                            .annotate(
+                                avg_db=models.Avg("noise_analysis__mean_db"),
+                                sample_count=models.Count("id"),
+                            )
+                            .exclude(avg_db__isnull=True)
+                            .order_by("-avg_db")
+                        )
+                        rows = []
+                        for item in grouped:
+                            rows.append(
+                                {
+                                    group_label: item.get(group_field),
+                                    "avg_db": item.get("avg_db"),
+                                    "sample_count": item.get("sample_count"),
+                                }
+                            )
+                        return {
+                            "analysis_type": f"avg_decibel_by_{group_label}",
+                            "rows": rows,
+                            "columns": [group_label, "avg_db", "sample_count"],
+                            "row_count": len(rows),
+                            "limit": len(rows),
+                            "offset": 0,
+                            "has_more": False,
+                            "skip_visualization": False,
+                        }
+
                 if any(word in query_lower for word in ["highest", "max", "top"]):
                     limit = self._extract_top_n(query_lower, default=1)
                     qs = (
