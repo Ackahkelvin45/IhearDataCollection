@@ -382,8 +382,7 @@ class CleanSpeechDataset(models.Model):
 
     def save(self, *args, **kwargs):
         # Ensure dataset type is always "clean_speech"
-        if not self.id:
-            # create a Dataset of type clean_speech if one doesn't exist
+        if not self.dataset_type_id:
             clean_speech_dataset, _ = Dataset.objects.get_or_create(
                 name="clean_speech", defaults={"description": "Clean speech dataset"}
             )
@@ -441,22 +440,8 @@ class CleanSpeechDataset(models.Model):
             print(f"[get_audio_hash] Unexpected error for dataset {self.pk}: {exc}")
             return None
 
-    def save(self, *args, **kwargs):
-
-        # Ensure dataset type is always "noise"
-        if not self.id:
-            # create a Dataset of type noise if one doesn't exist
-            noise_dataset, _ = Dataset.objects.get_or_create(
-                name="noise", defaults={"description": "Noise dataset"}
-            )
-            self.dataset_type = noise_dataset
-        else:
-            self.dataset_type.name = "noise"
-            self.dataset_type.save()
-        super().save(*args, **kwargs)
-
     def __str__(self):
-        return f"{self.name}-{self.noise_id}"
+        return f"{self.name}-{self.clean_speech_id}"
 
 
 

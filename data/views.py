@@ -50,8 +50,10 @@ from django.utils.encoding import smart_str
 import time
 import math
 from django.db import connection
+from django.db.utils import DatabaseError
 from core.models import CleanSpeechCategory
 from core.models import CleanSpeechClass
+from core.models import CleanSpeechSubClass
 
 
 try:
@@ -108,86 +110,208 @@ class DashboardView(APIView):
             if duration_unit not in ["seconds", "hours"]:
                 duration_unit = "seconds"
 
-            # Basic stats
-            total_recordings = NoiseDataset.objects.count()
-            user_recordings = (
-                NoiseDataset.objects.filter(collector=request.user).count()
-                if request.user.is_authenticated
-                else 0
-            )
+            # Noise is the primary dataset on the dashboard.
+            # Clean speech is shown as separate contribution cards (approved only).
+            noise_datasets = NoiseDataset.objects.all()
+            clean_speech_datasets = CleanSpeechDataset.objects.none()
+            clean_speech_ok = True
+            try:
+                clean_speech_datasets = CleanSpeechDataset.objects.filter(
+                    recording__isnull=False,
+                    recording__approved=True,
+                )
+            except DatabaseError as db_exc:
+                # If migrations/tables aren't ready yet, don't take down the dashboard.
+                clean_speech_ok = False
+                logger.warning(
+                    f"[DashboardView] Clean speech tables unavailable, falling back to noise-only: {db_exc}"
+                )
+
+            # Basic stats (noise)
+            noise_recordings = noise_datasets.count()
+            total_recordings = noise_recordings
+
+            if request.user.is_authenticated:
+                user_noise_recordings = noise_datasets.filter(collector=request.user).count()
+                user_clean_speech_recordings = (
+                    clean_speech_datasets.filter(collector=request.user).count()
+                    if clean_speech_ok
+                    else 0
+                )
+            else:
+                user_noise_recordings = 0
+                user_clean_speech_recordings = 0
+
+            user_recordings = user_noise_recordings
+
+            # Category/Class/Subclass counts include both noise + clean speech taxonomies
             categories_count = Category.objects.count()
             regions_count = Region.objects.count()
             classes_count = Class.objects.count()
             sub_classes_count = SubClass.objects.count()
 
-            # Calculate total duration in hours
-            total_duration_seconds = (
-                AudioFeature.objects.aggregate(total_duration=Sum("duration"))[
+            # Noise duration stats (from noise AudioFeature)
+            noise_duration_seconds = (
+                AudioFeature.objects.aggregate(total_duration=Sum("duration")).get(
                     "total_duration"
-                ]
+                )
                 or 0
             )
-            total_duration_hours = round(total_duration_seconds / 3600, 2)
+            noise_duration_hours = round(noise_duration_seconds / 3600, 2)
 
-            # Calculate average duration per recording
-            avg_duration_seconds = (
-                AudioFeature.objects.aggregate(avg_duration=Avg("duration"))[
-                    "avg_duration"
-                ]
-                or 0
+            # Noise average duration per recording
+            noise_duration_count = AudioFeature.objects.exclude(duration__isnull=True).count()
+            noise_avg_duration_seconds = (
+                round(noise_duration_seconds / noise_duration_count, 2)
+                if noise_duration_count
+                else 0
             )
-            avg_duration_seconds = round(avg_duration_seconds, 2)
 
-            # Duration by class in hours
-            duration_by_class = (
+            # Clean speech contribution duration stats (approved only; optional)
+            clean_speech_recordings = clean_speech_datasets.count() if clean_speech_ok else 0
+            clean_speech_duration_seconds = 0
+            clean_speech_duration_count = 0
+            if clean_speech_ok:
+                try:
+                    clean_speech_duration_seconds = (
+                        CleanSpeechAudioFeature.objects.aggregate(
+                            total_duration=Sum("duration")
+                        ).get("total_duration")
+                        or 0
+                    )
+                    clean_speech_duration_count = CleanSpeechAudioFeature.objects.exclude(
+                        duration__isnull=True
+                    ).count()
+                except DatabaseError:
+                    clean_speech_duration_seconds = 0
+                    clean_speech_duration_count = 0
+
+            clean_speech_duration_hours = round(clean_speech_duration_seconds / 3600, 2)
+            clean_speech_avg_duration_seconds = (
+                round(clean_speech_duration_seconds / clean_speech_duration_count, 2)
+                if clean_speech_duration_count
+                else 0
+            )
+
+            # Totals (noise + approved clean speech)
+            total_all_data = noise_recordings + clean_speech_recordings
+            user_all_data = user_noise_recordings + user_clean_speech_recordings
+            total_all_duration_seconds = noise_duration_seconds + clean_speech_duration_seconds
+            total_all_duration_hours = round(total_all_duration_seconds / 3600, 2)
+            total_all_duration_count = noise_duration_count + clean_speech_duration_count
+            avg_all_duration_seconds = (
+                round(total_all_duration_seconds / total_all_duration_count, 2)
+                if total_all_duration_count
+                else 0
+            )
+
+            # Duration by class in hours (noise only)
+            duration_by_class_noise = (
                 AudioFeature.objects.select_related("noise_dataset__class_name")
                 .values("noise_dataset__class_name__name")
                 .annotate(total_duration=Sum("duration"))
-                .order_by("-total_duration")
             )
+
+            class_hours_map = {}
+            for item in duration_by_class_noise:
+                label = item.get("noise_dataset__class_name__name") or "Unknown"
+                class_hours_map[label] = class_hours_map.get(label, 0) + (
+                    item.get("total_duration") or 0
+                )
+
             class_hours = [
-                {
-                    "label": item.get("noise_dataset__class_name__name") or "Unknown",
-                    "hours": round((item.get("total_duration") or 0) / 3600, 2),
-                }
-                for item in duration_by_class
+                {"label": label, "hours": round(seconds / 3600, 2)}
+                for (label, seconds) in sorted(
+                    class_hours_map.items(), key=lambda kv: kv[1], reverse=True
+                )
             ]
 
-            # Data for category pie chart
-            category_data = (
-                NoiseDataset.objects.values("category__name")
-                .annotate(count=Count("id"))
-                .order_by("-count")
-            )
-            category_labels = [
-                item["category__name"] or "Unknown" for item in category_data
-            ]
-            category_counts = [item["count"] for item in category_data]
+            # -----------------------
+            # Charts (noise + clean speech)
+            # -----------------------
 
-            # Data for region bar chart
-            region_data = (
-                NoiseDataset.objects.values("region__name")
-                .annotate(count=Count("id"))
-                .order_by("-count")
-            )
-            region_labels = [item["region__name"] or "Unknown" for item in region_data]
-            region_counts = [item["count"] for item in region_data]
+            # Data for category pie chart (combined)
+            category_counts_map: dict[str, int] = {}
+            for item in noise_datasets.values("category__name").annotate(count=Count("id")):
+                name = item.get("category__name") or "Unknown"
+                category_counts_map[name] = category_counts_map.get(name, 0) + int(
+                    item.get("count", 0) or 0
+                )
+            if clean_speech_ok:
+                try:
+                    for item in clean_speech_datasets.values("category__name").annotate(
+                        count=Count("id")
+                    ):
+                        name = item.get("category__name") or "Unknown"
+                        category_counts_map[name] = category_counts_map.get(name, 0) + int(
+                            item.get("count", 0) or 0
+                        )
+                except DatabaseError:
+                    pass
 
-            # Data for duration by region chart
-            duration_by_region = (
+            category_sorted = sorted(
+                category_counts_map.items(), key=lambda kv: kv[1], reverse=True
+            )
+            category_labels = [k for (k, _) in category_sorted]
+            category_counts = [v for (_, v) in category_sorted]
+
+            # Data for region bar chart (combined)
+            region_counts_map: dict[str, int] = {}
+            for item in noise_datasets.values("region__name").annotate(count=Count("id")):
+                name = item.get("region__name") or "Unknown"
+                region_counts_map[name] = region_counts_map.get(name, 0) + int(
+                    item.get("count", 0) or 0
+                )
+            if clean_speech_ok:
+                try:
+                    for item in clean_speech_datasets.values("region__name").annotate(
+                        count=Count("id")
+                    ):
+                        name = item.get("region__name") or "Unknown"
+                        region_counts_map[name] = region_counts_map.get(name, 0) + int(
+                            item.get("count", 0) or 0
+                        )
+                except DatabaseError:
+                    pass
+
+            region_sorted = sorted(
+                region_counts_map.items(), key=lambda kv: kv[1], reverse=True
+            )
+            region_labels = [k for (k, _) in region_sorted]
+            region_counts = [v for (_, v) in region_sorted]
+
+            # Data for duration by region chart (combined, hours)
+            duration_region_seconds: dict[str, float] = {}
+            for item in (
                 AudioFeature.objects.select_related("noise_dataset__region")
                 .values("noise_dataset__region__name")
                 .annotate(total_duration=Sum("duration"))
-                .order_by("-total_duration")
+            ):
+                label = item.get("noise_dataset__region__name") or "Unknown"
+                duration_region_seconds[label] = duration_region_seconds.get(label, 0.0) + float(
+                    item.get("total_duration") or 0
+                )
+            if clean_speech_ok:
+                try:
+                    for item in (
+                        CleanSpeechAudioFeature.objects.select_related(
+                            "clean_speech_dataset__region"
+                        )
+                        .values("clean_speech_dataset__region__name")
+                        .annotate(total_duration=Sum("duration"))
+                    ):
+                        label = item.get("clean_speech_dataset__region__name") or "Unknown"
+                        duration_region_seconds[label] = duration_region_seconds.get(
+                            label, 0.0
+                        ) + float(item.get("total_duration") or 0)
+                except DatabaseError:
+                    pass
+
+            duration_sorted = sorted(
+                duration_region_seconds.items(), key=lambda kv: kv[1], reverse=True
             )
-            duration_region_labels = [
-                item.get("noise_dataset__region__name") or "Unknown"
-                for item in duration_by_region
-            ]
-            duration_region_hours = [
-                round(item["total_duration"] / 3600, 2) if item["total_duration"] else 0
-                for item in duration_by_region
-            ]
+            duration_region_labels = [k for (k, _) in duration_sorted]
+            duration_region_hours = [round(v / 3600, 2) for (_, v) in duration_sorted]
 
             # Data for time line chart (last 12 months)
             time_labels = []
@@ -203,124 +327,201 @@ class DashboardView(APIView):
                     end_date = month.replace(year=month.year + 1, month=1, day=1)
                 else:
                     end_date = month.replace(month=month.month + 1, day=1)
-                count = NoiseDataset.objects.filter(
+                noise_count = noise_datasets.filter(
                     recording_date__gte=start_date, recording_date__lt=end_date
                 ).count()
-                time_counts.append(count)
+                clean_count = 0
+                if clean_speech_ok:
+                    try:
+                        clean_count = clean_speech_datasets.filter(
+                            recording_date__gte=start_date, recording_date__lt=end_date
+                        ).count()
+                    except DatabaseError:
+                        clean_count = 0
+                time_counts.append(noise_count + clean_count)
 
-            # Data for audio features radar chart (averages)
-            audio_features = AudioFeature.objects.aggregate(
-                avg_rms=Avg("rms_energy"),
-                avg_centroid=Avg("spectral_centroid"),
-                avg_bandwidth=Avg("spectral_bandwidth"),
-                avg_zcr=Avg("zero_crossing_rate"),
-                avg_harmonic=Avg("harmonic_ratio"),
-                avg_percussive=Avg("percussive_ratio"),
+            # Data for audio features radar chart (combined weighted averages)
+            noise_audio_agg = AudioFeature.objects.aggregate(
+                rms_avg=Avg("rms_energy"),
+                rms_cnt=Count("rms_energy"),
+                centroid_avg=Avg("spectral_centroid"),
+                centroid_cnt=Count("spectral_centroid"),
+                bandwidth_avg=Avg("spectral_bandwidth"),
+                bandwidth_cnt=Count("spectral_bandwidth"),
+                zcr_avg=Avg("zero_crossing_rate"),
+                zcr_cnt=Count("zero_crossing_rate"),
+                rolloff_avg=Avg("spectral_rolloff"),
+                rolloff_cnt=Count("spectral_rolloff"),
+                duration_avg=Avg("duration"),
+                duration_cnt=Count("duration"),
             )
+
+            clean_audio_agg = {
+                "rms_avg": 0,
+                "rms_cnt": 0,
+                "centroid_avg": 0,
+                "centroid_cnt": 0,
+                "bandwidth_avg": 0,
+                "bandwidth_cnt": 0,
+                "zcr_avg": 0,
+                "zcr_cnt": 0,
+                "rolloff_avg": 0,
+                "rolloff_cnt": 0,
+                "duration_avg": 0,
+                "duration_cnt": 0,
+            }
+            if clean_speech_ok:
+                try:
+                    clean_audio_agg = CleanSpeechAudioFeature.objects.aggregate(
+                        rms_avg=Avg("rms_energy"),
+                        rms_cnt=Count("rms_energy"),
+                        centroid_avg=Avg("spectral_centroid"),
+                        centroid_cnt=Count("spectral_centroid"),
+                        bandwidth_avg=Avg("spectral_bandwidth"),
+                        bandwidth_cnt=Count("spectral_bandwidth"),
+                        zcr_avg=Avg("zero_crossing_rate"),
+                        zcr_cnt=Count("zero_crossing_rate"),
+                        rolloff_avg=Avg("spectral_rolloff"),
+                        rolloff_cnt=Count("spectral_rolloff"),
+                        duration_avg=Avg("duration"),
+                        duration_cnt=Count("duration"),
+                    )
+                except DatabaseError:
+                    pass
+
+            def _weighted_avg(n_avg, n_cnt, c_avg, c_cnt):
+                n_cnt = int(n_cnt or 0)
+                c_cnt = int(c_cnt or 0)
+                denom = n_cnt + c_cnt
+                if denom <= 0:
+                    return 0
+                return ((n_avg or 0) * n_cnt + (c_avg or 0) * c_cnt) / denom
+
             audio_features_data = [
-                audio_features["avg_rms"],
-                audio_features["avg_centroid"],
-                audio_features["avg_bandwidth"],
-                audio_features["avg_zcr"],
-                audio_features["avg_harmonic"],
-                audio_features["avg_percussive"],
+                _weighted_avg(
+                    noise_audio_agg.get("rms_avg"),
+                    noise_audio_agg.get("rms_cnt"),
+                    clean_audio_agg.get("rms_avg"),
+                    clean_audio_agg.get("rms_cnt"),
+                ),
+                _weighted_avg(
+                    noise_audio_agg.get("centroid_avg"),
+                    noise_audio_agg.get("centroid_cnt"),
+                    clean_audio_agg.get("centroid_avg"),
+                    clean_audio_agg.get("centroid_cnt"),
+                ),
+                _weighted_avg(
+                    noise_audio_agg.get("bandwidth_avg"),
+                    noise_audio_agg.get("bandwidth_cnt"),
+                    clean_audio_agg.get("bandwidth_avg"),
+                    clean_audio_agg.get("bandwidth_cnt"),
+                ),
+                _weighted_avg(
+                    noise_audio_agg.get("zcr_avg"),
+                    noise_audio_agg.get("zcr_cnt"),
+                    clean_audio_agg.get("zcr_avg"),
+                    clean_audio_agg.get("zcr_cnt"),
+                ),
+                _weighted_avg(
+                    noise_audio_agg.get("rolloff_avg"),
+                    noise_audio_agg.get("rolloff_cnt"),
+                    clean_audio_agg.get("rolloff_avg"),
+                    clean_audio_agg.get("rolloff_cnt"),
+                ),
+                _weighted_avg(
+                    noise_audio_agg.get("duration_avg"),
+                    noise_audio_agg.get("duration_cnt"),
+                    clean_audio_agg.get("duration_avg"),
+                    clean_audio_agg.get("duration_cnt"),
+                ),
             ]
 
             # Average parameters data for different filters
             def get_average_parameters(filter_type, duration_unit):
-                if filter_type == "category":
-                    queryset = (
-                        NoiseDataset.objects.values("category__name")
+                field_map = {
+                    "category": ("category__name", "category__name"),
+                    "class": ("class_name__name", "class_name__name"),
+                    "subclass": ("subclass__name", "subclass__name"),
+                    "region": ("region__name", "region__name"),
+                    "community": ("community__name", "community__name"),
+                }
+                noise_field, clean_field = field_map.get(
+                    filter_type, ("category__name", "category__name")
+                )
+
+                def _group(qs, field_name):
+                    return (
+                        qs.values(field_name)
                         .annotate(
                             avg_count=Count("id"),
-                            avg_duration=Avg("audio_features__duration"),
                             total_duration=Sum("audio_features__duration"),
-                        )
-                        .order_by("-avg_count")
-                    )
-                elif filter_type == "class":
-                    queryset = (
-                        NoiseDataset.objects.values("class_name__name")
-                        .annotate(
-                            avg_count=Count("id"),
-                            avg_duration=Avg("audio_features__duration"),
-                            total_duration=Sum("audio_features__duration"),
-                        )
-                        .order_by("-avg_count")
-                    )
-                elif filter_type == "subclass":
-                    queryset = (
-                        NoiseDataset.objects.values("subclass__name")
-                        .annotate(
-                            avg_count=Count("id"),
-                            avg_duration=Avg("audio_features__duration"),
-                            total_duration=Sum("audio_features__duration"),
-                        )
-                        .order_by("-avg_count")
-                    )
-                elif filter_type == "region":
-                    queryset = (
-                        NoiseDataset.objects.values("region__name")
-                        .annotate(
-                            avg_count=Count("id"),
-                            avg_duration=Avg("audio_features__duration"),
-                            total_duration=Sum("audio_features__duration"),
-                        )
-                        .order_by("-avg_count")
-                    )
-                elif filter_type == "community":
-                    queryset = (
-                        NoiseDataset.objects.values("community__name")
-                        .annotate(
-                            avg_count=Count("id"),
-                            avg_duration=Avg("audio_features__duration"),
-                            total_duration=Sum("audio_features__duration"),
-                        )
-                        .order_by("-avg_count")
-                    )
-                else:
-                    queryset = (
-                        NoiseDataset.objects.values("category__name")
-                        .annotate(
-                            avg_count=Count("id"),
-                            avg_duration=Avg("audio_features__duration"),
-                            total_duration=Sum("audio_features__duration"),
+                            duration_count=Count("audio_features__duration"),
                         )
                         .order_by("-avg_count")
                     )
 
-                return [
-                    {
-                        "name": item.get(list(item.keys())[0]) or "Unknown",
-                        "avg_count": item["avg_count"],
-                        "avg_duration": (
-                            round(((item["avg_duration"] or 0) / 3600), 2)
-                            if duration_unit == "hours"
-                            else round(item["avg_duration"] or 0, 2)
-                        ),
-                        "total_duration": (
-                            round(((item.get("total_duration") or 0) / 3600), 2)
-                            if duration_unit == "hours"
-                            else round(item.get("total_duration") or 0, 2)
-                        ),
-                        "duration_unit": duration_unit,
+                noise_rows = list(_group(noise_datasets, noise_field))
+                merged = {}
+                for r in noise_rows:
+                    name = r.get(noise_field) or "Unknown"
+                    merged[name] = {
+                        "avg_count": int(r.get("avg_count") or 0),
+                        "total_duration": float(r.get("total_duration") or 0),
+                        "duration_count": int(r.get("duration_count") or 0),
                     }
-                    for item in queryset
-                ]
+
+                items = sorted(
+                    merged.items(), key=lambda kv: kv[1]["avg_count"], reverse=True
+                )
+                out = []
+                for name, agg in items:
+                    duration_count = int(agg.get("duration_count") or 0)
+                    total_duration = float(agg.get("total_duration") or 0)
+                    avg_duration = (total_duration / duration_count) if duration_count else 0
+
+                    out.append(
+                        {
+                            "name": name,
+                            "avg_count": int(agg.get("avg_count") or 0),
+                            "avg_duration": (
+                                round(avg_duration / 3600, 2)
+                                if duration_unit == "hours"
+                                else round(avg_duration, 2)
+                            ),
+                            "total_duration": (
+                                round(total_duration / 3600, 2)
+                                if duration_unit == "hours"
+                                else round(total_duration, 2)
+                            ),
+                            "duration_unit": duration_unit,
+                        }
+                    )
+
+                return out
 
             # Get average parameters data for different filters and selected unit
             average_parameters = get_average_parameters(filter_type, duration_unit)
 
             response_data = {
                 "basic_stats": {
+                    "total_all_data": total_all_data,
+                    "user_all_data": user_all_data,
+                    "total_all_duration_hours": total_all_duration_hours,
+                    "avg_all_duration_seconds": avg_all_duration_seconds,
                     "total_recordings": total_recordings,
                     "user_recordings": user_recordings,
+                    "noise_recordings": noise_recordings,
+                    "clean_speech_recordings": clean_speech_recordings,
+                    "user_noise_recordings": user_noise_recordings,
+                    "user_clean_speech_recordings": user_clean_speech_recordings,
                     "categories_count": categories_count,
                     "classes_count": classes_count,
                     "sub_classes_count": sub_classes_count,
                     "regions_count": regions_count,
-                    "total_duration_hours": total_duration_hours,
-                    "avg_duration_seconds": avg_duration_seconds,
+                    "total_duration_hours": noise_duration_hours,
+                    "avg_duration_seconds": noise_avg_duration_seconds,
+                    "clean_speech_duration_hours": clean_speech_duration_hours,
+                    "clean_speech_avg_duration_seconds": clean_speech_avg_duration_seconds,
                 },
                 "class_hours": class_hours,
                 "average_parameters": average_parameters,

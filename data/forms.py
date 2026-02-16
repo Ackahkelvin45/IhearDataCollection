@@ -428,6 +428,11 @@ class CleanSpeechDatasetForm(forms.ModelForm):
             "recording_device",
         ]
 
+        labels = {
+            # Clean speech "class" represents the spoken language (e.g., English, Twi, etc.)
+            "class_name": "Language",
+        }
+
         widgets = {
             "description": forms.Textarea(
                 attrs={
@@ -482,6 +487,10 @@ class CleanSpeechDatasetForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        # Ensure the field renders with "Language" in all templates.
+        if "class_name" in self.fields:
+            self.fields["class_name"].label = "Language"
 
         # Set initial querysets for ForeignKey fields
         self.fields["region"].queryset = Region.objects.all().order_by("name")

@@ -11,7 +11,7 @@
   <div id="loadingSkeleton" class="block">
     <!-- Stats Cards Skeleton -->
     <div class="flex flex-wrap -mx-3">
-      {% for i in "12345678" %}
+      {% for i in "1234567890123456" %}
       <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
         <div class="relative flex flex-col bg-gray-200 dark:bg-slate-700 shadow-xl rounded-2xl animate-pulse">
           <div class="flex-auto p-4">
@@ -87,13 +87,103 @@
   <div id="dashboardContent" class="hidden">
     <!-- row 1 - Stats Cards -->
     <div class="flex flex-wrap -mx-3">
-      <!-- Card 1: Total Recordings -->
+      <!-- Section: Totals -->
+      <div class="w-full max-w-full px-3 mb-3">
+        <h6 class="text-slate-700 dark:text-white">Totals</h6>
+      </div>
+
+      <!-- Total Data (All) -->
       <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
         <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
           <div class="flex-auto p-4">
             <div class="flex flex-row -mx-3">
               <div class="flex-none w-2/3 px-3">
-                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Total Recordings</p>
+                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Total Data</p>
+                <h5 class="mb-2 mt-4 font-bold dark:text-white" id="totalAllData">0</h5>
+                <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Noise + Clean Speech</span></p>
+              </div>
+              <div class="px-3 text-right basis-1/3">
+                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-slate-700 to-slate-500">
+                  <i class="ni ni-collection text-lg relative top-3.5 text-white"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Your Total Contributions -->
+      <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
+        <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
+          <div class="flex-auto p-4">
+            <div class="flex flex-row -mx-3">
+              <div class="flex-none w-2/3 px-3">
+                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Your Total Contributions</p>
+                <h5 class="mb-2 mt-4 font-bold dark:text-white" id="userAllData">0</h5>
+                <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Noise + Clean Speech</span></p>
+              </div>
+              <div class="px-3 text-right basis-1/3">
+                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-emerald-600 to-teal-500">
+                  <i class="ni ni-single-02 text-lg relative top-3.5 text-white"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Total Duration (All) -->
+      <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
+        <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
+          <div class="flex-auto p-4">
+            <div class="flex flex-row -mx-3">
+              <div class="flex-none w-2/3 px-3">
+                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Total Duration</p>
+                <h5 class="mb-2 mt-4 font-bold dark:text-white" id="totalAllDurationHours">0</h5>
+                <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Hours (All data)</span></p>
+              </div>
+              <div class="px-3 text-right basis-1/3">
+                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-zinc-800 to-slate-600">
+                  <i class="ni ni-time-alarm text-lg relative top-3.5 text-white"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Average Duration (All) -->
+      <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
+        <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
+          <div class="flex-auto p-4">
+            <div class="flex flex-row -mx-3">
+              <div class="flex-none w-2/3 px-3">
+                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Average Duration</p>
+                <h5 class="mb-2 mt-4 font-bold dark:text-white" id="averageAllDurationSeconds">0</h5>
+                <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Seconds (All data)</span></p>
+              </div>
+              <div class="px-3 text-right basis-1/3">
+                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-purple-500 to-pink-500">
+                  <i class="ni ni-time-alarm text-lg relative top-3.5 text-white"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Noise -->
+      <div class="w-full max-w-full px-3 mb-3">
+        <h6 class="text-slate-700 dark:text-white">Noise</h6>
+      </div>
+
+      <!-- Total Noise Recordings -->
+      <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
+        <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
+          <div class="flex-auto p-4">
+            <div class="flex flex-row -mx-3">
+              <div class="flex-none w-2/3 px-3">
+                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Total Noise Recordings</p>
                 <h5 class="mb-2 mt-4 font-bold dark:text-white" id="totalRecordings">0</h5>
                 <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">All users</span></p>
               </div>
@@ -107,13 +197,13 @@
         </div>
       </div>
 
-      <!-- Card 2: Your Recordings -->
+      <!-- Your Noise Recordings -->
       <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
         <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
           <div class="flex-auto p-4">
             <div class="flex flex-row -mx-3">
               <div class="flex-none w-2/3 px-3">
-                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Your Recordings</p>
+                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Your Noise Recordings</p>
                 <h5 class="mb-2 mt-4 font-bold dark:text-white" id="userRecordings">0</h5>
                 <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Your contributions</span></p>
               </div>
@@ -127,7 +217,137 @@
         </div>
       </div>
 
-      <!-- Card 3: Categories -->
+      <!-- Noise Duration -->
+      <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
+        <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
+          <div class="flex-auto p-4">
+            <div class="flex flex-row -mx-3">
+              <div class="flex-none w-2/3 px-3">
+                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Noise Duration</p>
+                <h5 class="mb-2 mt-4 font-bold dark:text-white" id="totalDurationHours">0</h5>
+                <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Hours of audio</span></p>
+              </div>
+              <div class="px-3 text-right basis-1/3">
+                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-zinc-800 to-slate-600">
+                  <i class="ni ni-time-alarm text-lg relative top-3.5 text-white"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Noise Avg Duration -->
+      <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
+        <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
+          <div class="flex-auto p-4">
+            <div class="flex flex-row -mx-3">
+              <div class="flex-none w-2/3 px-3">
+                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Noise Avg Duration</p>
+                <h5 class="mb-2 mt-4 font-bold dark:text-white" id="averageDurationSeconds">0</h5>
+                <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Seconds per recording</span></p>
+              </div>
+              <div class="px-3 text-right basis-1/3">
+                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-purple-500 to-pink-500">
+                  <i class="ni ni-time-alarm text-lg relative top-3.5 text-white"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Clean Speech -->
+      <div class="w-full max-w-full px-3 mt-2 mb-3">
+        <h6 class="text-slate-700 dark:text-white">Clean Speech</h6>
+      </div>
+
+      <!-- Clean Speech Recordings -->
+      <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
+        <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
+          <div class="flex-auto p-4">
+            <div class="flex flex-row -mx-3">
+              <div class="flex-none w-2/3 px-3">
+                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Clean Speech Recordings</p>
+                <h5 class="mb-2 mt-4 font-bold dark:text-white" id="cleanSpeechRecordings">0</h5>
+                <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Approved only</span></p>
+              </div>
+              <div class="px-3 text-right basis-1/3">
+                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-indigo-500 to-sky-500">
+                  <i class="ni ni-chat-round text-lg relative top-3.5 text-white"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Your Clean Speech -->
+      <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
+        <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
+          <div class="flex-auto p-4">
+            <div class="flex flex-row -mx-3">
+              <div class="flex-none w-2/3 px-3">
+                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Your Clean Speech</p>
+                <h5 class="mb-2 mt-4 font-bold dark:text-white" id="userCleanSpeechRecordings">0</h5>
+                <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Approved only</span></p>
+              </div>
+              <div class="px-3 text-right basis-1/3">
+                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-fuchsia-500 to-pink-500">
+                  <i class="ni ni-single-02 text-lg relative top-3.5 text-white"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Clean Speech Duration -->
+      <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
+        <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
+          <div class="flex-auto p-4">
+            <div class="flex flex-row -mx-3">
+              <div class="flex-none w-2/3 px-3">
+                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Clean Speech Duration</p>
+                <h5 class="mb-2 mt-4 font-bold dark:text-white" id="cleanSpeechDurationHours">0</h5>
+                <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Hours of audio</span></p>
+              </div>
+              <div class="px-3 text-right basis-1/3">
+                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-amber-500 to-orange-500">
+                  <i class="ni ni-time-alarm text-lg relative top-3.5 text-white"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Clean Speech Avg Duration -->
+      <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
+        <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
+          <div class="flex-auto p-4">
+            <div class="flex flex-row -mx-3">
+              <div class="flex-none w-2/3 px-3">
+                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Clean Speech Avg Duration</p>
+                <h5 class="mb-2 mt-4 font-bold dark:text-white" id="cleanSpeechAverageDurationSeconds">0</h5>
+                <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Seconds per recording</span></p>
+              </div>
+              <div class="px-3 text-right basis-1/3">
+                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-teal-500 to-emerald-500">
+                  <i class="ni ni-time-alarm text-lg relative top-3.5 text-white"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Metadata -->
+      <div class="w-full max-w-full px-3 mt-2 mb-3">
+        <h6 class="text-slate-700 dark:text-white">Metadata</h6>
+      </div>
+
+      <!-- Categories -->
       <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
         <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
           <div class="flex-auto p-4">
@@ -147,7 +367,7 @@
         </div>
       </div>
 
-      <!-- Card 4: Classes -->
+      <!-- Classes -->
       <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
         <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
           <div class="flex-auto p-4">
@@ -167,8 +387,8 @@
         </div>
       </div>
 
-      <!-- Card 5: Sub Classes -->
-      <div class="w-full max-w-full px-3 mt-6 sm:w-1/2 xl:w-1/4">
+      <!-- Sub Classes -->
+      <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
         <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
           <div class="flex-auto p-4">
             <div class="flex flex-row -mx-3">
@@ -187,8 +407,8 @@
         </div>
       </div>
 
-      <!-- Card 6: Regions -->
-      <div class="w-full max-w-full px-3 mt-6 sm:w-1/2 xl:w-1/4">
+      <!-- Regions -->
+      <div class="w-full max-w-full px-3 mb-6 sm:w-1/2 xl:w-1/4">
         <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
           <div class="flex-auto p-4">
             <div class="flex flex-row -mx-3">
@@ -200,46 +420,6 @@
               <div class="px-3 text-right basis-1/3">
                 <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-red-600 to-orange-600">
                   <i class="ni ni-map-big text-lg relative top-3.5 text-white"></i>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Card 7: Total Duration -->
-      <div class="w-full max-w-full px-3 mt-6 mb-6 sm:w-1/2 xl:w-1/4">
-        <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
-          <div class="flex-auto p-4">
-            <div class="flex flex-row -mx-3">
-              <div class="flex-none w-2/3 px-3">
-                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Total Duration</p>
-                <h5 class="mb-2 mt-4 font-bold dark:text-white" id="totalDurationHours">0</h5>
-                <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Hours of audio</span></p>
-              </div>
-              <div class="px-3 text-right basis-1/3">
-                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-zinc-800 to-slate-600">
-                  <i class="ni ni-time-alarm text-lg relative top-3.5 text-white"></i>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Card 8: Average Sound Duration -->
-      <div class="w-full max-w-full px-3 mt-6 mb-6 sm:w-1/2 xl:w-1/4">
-        <div class="relative flex flex-col bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl">
-          <div class="flex-auto p-4">
-            <div class="flex flex-row -mx-3">
-              <div class="flex-none w-2/3 px-3">
-                <p class="mb-0 text-sm font-semibold uppercase dark:text-white dark:opacity-60">Average Sound Duration</p>
-                <h5 class="mb-2 mt-4 font-bold dark:text-white" id="averageDurationSeconds">0</h5>
-                <p class="mb-0 text-xs text-slate-500 dark:text-white/60"><span class="font-bold">Seconds per recording</span></p>
-              </div>
-              <div class="px-3 text-right basis-1/3">
-                <div class="inline-block w-12 h-12 text-center rounded-circle bg-gradient-to-tl from-purple-500 to-pink-500">
-                  <i class="ni ni-time-alarm text-lg relative top-3.5 text-white"></i>
                 </div>
               </div>
             </div>
@@ -323,7 +503,7 @@
         <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
           <div class="p-4 pb-0 rounded-t-4">
             <h6 class="mb-1 dark:text-white">Recordings by Category</h6>
-            <p class="text-sm leading-normal dark:text-white dark:opacity-60">Distribution of recordings across different categories</p>
+            <p class="text-sm leading-normal dark:text-white dark:opacity-60">Distribution of recordings (Noise + Clean Speech) across categories</p>
           </div>
           <div class="flex-auto p-4">
             <div class="h-300-px">
@@ -340,7 +520,7 @@
         <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
           <div class="p-4 pb-0 rounded-t-4">
             <h6 class="mb-1 dark:text-white">Recordings by Region</h6>
-            <p class="text-sm leading-normal dark:text-white dark:opacity-60">Number of recordings collected in each region</p>
+            <p class="text-sm leading-normal dark:text-white dark:opacity-60">Number of recordings (Noise + Clean Speech) collected in each region</p>
           </div>
           <div class="flex-auto p-4">
             <div style="height: 500px;">
@@ -358,7 +538,7 @@
         <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
           <div class="p-4 pb-0 rounded-t-4">
             <h6 class="mb-1 dark:text-white">Recordings Over Time</h6>
-            <p class="text-sm leading-normal dark:text-white dark:opacity-60">Monthly progression of recordings collected</p>
+            <p class="text-sm leading-normal dark:text-white dark:opacity-60">Monthly progression of recordings (Noise + Clean Speech)</p>
           </div>
           <div class="flex-auto p-4">
             <div style="height: 350px;" >
@@ -373,7 +553,7 @@
         <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
           <div class="p-4 pb-0 rounded-t-4">
             <h6 class="mb-1 dark:text-white">Audio Features Analysis</h6>
-            <p class="text-sm leading-normal dark:text-white dark:opacity-60">Average values of key audio features</p>
+            <p class="text-sm leading-normal dark:text-white dark:opacity-60">Average values of key audio features (Noise + Clean Speech)</p>
           </div>
           <div class="flex-auto p-4">
             <div class="h-300-px">
@@ -391,7 +571,7 @@
         <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
           <div class="p-4 pb-0 rounded-t-4">
             <h6 class="mb-1 dark:text-white">Duration by Region</h6>
-            <p class="text-sm leading-normal dark:text-white dark:opacity-60">Total hours of audio recordings per region</p>
+            <p class="text-sm leading-normal dark:text-white dark:opacity-60">Total hours of audio (Noise + Clean Speech) per region</p>
           </div>
           <div class="flex-auto p-4">
             <div style="height: 500px;" class="h-300-px">
@@ -406,7 +586,7 @@
         <div class="relative flex flex-col h-full min-w-0 break-words bg-white shadow-xl dark:bg-slate-850 dark:shadow-dark-xl rounded-2xl bg-clip-border">
           <div class="p-4 pb-0 rounded-t-4">
             <h6 class="mb-1 dark:text-white">Duration Distribution</h6>
-            <p class="text-sm leading-normal dark:text-white dark:opacity-60">Proportion of audio duration across regions</p>
+            <p class="text-sm leading-normal dark:text-white dark:opacity-60">Proportion of audio duration (Noise + Clean Speech) across regions</p>
           </div>
           <div class="flex-auto p-4">
             <div style="height: 500px;">
@@ -466,7 +646,18 @@
       try {
         const response = await fetch(`/dashboard/?filter_type=${currentFilter}&duration_unit=${durationUnit}`);
         if (!response.ok) {
-          throw new Error('Network response was not ok');
+          let bodyText = '';
+          try {
+            bodyText = await response.text();
+          } catch (e) {
+            bodyText = '';
+          }
+          console.error('Dashboard API request failed', {
+            status: response.status,
+            statusText: response.statusText,
+            body: bodyText
+          });
+          throw new Error(`Network response was not ok (${response.status})`);
         }
         return await response.json();
       } catch (error) {
@@ -481,7 +672,18 @@
     function updateDashboard(data) {
       if (!data) return;
 
+      // Totals (all data)
+      const totalAllDataEl = document.getElementById('totalAllData');
+      if (totalAllDataEl) totalAllDataEl.textContent = data.basic_stats.total_all_data ?? 0;
+      const userAllDataEl = document.getElementById('userAllData');
+      if (userAllDataEl) userAllDataEl.textContent = data.basic_stats.user_all_data ?? 0;
+      const totalAllDurEl = document.getElementById('totalAllDurationHours');
+      if (totalAllDurEl) totalAllDurEl.textContent = data.basic_stats.total_all_duration_hours ?? 0;
+      const avgAllDurEl = document.getElementById('averageAllDurationSeconds');
+      if (avgAllDurEl) avgAllDurEl.textContent = data.basic_stats.avg_all_duration_seconds ?? 0;
+
       // Update basic stats
+      // Noise-focused stats
       document.getElementById('totalRecordings').textContent = data.basic_stats.total_recordings;
       document.getElementById('userRecordings').textContent = data.basic_stats.user_recordings;
       document.getElementById('categoriesCount').textContent = data.basic_stats.categories_count;
@@ -490,6 +692,15 @@
       document.getElementById('regionsCount').textContent = data.basic_stats.regions_count;
       document.getElementById('totalDurationHours').textContent = data.basic_stats.total_duration_hours;
       document.getElementById('averageDurationSeconds').textContent = data.basic_stats.avg_duration_seconds;
+      // Clean speech cards (approved only)
+      const cleanSpeechRecordingsEl = document.getElementById('cleanSpeechRecordings');
+      if (cleanSpeechRecordingsEl) cleanSpeechRecordingsEl.textContent = data.basic_stats.clean_speech_recordings ?? 0;
+      const userCleanSpeechEl = document.getElementById('userCleanSpeechRecordings');
+      if (userCleanSpeechEl) userCleanSpeechEl.textContent = data.basic_stats.user_clean_speech_recordings ?? 0;
+      const cleanSpeechDurEl = document.getElementById('cleanSpeechDurationHours');
+      if (cleanSpeechDurEl) cleanSpeechDurEl.textContent = data.basic_stats.clean_speech_duration_hours ?? 0;
+      const cleanSpeechAvgEl = document.getElementById('cleanSpeechAverageDurationSeconds');
+      if (cleanSpeechAvgEl) cleanSpeechAvgEl.textContent = data.basic_stats.clean_speech_avg_duration_seconds ?? 0;
 
       // Persist current filter/unit
       currentFilter = data.current_filter || currentFilter;
@@ -693,7 +904,7 @@
       const audioRadarChart = new Chart(radarCtx, {
         type: 'radar',
         data: {
-          labels: ['RMS Energy', 'Spectral Centroid', 'Spectral Bandwidth', 'Zero Crossing', 'Harmonic Ratio', 'Percussive Ratio'],
+          labels: ['RMS Energy', 'Spectral Centroid', 'Spectral Bandwidth', 'Zero Crossing', 'Spectral Rolloff', 'Duration (s)'],
           datasets: [{
             label: 'Average Values',
             data: chartData.audio_features,
