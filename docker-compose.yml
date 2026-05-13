@@ -14,7 +14,8 @@ services:
           cpus: '0.5'
           memory: 1G
     depends_on:
-      - web
+      web:
+        condition: service_healthy
 
   web:
     image: &image ihdc
@@ -31,6 +32,12 @@ services:
           memory: 1G
     restart: always
     command: [ "uvicorn", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--log-level", "info", "--timeout-keep-alive", "300", "datacollection.asgi:application" ]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health/')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./static:/code/static

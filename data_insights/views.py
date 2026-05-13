@@ -21,7 +21,7 @@ from .serializers import (
     ChatSessionListSerializer,
 )
 
-from .models import ChatSession, ChatMessage
+from .models import ChatSession, ChatMessage, Dashboard
 from rest_framework.decorators import action
 import time
 import json
@@ -38,10 +38,17 @@ from psycopg_pool import ConnectionPool
 from langgraph.checkpoint.postgres import PostgresSaver
 from loguru import logger
 from typing import Any, Dict, cast, List, Optional
+import threading
 from django.conf import settings
 
 from data_insights.workflows.agent_workflow import create_data_insights_agent
-from data_insights.workflows.tools import get_tool_by_name, allowed_tables
+from data_insights.workflows.chart_builder import auto_detect_axes, select_chart_type
+from data_insights.workflows.clarification_gate import get_pending_clarification
+from data_insights.workflows.tools import (
+    get_tool_by_name,
+    allowed_tables,
+    _current_user_id,
+)
 from data_insights.workflows.sql_agent import SQLDatabaseWrapper, TextToSQLAgent
 from sqlalchemy import create_engine
 from data_insights.workflows.prompt import SYSTEM_TEMPLATE
@@ -62,7 +69,35 @@ DB_URI = (
     f"{DB_CONFIG.get('NAME', 'iheardatadb')}"
 )
 
+_pg_pool: Optional[ConnectionPool] = None
+_checkpointer: Optional[PostgresSaver] = None
+_checkpointer_lock = threading.Lock()
 
+
+def _get_checkpointer() -> PostgresSaver:
+    global _pg_pool, _checkpointer
+    if _checkpointer is None:
+        with _checkpointer_lock:
+            if _checkpointer is None:
+                pool = ConnectionPool(
+                    conninfo=DB_URI,
+                    max_size=DB_CONFIG.get("MAX_CONNECTIONS", 20),
+                    kwargs={"autocommit": True, "prepare_threshold": 0},
+                )
+                saver = PostgresSaver(pool)
+                saver.setup()
+                _pg_pool = pool
+                _checkpointer = saver
+    return _checkpointer
+
+
+# Compiled LangGraph workflows are immutable once built and safe to share across
+# requests. We cache them per mode to avoid rebuilding the state machine on every
+# message. The actual conversation state lives in PostgresSaver, keyed by
+# thread_id = session_id, so there is no cross-user state leakage.
+# Tools are also cached per mode since they are stateless.
+_compiled_graphs: dict = {}
+_cached_tools: dict = {}
 
 
 def unified_chat(request):
@@ -162,9 +197,356 @@ class ChatSessionView(ModelViewSet):
             {"message": "Session archived successfully"}, status=status.HTTP_200_OK
         )
 
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="messages/(?P<message_id>[^/.]+)/clarify",
+    )
+    def clarify_message(self, request, pk=None, message_id=None):
+        """Handle a clarification response and resume the agent graph."""
+        session = self.get_object()
+        message = ChatMessage.objects.filter(session=session, id=message_id).first()
+        if not message:
+            return Response(
+                {"error": "Message not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        answer = request.data.get("answer", "")
+        is_custom = request.data.get("is_custom", False)
+
+        if not answer:
+            return Response(
+                {"error": "answer is required"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        return self._process_clarification_response(message, session, answer, is_custom)
+
+    def _process_clarification_response(
+        self,
+        message: ChatMessage,
+        session: ChatSession,
+        answer: str,
+        is_custom: bool,
+    ):
+        """Sync entry point.  The inner stream generator stays sync while a thin
+        async adapter wraps it so Django's ASGI handler sees a native async iterator."""
+        try:
+            message.mark_processing()
+            start_time = time.time()
+
+            agent = self._create_ai_agent(False, mode=session.mode)
+            llm_response = ""
+            tool_call = None
+            _current_user_id.set(session.user.id)
+
+            def stream():
+                nonlocal llm_response, tool_call
+                reasoning_sent = False
+                stream_errored = False
+                pending_chart = None
+                pending_artifact = None
+
+                try:
+                    yield self._format_stream_message(
+                        "thinking", {"message": "Thinking..."}
+                    )
+
+                    response_stream = agent.process_clarification_response(
+                        user_id=session.user.id,
+                        session_id=session.id,
+                        clarification_answer=answer,
+                        clarification_is_custom=is_custom,
+                        stream=True,
+                        checkpointer=_get_checkpointer(),
+                    )
+
+                    for part in response_stream:
+                        try:
+                            seq = list(part)
+                            if not seq:
+                                continue
+                            msg = seq[0]
+                            logger.debug(f"Processing message type: {type(msg)}")
+                            if isinstance(msg, BaseMessage):
+                                if isinstance(msg, (ToolMessage, AIMessageChunk)):
+                                    pass
+                                else:
+                                    logger.debug(
+                                        f"Skipping {msg.__class__.__name__} in stream"
+                                    )
+                                    continue
+                        except Exception as stream_e:
+                            logger.warning(f"Error processing stream part: {stream_e}")
+                            continue
+
+                        if isinstance(msg, ToolMessage):
+                            try:
+                                content = msg.content
+                                if hasattr(content, "content"):
+                                    content = str(content.content)
+                                else:
+                                    content = str(content) if content else ""
+                                tool_call = json.loads(content)
+
+                                try:
+                                    yield self._format_stream_message(
+                                        "querying_db",
+                                        {"message": "Tool results received."},
+                                    )
+                                except Exception:
+                                    pass
+
+                                try:
+                                    yield self._format_stream_message(
+                                        "tool_response",
+                                        self._strip_sensitive_fields(tool_call),
+                                    )
+                                except Exception:
+                                    pass
+                            except json.JSONDecodeError:
+                                try:
+                                    content = str(msg.content) if msg.content else ""
+                                except Exception:
+                                    content = "Error parsing tool response"
+                                tool_call = (
+                                    content if "error" not in content.lower() else []
+                                )
+                                try:
+                                    yield self._format_stream_message(
+                                        "tool_response", tool_call
+                                    )
+                                except Exception:
+                                    pass
+
+                        elif isinstance(msg, AIMessageChunk):
+                            if msg.tool_calls:
+                                try:
+                                    tool_names = []
+                                    for tc in msg.tool_calls or []:
+                                        name = (
+                                            tc.get("name")
+                                            if isinstance(tc, dict)
+                                            else None
+                                        )
+                                        if name:
+                                            tool_names.append(name)
+                                    yield self._format_stream_message(
+                                        "querying_db",
+                                        {"tools": tool_names} if tool_names else None,
+                                    )
+                                except Exception:
+                                    pass
+                            elif msg.content:
+                                try:
+                                    content = str(msg.content)
+                                    if not reasoning_sent:
+                                        try:
+                                            yield self._format_stream_message(
+                                                "reasoning",
+                                                {"message": "Summarizing results..."},
+                                            )
+                                            reasoning_sent = True
+                                        except Exception:
+                                            pass
+                                    llm_response += content
+                                    yield self._format_stream_message("llm", content)
+                                except Exception:
+                                    pass
+
+                    # After stream: check confirmation state
+                    try:
+                        checkpointer = _get_checkpointer()
+                        config = {"configurable": {"thread_id": str(session.id)}}
+                        final_snapshot = agent._compiled_graph.get_state(config)
+                        if final_snapshot and final_snapshot.values:
+                            if final_snapshot.values.get("confirmation_needed"):
+                                resolved_value = final_snapshot.values.get(
+                                    "confirmation_resolved_value"
+                                )
+                                yield self._format_stream_message(
+                                    "confirmation",
+                                    {
+                                        "message": f"Interpreting that as {resolved_value} — does that look right?",
+                                        "resolved_value": resolved_value,
+                                        "dimension": final_snapshot.values.get(
+                                            "clarification_dimension"
+                                        ),
+                                    },
+                                )
+                    except Exception:
+                        pass
+
+                except GeneratorExit:
+                    try:
+                        message.status = ChatMessage.MessageStatus.FAILED
+                        message.assistant_response = llm_response or ""
+                        message.tool_called = (
+                            self._sanitize_data(tool_call) if tool_call else None
+                        )
+                        message.save()
+                    except Exception as ge_save_err:
+                        logger.error(
+                            f"Failed to save message on disconnect: {ge_save_err}"
+                        )
+                    return
+
+                except Exception as exc:
+                    import traceback
+
+                    error_str = str(exc) or repr(exc)
+                    if "HumanMessage" in error_str and "JSON serializable" in error_str:
+                        logger.info(
+                            "HumanMessage serialization warning after stream completion"
+                        )
+                    else:
+                        logger.error(
+                            f"Streaming error for message {message.id}: {error_str}"
+                        )
+                        logger.error(f"Full traceback: {traceback.format_exc()}")
+                        stream_errored = True
+
+                # --- Read pending_chart / pending_artifact from final state ---
+                try:
+                    checkpointer = _get_checkpointer()
+                    config = {"configurable": {"thread_id": str(session.id)}}
+                    final_snapshot = agent._compiled_graph.get_state(config)
+                    if final_snapshot and final_snapshot.values:
+                        pending_chart = final_snapshot.values.get("pending_chart")
+                        pending_artifact = final_snapshot.values.get("pending_artifact")
+                except Exception:
+                    pass
+
+                # DB save
+                completion_data = None
+                save_failed = False
+                try:
+                    processing_time = int((time.time() - start_time) * 1000)
+                    should_mark_completed = (
+                        bool(llm_response and llm_response.strip())
+                        and not stream_errored
+                    )
+                    response_to_save = (
+                        llm_response
+                        if should_mark_completed
+                        else "I encountered an issue processing your request. Please try again."
+                    )
+
+                    if pending_chart:
+                        try:
+                            yield self._format_stream_message(
+                                "visualization", pending_chart
+                            )
+                        except Exception:
+                            pass
+
+                    if pending_artifact:
+                        try:
+                            yield self._format_stream_message(
+                                "dashboard", pending_artifact
+                            )
+                        except Exception:
+                            pass
+
+                    message.assistant_response = response_to_save
+                    message.tool_called = (
+                        self._sanitize_data(tool_call) if tool_call else None
+                    )
+                    message.visualization = (
+                        self._sanitize_data(pending_chart) if pending_chart else None
+                    )
+                    message.status = (
+                        ChatMessage.MessageStatus.COMPLETED
+                        if should_mark_completed
+                        else ChatMessage.MessageStatus.FAILED
+                    )
+                    message.save()
+                    logger.info(f"Message {message.id} saved as {message.status}")
+
+                    completion_data = {
+                        "message_id": str(message.id),
+                        "processing_time_ms": processing_time,
+                        "status": message.status,
+                    }
+                    if pending_chart:
+                        try:
+                            safe_viz = self._sanitize_data(pending_chart)
+                            json.dumps(safe_viz)
+                            completion_data["visualization"] = safe_viz
+                        except Exception:
+                            pass
+                    if pending_artifact:
+                        try:
+                            safe_art = self._sanitize_data(pending_artifact)
+                            json.dumps(safe_art)
+                            completion_data["artifact"] = safe_art
+                        except Exception:
+                            pass
+
+                except Exception as save_error:
+                    logger.error(f"Failed to save message {message.id}: {save_error}")
+                    save_failed = True
+                    try:
+                        message.status = ChatMessage.MessageStatus.FAILED
+                        message.assistant_response = "I encountered an error processing your request. Please try again."
+                        message.save()
+                    except Exception:
+                        logger.error(f"Failed to mark message {message.id} as failed")
+
+                if stream_errored or save_failed:
+                    yield json.dumps(
+                        {
+                            "action": "error",
+                            "data": {"message": "Failed to process message"},
+                        }
+                    ).encode("utf-8") + b"\n"
+                    return
+
+                yield self._format_stream_message("completed", completion_data)
+
+            def _safe_stream(gen):
+                try:
+                    for chunk in gen:
+                        if chunk:
+                            yield chunk
+                except GeneratorExit:
+                    return
+                except Exception as stream_exc:
+                    logger.error(f"Unhandled streaming error: {stream_exc}")
+                    yield json.dumps(
+                        {
+                            "action": "error",
+                            "data": {
+                                "message": "Stream encountered an unexpected error"
+                            },
+                        }
+                    ).encode("utf-8") + b"\n"
+
+            response = StreamingHttpResponse(
+                _safe_stream(stream()),
+                content_type="application/json; charset=utf-8",
+            )
+            response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response["Pragma"] = "no-cache"
+            response["Expires"] = "0"
+            response["X-Accel-Buffering"] = "no"
+            return response
+
+        except Exception as e:
+            logger.error(
+                f"Failed to process clarification for message {message.id}: {e}"
+            )
+            return Response(
+                {"error": "Failed to process clarification", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
     def _process_message_sync(
         self, message: ChatMessage, session: ChatSession, ai_answer: bool = False
     ):
+        """Returns a StreamingHttpResponse backed by an async iterator.  The inner
+        stream generator stays sync (avoiding sync_to_async bridges for every
+        ORM call) while Django's ASGI handler sees a native async iterator and
+        iterates it without the per-chunk ``sync_to_async`` penalty."""
         try:
             message.mark_processing()
             start_time = time.time()
@@ -174,37 +556,28 @@ class ChatSessionView(ModelViewSet):
             llm_response = ""
             tool_call = None
 
-            pool = ConnectionPool(
-                conninfo=DB_URI,
-                max_size=DB_CONFIG.get("MAX_CONNECTIONS", 20),
-                kwargs={
-                    "autocommit": True,
-                    "prepare_threshold": 0,
-                },
-            )
-
-            checkpointer = PostgresSaver(pool)  # type: ignore
-            checkpointer.setup()
+            _current_user_id.set(session.user.id)
 
             def stream():
                 nonlocal llm_response, tool_call
-                visualization_data = None
-                last_data_tool_response = None
-                thinking_sent = False
                 reasoning_sent = False
+                stream_errored = False
+                clarification_data = None
+                pending_chart = None
+                pending_artifact = None
 
                 try:
                     yield self._format_stream_message(
                         "thinking", {"message": "Thinking..."}
                     )
-                    thinking_sent = True
 
                     response_stream = agent.process_message(
                         user_input=message.user_input,
                         user_id=session.user.id,
                         session_id=session.id,
                         stream=True,
-                        checkpointer=checkpointer,
+                        checkpointer=_get_checkpointer(),
+                        mode=session.mode,
                     )
 
                     for part in response_stream:
@@ -215,16 +588,12 @@ class ChatSessionView(ModelViewSet):
 
                             msg = seq[0]
 
-                            # Debug logging to see what message types we're getting
                             logger.debug(f"Processing message type: {type(msg)}")
 
-                            # Skip ALL LangChain Message objects except the ones we can handle
                             if isinstance(msg, BaseMessage):
                                 if isinstance(msg, (ToolMessage, AIMessageChunk)):
-                                    # These are the only message types we process
                                     pass
                                 else:
-                                    # Skip all other message types (HumanMessage, AIMessage, etc.)
                                     logger.debug(
                                         f"Skipping {msg.__class__.__name__} in stream"
                                     )
@@ -236,7 +605,6 @@ class ChatSessionView(ModelViewSet):
 
                         if isinstance(msg, ToolMessage):
                             try:
-                                # Safely extract content from ToolMessage
                                 content = msg.content
                                 if hasattr(content, "content"):
                                     content = str(content.content)
@@ -253,112 +621,16 @@ class ChatSessionView(ModelViewSet):
                                 except Exception:
                                     pass
 
-                                if isinstance(tool_call, dict) and tool_call.get(
-                                    "skip_visualization"
-                                ):
-                                    last_data_tool_response = tool_call
-                                    try:
-                                        yield self._format_stream_message(
-                                            "tool_response",
-                                            self._strip_sensitive_fields(tool_call),
-                                        )
-                                    except Exception as tool_e:
-                                        logger.warning(
-                                            f"Error formatting tool response: {tool_e}"
-                                        )
-                                        yield self._format_stream_message(
-                                            "tool_response",
-                                            {"error": "Tool response formatting error"},
-                                        )
-
-                                    table_viz = self._build_table_visualization(
-                                        tool_call, title="Results"
+                                try:
+                                    yield self._format_stream_message(
+                                        "tool_response",
+                                        self._strip_sensitive_fields(tool_call),
                                     )
-                                    if table_viz:
-                                        visualization_data = table_viz
-                                        yield self._format_stream_message(
-                                            "visualization", table_viz
-                                        )
-                                    continue
-
-                                # Check if this is a visualization analysis tool response
-                                if (
-                                    isinstance(tool_call, dict)
-                                    and "recommendation" in tool_call
-                                ):
-                                    if last_data_tool_response is not None:
-                                        visualization_data = tool_call
-                                        visualization_data = self._inject_chart_data(
-                                            visualization_data,
-                                            last_data_tool_response,
-                                            message.user_input,
-                                        )
-                                        try:
-                                            yield self._format_stream_message(
-                                                "visualization", visualization_data
-                                            )
-                                        except Exception as viz_e:
-                                            logger.warning(
-                                                f"Error formatting visualization message: {viz_e}"
-                                            )
-                                            yield self._format_stream_message(
-                                                "visualization",
-                                                {"error": "Visualization formatting error"},
-                                            )
-                                else:
-                                    last_data_tool_response = tool_call
-                                    try:
-                                        yield self._format_stream_message(
-                                            "tool_response",
-                                            self._strip_sensitive_fields(tool_call),
-                                        )
-                                        # Stream a visualization as soon as tool data is available
-                                        if visualization_data is None and isinstance(
-                                            tool_call, (dict, list)
-                                        ):
-                                            try:
-                                                viz_tool = get_tool_by_name(
-                                                    "visualization_analysis"
-                                                )
-                                                if viz_tool is not None:
-                                                    data_summary = (
-                                                        self._summarize_tool_data(
-                                                            tool_call
-                                                        )
-                                                    )
-                                                    if data_summary:
-                                                        auto_viz = viz_tool._run(
-                                                            query=message.user_input,
-                                                            data_summary=data_summary,
-                                                        )
-                                                        auto_viz = self._inject_chart_data(
-                                                            auto_viz,
-                                                            tool_call,
-                                                            message.user_input,
-                                                        )
-                                                        if isinstance(
-                                                            auto_viz, dict
-                                                        ) and auto_viz.get(
-                                                            "recommendation"
-                                                        ):
-                                                            visualization_data = auto_viz
-                                                            yield self._format_stream_message(
-                                                                "visualization", auto_viz
-                                                            )
-                                            except Exception as auto_viz_e:
-                                                logger.warning(
-                                                    f"Streaming visualization failed: {auto_viz_e}"
-                                                )
-                                    except Exception as tool_e:
-                                        logger.warning(
-                                            f"Error formatting tool response: {tool_e}"
-                                        )
-                                        yield self._format_stream_message(
-                                            "tool_response",
-                                            {"error": "Tool response formatting error"},
-                                        )
+                                except Exception as tool_e:
+                                    logger.warning(
+                                        f"Error formatting tool response: {tool_e}"
+                                    )
                             except json.JSONDecodeError:
-                                # Ensure we only store JSON-serializable data
                                 try:
                                     content = str(msg.content) if msg.content else ""
                                 except Exception:
@@ -417,165 +689,200 @@ class ChatSessionView(ModelViewSet):
                                     logger.warning(
                                         f"Error formatting LLM message: {llm_e}"
                                     )
-                                    # Continue without yielding if there's an error
 
-                except Exception as stream_error:
-                    # If there's an error in streaming, log it but continue to save
-                    error_str = str(stream_error)
-                    # If it's a HumanMessage serialization error, don't treat it as a failure.
-                    # This may occur at graph checkpoint serialization after response streaming.
-                    if "HumanMessage" in error_str and "JSON serializable" in error_str:
-                        logger.info(
-                            "HumanMessage serialization warning ignored after stream completion"
-                        )
-                    else:
-                        logger.warning(f"Error in streaming process: {error_str}")
-                        logger.error(f"Genuine streaming error: {error_str}")
-
-                finally:
-                    # Always save the message data, even if streaming failed
+                except GeneratorExit:
                     try:
-                        processing_time = int((time.time() - start_time) * 1000)
-
-                        # Determine if we should mark as completed or failed
-                        should_mark_completed = True
-                        response_to_save = llm_response
-
-                        if not llm_response or llm_response.strip() == "":
-                            # No response was generated
-                            response_to_save = "I encountered an issue processing your request. Please try again."
-                            should_mark_completed = False
-
-                        # If no visualization was produced by tools, auto-recommend one
-                        try:
-                            if not visualization_data:
-                                viz_tool = get_tool_by_name("visualization_analysis")
-                                if viz_tool is not None:
-                                    data_summary = self._summarize_tool_data(
-                                        tool_call
-                                    )
-                                    if not data_summary:
-                                        auto_viz = None
-                                    else:
-                                        auto_viz = viz_tool._run(
-                                            query=message.user_input,
-                                            data_summary=data_summary,
-                                        )
-                                    # Only attach if it looks valid
-                                    if isinstance(auto_viz, dict) and auto_viz.get(
-                                        "recommendation"
-                                    ):
-                                        visualization_data = self._inject_chart_data(
-                                            auto_viz,
-                                            tool_call,
-                                            message.user_input,
-                                        )
-                        except Exception as auto_viz_e:
-                            logger.warning(
-                                f"Auto visualization recommendation failed: {auto_viz_e}"
-                            )
-
-                        message.assistant_response = response_to_save
-
-                        # Sanitize data before storing in database
+                        message.status = ChatMessage.MessageStatus.FAILED
+                        message.assistant_response = llm_response or ""
                         message.tool_called = (
                             self._sanitize_data(tool_call) if tool_call else None
                         )
-                        message.visulization = (
-                            self._sanitize_data(visualization_data)
-                            if visualization_data
-                            else None
-                        )
-
-                        # Mark as completed if we have a response, even if there were serialization issues
-                        message.status = (
-                            ChatMessage.MessageStatus.COMPLETED
-                            if should_mark_completed
-                            else ChatMessage.MessageStatus.FAILED
-                        )
                         message.save()
+                    except Exception as ge_save_err:
+                        logger.error(
+                            f"Failed to save message {message.id} on disconnect: {ge_save_err}"
+                        )
+                    return
 
+                except Exception as exc:
+                    import traceback
+
+                    error_str = str(exc) or repr(exc)
+                    if "HumanMessage" in error_str and "JSON serializable" in error_str:
                         logger.info(
-                            f"Message {message.id} saved as {message.status} with response length: {len(message.assistant_response)}"
+                            "HumanMessage serialization warning after stream completion"
+                        )
+                    else:
+                        logger.error(
+                            f"Streaming error for message {message.id}: {error_str}"
+                        )
+                        logger.error(f"Full traceback: {traceback.format_exc()}")
+                        stream_errored = True
+
+                # --- Read pending_chart / pending_artifact / clarification from final state ---
+                try:
+                    checkpointer = _get_checkpointer()
+                    config = {"configurable": {"thread_id": str(session.id)}}
+                    final_snapshot = agent._compiled_graph.get_state(config)
+                    if final_snapshot and final_snapshot.values:
+                        pending_chart = final_snapshot.values.get("pending_chart")
+                        pending_artifact = final_snapshot.values.get("pending_artifact")
+                        clarification_data = final_snapshot.values.get(
+                            "pending_clarification_payload"
+                        )
+                except Exception:
+                    pass
+
+                completion_data = None
+                save_failed = False
+                try:
+                    processing_time = int((time.time() - start_time) * 1000)
+
+                    if clarification_data:
+                        message.assistant_response = llm_response or ""
+                        message.status = ChatMessage.MessageStatus.CLARIFICATION_PENDING
+                        message.save()
+                        logger.info(
+                            f"Message {message.id} saved as clarification_pending"
                         )
 
-                        # Send completion message with maximum safety
                         try:
-                            # Create a completely safe completion message
-                            completion_data = {
+                            yield self._format_stream_message(
+                                "clarification",
+                                {
+                                    "question": clarification_data["question"],
+                                    "options": clarification_data["options"],
+                                    "allow_custom": True,
+                                    "custom_placeholder": "e.g. type your answer...",
+                                    "dimension": clarification_data["dimension"],
+                                },
+                            )
+                        except Exception as clar_yield_err:
+                            logger.warning(
+                                f"Error yielding clarification chunk: {clar_yield_err}"
+                            )
+
+                        yield self._format_stream_message(
+                            "completed",
+                            {
                                 "message_id": str(message.id),
                                 "processing_time_ms": processing_time,
-                                "status": message.status,
-                            }
-
-                            # Only add visualization if it exists and is safe
-                            if visualization_data:
-                                try:
-                                    safe_viz_data = self._sanitize_data(
-                                        visualization_data
-                                    )
-                                    # Test serialization before adding
-                                    json.dumps(safe_viz_data)
-                                    completion_data["visualization"] = safe_viz_data
-                                except Exception as viz_test_e:
-                                    logger.warning(
-                                        f"Visualization data not serializable, skipping: {viz_test_e}"
-                                    )
-
-                            yield self._format_stream_message(
-                                "completed", completion_data
-                            )
-
-                        except Exception as comp_e:
-                            logger.warning(
-                                f"Error formatting completion message: {comp_e}"
-                            )
-                            # Ultra-safe fallback - direct JSON
-                            try:
-                                safe_completion = {
-                                    "action": "completed",
-                                    "data": {
-                                        "message_id": str(message.id),
-                                        "status": "completed",
-                                    },
-                                }
-                                yield json.dumps(safe_completion).encode(
-                                    "utf-8"
-                                ) + b"\n"
-                            except Exception:
-                                # Absolute final fallback
-                                yield b'{"action": "completed", "data": {"status": "completed"}}\n'
-
-                    except Exception as save_error:
-                        # If saving fails, mark as failed
-                        logger.error(
-                            f"Failed to save message {message.id}: {save_error}"
+                                "status": "clarification_pending",
+                            },
                         )
+                        return
+
+                    should_mark_completed = (
+                        bool(llm_response and llm_response.strip())
+                        and not stream_errored
+                    )
+                    response_to_save = (
+                        llm_response
+                        if should_mark_completed
+                        else "I encountered an issue processing your request. Please try again."
+                    )
+
+                    if pending_chart:
                         try:
-                            message.status = ChatMessage.MessageStatus.FAILED
-                            message.assistant_response = "I encountered an error processing your request. Please try again."
-                            message.save()
-                            yield json.dumps(
-                                {
-                                    "action": "error",
-                                    "data": {"message": "Failed to process message"},
-                                }
-                            ).encode("utf-8") + b"\n"
-                        except Exception:
-                            logger.error(
-                                f"Failed to mark message {message.id} as failed"
+                            yield self._format_stream_message(
+                                "visualization", pending_chart
                             )
+                        except Exception:
+                            pass
+
+                    if pending_artifact:
+                        try:
+                            yield self._format_stream_message(
+                                "dashboard", pending_artifact
+                            )
+                        except Exception:
+                            pass
+
+                    message.assistant_response = response_to_save
+                    message.tool_called = (
+                        self._sanitize_data(tool_call) if tool_call else None
+                    )
+                    message.visualization = (
+                        self._sanitize_data(pending_chart) if pending_chart else None
+                    )
+                    message.status = (
+                        ChatMessage.MessageStatus.COMPLETED
+                        if should_mark_completed
+                        else ChatMessage.MessageStatus.FAILED
+                    )
+                    message.save()
+                    logger.info(f"Message {message.id} saved as {message.status}")
+
+                    completion_data = {
+                        "message_id": str(message.id),
+                        "processing_time_ms": processing_time,
+                        "status": message.status,
+                    }
+                    if pending_chart:
+                        try:
+                            safe_viz = self._sanitize_data(pending_chart)
+                            json.dumps(safe_viz)
+                            completion_data["visualization"] = safe_viz
+                        except Exception:
+                            pass
+                    if pending_artifact:
+                        try:
+                            safe_art = self._sanitize_data(pending_artifact)
+                            json.dumps(safe_art)
+                            completion_data["artifact"] = safe_art
+                        except Exception:
+                            pass
+
+                except Exception as save_error:
+                    logger.error(f"Failed to save message {message.id}: {save_error}")
+                    save_failed = True
+                    try:
+                        message.status = ChatMessage.MessageStatus.FAILED
+                        message.assistant_response = "I encountered an error processing your request. Please try again."
+                        message.save()
+                    except Exception:
+                        logger.error(f"Failed to mark message {message.id} as failed")
+
+                if stream_errored or save_failed:
+                    yield json.dumps(
+                        {
+                            "action": "error",
+                            "data": {"message": "Failed to process message"},
+                        }
+                    ).encode("utf-8") + b"\n"
+                    return
+
+                yield self._format_stream_message("completed", completion_data)
+
+            def _safe_stream(gen):
+                """Wrap the generator so that unexpected exceptions don't crash
+                Django's StreamingHttpResponse.  A terminal error event is yielded
+                and the generator exits cleanly."""
+                try:
+                    for chunk in gen:
+                        if chunk:
+                            yield chunk
+                except GeneratorExit:
+                    return
+                except Exception as stream_exc:
+                    logger.error(f"Unhandled streaming error: {stream_exc}")
+                    yield json.dumps(
+                        {
+                            "action": "error",
+                            "data": {
+                                "message": "Stream encountered an unexpected error"
+                            },
+                        }
+                    ).encode("utf-8") + b"\n"
 
             response = StreamingHttpResponse(
-                stream(),
+                _safe_stream(stream()),
                 content_type="application/json; charset=utf-8",
             )
             response["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response["Pragma"] = "no-cache"
             response["Expires"] = "0"
-            response["X-Accel-Buffering"] = (
-                "no"  # Disable Nginx buffering for streaming
-            )
+            response["X-Accel-Buffering"] = "no"
             return response
 
         except Exception as e:
@@ -596,7 +903,9 @@ class ChatSessionView(ModelViewSet):
         session = self.get_object()
         message = ChatMessage.objects.filter(session=session, id=message_id).first()
         if not message:
-            return Response({"error": "Message not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "Message not found"}, status=status.HTTP_404_NOT_FOUND
+            )
 
         tool_data = message.tool_called or {}
         pagination_meta = (
@@ -675,7 +984,10 @@ class ChatSessionView(ModelViewSet):
                 "title": "Recent Datasets",
             }
 
-        if analysis_type in {"dataset_search_results", "dataset_search_sample"} or query_kind == "dataset_search":
+        if (
+            analysis_type in {"dataset_search_results", "dataset_search_sample"}
+            or query_kind == "dataset_search"
+        ):
             qs = NoiseDataset.objects.select_related(
                 "region",
                 "community",
@@ -710,7 +1022,9 @@ class ChatSessionView(ModelViewSet):
                         "id": dataset.id,
                         "name": dataset.name,
                         "region": dataset.region.name if dataset.region else None,
-                        "community": dataset.community.name if dataset.community else None,
+                        "community": (
+                            dataset.community.name if dataset.community else None
+                        ),
                         "category": dataset.category.name if dataset.category else None,
                         "recording_date": dataset.recording_date,
                         "recording_device": dataset.recording_device,
@@ -773,11 +1087,130 @@ class ChatSessionView(ModelViewSet):
 
         return None
 
-    def _create_ai_agent(self, ai_answer: bool = False, mode: str = "analysis"):
-        llm = ChatOpenAI(
-            model=AGENT_CONFIG.get("MODEL", "o4-mini"),
-            api_key=os.getenv("OPENAI_API_KEY"),
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="messages/(?P<message_id>[^/.]+)/save-dashboard",
+    )
+    def save_dashboard(self, request, pk=None, message_id=None):
+        """Save a message's visualization artifact as a named dashboard."""
+        from uuid import uuid4
+        from django.utils.text import slugify
+
+        session = self.get_object()
+        message = ChatMessage.objects.filter(session=session, id=message_id).first()
+        if not message:
+            return Response(
+                {"error": "Message not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        viz = message.visualization
+        if not viz or not isinstance(viz, dict):
+            return Response(
+                {"error": "No visualization to save"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        title = request.data.get("title", "").strip()
+        if not title:
+            title = f"Dashboard - {timezone.now().strftime('%Y-%m-%d %H:%M')}"
+
+        thumbnail = request.data.get("thumbnail", None)
+
+        # If old single-chart format, wrap into artifact format
+        artifact = viz
+        if "widgets" not in artifact:
+            from .workflows.widget_composer import wrap_as_artifact
+
+            wrapped = wrap_as_artifact(artifact)
+            if wrapped:
+                artifact = wrapped
+
+        dashboard = Dashboard.objects.create(
+            user=request.user,
+            session=session,
+            message=message,
+            title=title,
+            slug=slugify(title)[:200] + "-" + str(uuid4())[:8],
+            artifact_spec=artifact,
+            thumbnail=thumbnail,
         )
+
+        return Response(
+            {
+                "id": str(dashboard.id),
+                "title": dashboard.title,
+                "slug": dashboard.slug,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="messages/(?P<message_id>[^/.]+)/insight",
+    )
+    def generate_insight(self, request, pk=None, message_id=None):
+        """Generate a short natural-language insight about the data in a message."""
+        session = self.get_object()
+        message = ChatMessage.objects.filter(session=session, id=message_id).first()
+        if not message:
+            return Response(
+                {"error": "Message not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        query = request.data.get("query", message.user_input or "")
+        summary = request.data.get("summary", "")
+
+        if not summary:
+            # Build a lightweight summary from the stored visualization
+            viz = message.visualization
+            if viz and isinstance(viz, dict):
+                if "widgets" in viz:
+                    parts = [
+                        f"{w.get('title', '')}: {w.get('type', '')}"
+                        for w in viz["widgets"]
+                    ]
+                    summary = "; ".join(parts)
+                elif viz.get("visualization_name"):
+                    summary = f"{viz.get('visualization_name')}: {viz.get('visualization_type', '')}"
+            if not summary:
+                summary = "Data results"
+
+        try:
+            from langchain_openai import ChatOpenAI
+
+            llm = ChatOpenAI(
+                model=AGENT_CONFIG.get("MODEL", "gpt-4o-mini"),
+                api_key=os.getenv("OPENAI_API_KEY"),
+                max_tokens=200,
+                temperature=0.7,
+                streaming=True,
+            )
+            prompt = (
+                "You are a data analyst. The user asked a question and we ran a query.\n"
+                f"User question: {query}\n"
+                f"What the data shows: {summary}\n\n"
+                "Give exactly 2 short, sharp observations about this data. "
+                "Flag anything surprising or worth investigating. "
+                "Use plain language. No bullet points, no markdown. "
+                "Keep each observation to one sentence. Separate with a blank line."
+            )
+            response = llm.invoke(prompt)
+            insight_text = (
+                str(response.content).strip() if hasattr(response, "content") else ""
+            )
+        except Exception as e:
+            logger.warning(f"Insight generation failed: {e}")
+            return Response(
+                {"error": "Could not generate insight"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return Response({"insight": insight_text}, status=status.HTTP_200_OK)
+
+    def _create_ai_agent(self, ai_answer: bool = False, mode: str = "analysis"):
+        from data_insights.workflows.tools import get_agent_tools
 
         system_prompt = SYSTEM_TEMPLATE
         try:
@@ -788,17 +1221,36 @@ class ChatSessionView(ModelViewSet):
         except Exception:
             pass
 
-        from data_insights.workflows.tools import get_agent_tools
+        # Tools are unified — all modes get all tools. Mode only controls
+        # the system prompt and dashboard finalizer. Tools cached once globally.
+        if "all" not in _cached_tools:
+            _cached_tools["all"] = get_agent_tools()
 
-        tools = get_agent_tools(mode=mode)
-
+        llm = ChatOpenAI(
+            model=AGENT_CONFIG.get("MODEL", "o4-mini"),
+            api_key=os.getenv("OPENAI_API_KEY"),
+            streaming=True,
+        )
+        # Dashboard summary LLM — non-streaming, same model, used for one
+        # structured-output call in finalize_dashboard after the agent loop.
+        dashboard_llm = ChatOpenAI(
+            model=AGENT_CONFIG.get("MODEL", "o4-mini"),
+            api_key=os.getenv("OPENAI_API_KEY"),
+            streaming=False,
+        )
         agent = create_data_insights_agent(
             llm=llm,
             system_prompt=system_prompt,
-            tools=tools,
+            tools=_cached_tools["all"],
             max_retries=AGENT_CONFIG.get("MAX_RETRIES", 3),
             enable_caching=AGENT_CONFIG.get("ENABLE_CACHING", True),
+            dashboard_llm=dashboard_llm,
         )
+
+        if "__all__" in _compiled_graphs:
+            agent.reuse_compiled_graph(_compiled_graphs["__all__"], _get_checkpointer())
+        else:
+            _compiled_graphs["__all__"] = agent.compile_workflow(_get_checkpointer())
 
         return agent
 
@@ -871,48 +1323,99 @@ class ChatSessionView(ModelViewSet):
                     return None
                 if tool_data.get("analysis_type"):
                     return f"tool:{tool_data.get('analysis_type')}"
-                if tool_data.get("total_count") is not None and not tool_data.get(
-                    "rows"
-                ) and not tool_data.get("datasets"):
+                # Try to extract rows via the shared helper to get an accurate summary
+                rows, cols = self._extract_rows(tool_data)
+                if rows:
+                    return f"rows:{len(rows)} cols:{cols}"
+                if tool_data.get("total_count") is not None:
                     return f"total_count:{tool_data.get('total_count')}"
-                if tool_data.get("rows"):
-                    cols = (
-                        list(tool_data.get("columns", []))
-                        or list(tool_data.get("rows")[0].keys())
-                        if tool_data.get("rows")
-                        else []
-                    )
-                    return f"rows:{len(tool_data.get('rows', []))} cols:{cols}"
-                if (
-                    tool_data.get("message")
-                    and tool_data.get("total_count") is None
-                    and not tool_data.get("datasets")
-                ):
+                if tool_data.get("message") and tool_data.get("total_count") is None:
                     return None
                 return "tool:dict"
             if isinstance(tool_data, list):
-                cols = list(tool_data[0].keys()) if tool_data else []
-                return f"rows:{len(tool_data)} cols:{cols}"
+                rows, cols = self._extract_rows(tool_data)
+                return f"rows:{len(rows)} cols:{cols}" if rows else None
             return None
         except Exception:
             return None
+
+    def _extract_rows(self, tool_data: Any) -> tuple:
+        """Return (rows, columns) from any tool output shape.
+
+        Handles all known key conventions so callers don't need to repeat
+        the same if/elif ladder.  Datetime values are stringified; nested
+        lists/dicts are dropped so every row contains only scalars.
+        """
+        import datetime
+
+        def _scalar(v: Any) -> Any:
+            if isinstance(v, (datetime.date, datetime.datetime)):
+                return v.isoformat()
+            if isinstance(v, (list, dict)):
+                return None  # drop non-scalar cells
+            return v
+
+        def _clean(row: Dict[str, Any]) -> Dict[str, Any]:
+            return {k: _scalar(v) for k, v in row.items()}
+
+        rows: List[Dict[str, Any]] = []
+
+        if isinstance(tool_data, list):
+            rows = [_clean(r) for r in tool_data if isinstance(r, dict)]
+        elif isinstance(tool_data, dict):
+            # Ordered preference: try list-valued keys first
+            for key in (
+                "rows",
+                "datasets",
+                "audio_features",
+                "sample_data",
+                "results",
+                "monthly_trends",
+                "daily_trends",
+                "regional_breakdown",
+                "category_breakdown",
+            ):
+                val = tool_data.get(key)
+                if isinstance(val, list) and val:
+                    rows = [_clean(r) for r in val if isinstance(r, dict)]
+                    if rows:
+                        break
+
+            # distribution_data: {group_name: {count, avg, max, min, decibel_values}}
+            if not rows and isinstance(tool_data.get("distribution_data"), dict):
+                group_key = "region" if "regions" in tool_data else "category"
+                for name, stats in tool_data["distribution_data"].items():
+                    if isinstance(stats, dict):
+                        rows.append(
+                            {
+                                group_key: name,
+                                "count": stats.get("count"),
+                                "avg_db": stats.get("avg"),
+                                "max_db": stats.get("max"),
+                                "min_db": stats.get("min"),
+                            }
+                        )
+
+            # overview_statistics: single aggregate dict → one-row table
+            if not rows and isinstance(tool_data.get("overview_statistics"), dict):
+                rows = [_clean(tool_data["overview_statistics"])]
+
+        # Remove columns whose every value is None (keeps table tidy)
+        if rows:
+            all_keys = list(rows[0].keys())
+            non_empty = [k for k in all_keys if any(r.get(k) is not None for r in rows)]
+            columns = non_empty or all_keys
+            rows = [{k: r.get(k) for k in columns} for r in rows]
+        else:
+            columns = []
+
+        return rows, columns
 
     def _build_table_visualization(
         self, tool_data: Any, title: str = "Results"
     ) -> Optional[Dict[str, Any]]:
         try:
-            rows: List[Dict[str, Any]] = []
-            columns: List[str] = []
-
-            if isinstance(tool_data, dict) and isinstance(tool_data.get("rows"), list):
-                rows = [r for r in tool_data.get("rows", []) if isinstance(r, dict)]
-                columns = list(tool_data.get("columns") or (rows[0].keys() if rows else []))
-            elif isinstance(tool_data, dict) and isinstance(tool_data.get("datasets"), list):
-                rows = [r for r in tool_data.get("datasets", []) if isinstance(r, dict)]
-                columns = list(rows[0].keys()) if rows else []
-            elif isinstance(tool_data, list):
-                rows = [r for r in tool_data if isinstance(r, dict)]
-                columns = list(rows[0].keys()) if rows else []
+            rows, columns = self._extract_rows(tool_data)
 
             if not rows or not columns:
                 return None
@@ -930,7 +1433,8 @@ class ChatSessionView(ModelViewSet):
                     "offset": tool_data.get("offset"),
                     "has_more": tool_data.get("has_more"),
                     "total_count": tool_data.get("total_count"),
-                    "query_kind": tool_data.get("analysis_type") or tool_data.get("query_kind"),
+                    "query_kind": tool_data.get("analysis_type")
+                    or tool_data.get("query_kind"),
                 }
 
             return {
@@ -951,154 +1455,174 @@ class ChatSessionView(ModelViewSet):
         except Exception:
             return None
 
+    # ---- Column detection helpers (shared by _inject_chart_data and viz tools) ----
+
+    @staticmethod
+    def _detect_numeric_columns(
+        rows: List[Dict[str, Any]], columns: List[str]
+    ) -> List[str]:
+        """Return columns whose values are all numeric (int, float, or parseable strings)."""
+        numeric: List[str] = []
+        for col in columns:
+            if all(
+                v is None
+                or isinstance(v, (int, float))
+                or (
+                    isinstance(v, str) and v.replace(".", "").replace("-", "").isdigit()
+                )
+                for r in rows
+                if (v := r.get(col)) is not None
+            ):
+                numeric.append(col)
+        return numeric
+
+    @staticmethod
+    def _detect_time_columns(columns: List[str]) -> bool:
+        """True if any column name suggests a date/time dimension."""
+        date_keywords = ("date", "time", "month", "year", "day")
+        return any(any(k in c.lower() for k in date_keywords) for c in columns)
+
+    @staticmethod
+    def _pick_best_column(columns: List[str], preferred: List[str]) -> str:
+        """Return the first column whose name contains a preferred keyword, or the
+        first column in the list as fallback."""
+        if not columns:
+            return ""
+        for pref in preferred:
+            for col in columns:
+                if pref in col.lower():
+                    return col
+        return columns[0]
+
+    # ------------------------------------------------------------------
+
     def _inject_chart_data(
         self,
         visualization_data: Optional[Dict[str, Any]],
         tool_data: Any,
         question: str,
     ) -> Optional[Dict[str, Any]]:
+        """Populate frontend chart payload (labels, data, chart type) from tool output.
+
+        The method uses _extract_rows to normalise any tool output shape, then picks
+        the best label and numeric columns, computes labels/data arrays, and selects
+        a chart type.  It does NOT depend on hard-coded column names from specific
+        tools — it works on any row-shaped dict."""
         if not visualization_data or not tool_data:
             return visualization_data
 
-        def _is_number(value: Any) -> bool:
-            if isinstance(value, (int, float)):
-                return True
-            if isinstance(value, str):
-                try:
-                    float(value)
-                    return True
-                except Exception:
-                    return False
-            return False
-
-        def _to_number(value: Any) -> Optional[float]:
-            if value is None:
-                return None
-            if isinstance(value, (int, float)):
-                return float(value)
-            if isinstance(value, str):
-                try:
-                    return float(value.replace(",", ""))
-                except Exception:
-                    return None
-            return None
-
-        rows: List[Dict[str, Any]] = []
-        columns: List[str] = []
-
-        if isinstance(tool_data, dict) and isinstance(tool_data.get("rows"), list):
-            rows = [r for r in tool_data.get("rows", []) if isinstance(r, dict)]
-            columns = list(tool_data.get("columns") or (rows[0].keys() if rows else []))
-        elif isinstance(tool_data, list):
-            rows = [r for r in tool_data if isinstance(r, dict)]
-            columns = list(rows[0].keys()) if rows else []
-        elif isinstance(tool_data, dict) and isinstance(
-            tool_data.get("datasets"), list
-        ):
-            rows = [r for r in tool_data.get("datasets", []) if isinstance(r, dict)]
-            columns = list(rows[0].keys()) if rows else []
-
+        rows, columns = self._extract_rows(tool_data)
         if not rows or not columns:
             return visualization_data
 
-        numeric_keys: List[str] = []
-        for key in columns:
-            values = [r.get(key) for r in rows]
-            if any(isinstance(v, (int, float)) for v in values) or all(
-                v is None or _is_number(v) for v in values
-            ):
-                numeric_keys.append(key)
+        numeric_keys = self._detect_numeric_columns(rows, columns)
 
-        if not numeric_keys:
+        # Read chart_hint from the tool that produced the data.
+        # chart_hint is authoritative — the tool knows its own output shape.
+        hint = tool_data.get("chart_hint") if isinstance(tool_data, dict) else None
+        hint = hint or {}
+
+        label_key = hint.get("x")
+        value_key = hint.get("y")
+
+        # Fallback: use auto_detect_axes (temporal-first priority) when chart_hint
+        # is missing or incomplete. This fixes the recording_device bug because
+        # recording_date is temporal and gets priority over categorical columns.
+        if not label_key or not value_key:
+            detected = auto_detect_axes(rows, columns)
+            if not label_key:
+                label_key = detected.get("x")
+            if not value_key:
+                value_key = detected.get("y")
+
+        # Last-resort fallback: keyword-based scanning (original behavior,
+        # with recording_date added to the label preference list).
+        if not value_key:
+            value_key = self._pick_best_column(
+                numeric_keys,
+                [
+                    "mean_db",
+                    "max_db",
+                    "min_db",
+                    "avg",
+                    "average",
+                    "count",
+                    "total",
+                    "value",
+                    "level",
+                    "decibel",
+                ],
+            )
+        if not label_key:
+            label_keys = [c for c in columns if c not in numeric_keys]
+            label_key = self._pick_best_column(
+                label_keys or columns,
+                [
+                    "recording_date",
+                    "date",
+                    "name",
+                    "dataset",
+                    "region",
+                    "community",
+                    "category",
+                    "class",
+                    "subclass",
+                ],
+            )
+
+        if not label_key or not value_key:
             return visualization_data
 
-        preferred_numeric = [
-            "mean_db",
-            "max_db",
-            "min_db",
-            "avg",
-            "average",
-            "count",
-            "total",
-            "value",
-            "level",
-            "decibel",
-        ]
-        value_key = numeric_keys[0]
-        for pref in preferred_numeric:
-            for key in numeric_keys:
-                if pref in key.lower():
-                    value_key = key
-                    break
-            if value_key != numeric_keys[0]:
-                break
-
-        label_keys = [k for k in columns if k not in numeric_keys]
-        preferred_labels = [
-            "name",
-            "dataset",
-            "noise_id",
-            "region",
-            "community",
-            "category",
-            "class",
-            "subclass",
-            "recording_device",
-            "device",
-        ]
-        label_key = label_keys[0] if label_keys else columns[0]
-        for pref in preferred_labels:
-            for key in label_keys:
-                if pref in key.lower():
-                    label_key = key
-                    break
-            if label_key != (label_keys[0] if label_keys else columns[0]):
-                break
-
+        # Build chart payload
         max_rows = 12
         rows = rows[:max_rows]
-
         labels = [
             str(r.get(label_key) or f"Row {idx + 1}") for idx, r in enumerate(rows)
         ]
-        data = [(_to_number(r.get(value_key)) or 0) for r in rows]
+        data = [
+            (
+                float(r.get(value_key))
+                if isinstance(r.get(value_key), (int, float))
+                else float(str(r.get(value_key) or "0").replace(",", ""))
+            )
+            for r in rows
+        ]
 
         frontend_data = visualization_data.get("frontend_data") or {}
-        frontend_data["labels"] = labels
-        frontend_data["data"] = data
-        frontend_data["colors"] = frontend_data.get("colors")
+        frontend_data.update({"labels": labels, "data": data})
+        frontend_data.setdefault("colors", frontend_data.get("colors"))
+
+        # Title
         if not frontend_data.get("title"):
-            if any(word in question.lower() for word in ["highest", "top", "max"]):
+            q = question.lower()
+            if any(w in q for w in ("highest", "top", "max")):
                 frontend_data["title"] = "Top Results"
-            elif any(word in question.lower() for word in ["lowest", "min", "bottom"]):
+            elif any(w in q for w in ("lowest", "min", "bottom")):
                 frontend_data["title"] = "Lowest Results"
             else:
                 frontend_data["title"] = "Results"
 
+        # Inline table for ranking/extreme-value queries
         if any(
-            word in question.lower()
-            for word in ["highest", "lowest", "top", "bottom", "max", "min"]
+            w in question.lower()
+            for w in ("highest", "lowest", "top", "bottom", "max", "min")
         ):
-            table_columns = columns[:6]
-            table_rows = []
-            for r in rows:
-                table_rows.append({c: r.get(c) for c in table_columns})
+            table_cols = columns[:6]
             frontend_data["table"] = {
-                "columns": table_columns,
-                "rows": table_rows,
-                "title": frontend_data.get("title") or "Results",
+                "columns": table_cols,
+                "rows": [{c: r.get(c) for c in table_cols} for r in rows],
+                "title": frontend_data.get("title", "Results"),
             }
             if len(rows) <= 1:
                 frontend_data["type"] = "none"
 
-        # Choose best chart type based on data shape
-        chart_type = self._choose_chart_type_from_data(
-            question=question,
-            rows=rows,
-            columns=columns,
-            label_key=label_key,
-            value_key=value_key,
-        )
+        # Chart type — delegate to the pure-Python decision tree
+        hint_for_type = {"x": label_key, "y": value_key}
+        if isinstance(tool_data, dict):
+            tool_hint = tool_data.get("chart_hint") or {}
+            if tool_hint.get("type"):
+                hint_for_type["type"] = tool_hint["type"]
+        chart_type = select_chart_type(rows, columns, hint_for_type)
         if chart_type and frontend_data.get("type") != "none":
             visualization_data["visualization_type"] = chart_type
             if visualization_data.get("recommendation"):
@@ -1107,63 +1631,6 @@ class ChatSessionView(ModelViewSet):
 
         visualization_data["frontend_data"] = frontend_data
         return visualization_data
-
-    def _choose_chart_type_from_data(
-        self,
-        question: str,
-        rows: List[Dict[str, Any]],
-        columns: List[str],
-        label_key: str,
-        value_key: str,
-    ) -> Optional[str]:
-        try:
-            q = (question or "").lower()
-            if not rows or not columns:
-                return None
-            if len(rows) <= 1:
-                return None
-
-            # Detect date/time columns
-            date_keywords = ("date", "time", "month", "year", "day")
-            has_time_col = any(
-                any(k in c.lower() for k in date_keywords) for c in columns
-            )
-
-            # Count numeric columns
-            numeric_cols = []
-            for col in columns:
-                values = [r.get(col) for r in rows]
-                if any(isinstance(v, (int, float)) for v in values):
-                    numeric_cols.append(col)
-
-            # Scatter: two numeric columns, no categorical labels
-            if len(numeric_cols) >= 2 and not has_time_col:
-                if "correlation" in q or "relationship" in q or "vs" in q:
-                    return "scatter_plot"
-
-            # Temporal: line chart
-            if has_time_col:
-                return "line_chart"
-
-            # Pie: proportions or percentages
-            if any(
-                word in q
-                for word in [
-                    "percentage",
-                    "proportion",
-                    "share",
-                    "distribution of",
-                    "breakdown of",
-                ]
-            ):
-                total = sum([float(r.get(value_key) or 0) for r in rows]) if rows else 0
-                if total > 0 and len(rows) <= 8:
-                    return "pie_chart"
-
-            # Default comparison or ranking
-            return "bar_chart"
-        except Exception:
-            return None
 
     def _format_stream_message(self, action: str, data: Any) -> bytes:
         if data is None:
@@ -1178,16 +1645,6 @@ class ChatSessionView(ModelViewSet):
                 if action == "visualization":
                     # Keep visualization data as-is after sanitization
                     pass
-                elif "customers" in sanitized_data:
-                    sanitized_data = sanitized_data["customers"]
-                elif "likely_dormant_accounts" in sanitized_data:
-                    sanitized_data = sanitized_data["likely_dormant_accounts"]
-                elif "customer_segmentations" in sanitized_data:
-                    sanitized_data = sanitized_data["customer_segmentations"]
-                elif "dormant_accounts" in sanitized_data:
-                    sanitized_data = sanitized_data["dormant_accounts"]
-                elif "dormant_reactivation_requests" in sanitized_data:
-                    sanitized_data = sanitized_data["dormant_reactivation_requests"]
                 elif "success" in sanitized_data:
                     sanitized_data = [sanitized_data]
 
@@ -1215,12 +1672,12 @@ class ChatSessionView(ModelViewSet):
                 f"Failed to serialize data for action {action} even after sanitization: {e}"
             )
 
-            # Check if this is a HumanMessage error and just skip it
+            # HumanMessage objects should never reach serialization; log and drop the event.
             if "HumanMessage" in str(e):
-                logger.info(
-                    f"Skipping {action} due to HumanMessage serialization issue"
+                logger.info(f"Dropping {action} event: HumanMessage in data")
+                return (
+                    json.dumps({"action": action, "data": None}).encode("utf-8") + b"\n"
                 )
-                return b""  # Return empty bytes to skip this message
 
             try:
                 # Final attempt with string conversion

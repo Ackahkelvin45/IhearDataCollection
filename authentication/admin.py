@@ -85,7 +85,6 @@ class CustomUserAdmin(ModelAdmin, UserAdmin):
                     "last_name",
                     "phone_number",
                     "speaker_id",
-                    "unhashed_password",
                     "user_type",
                     "is_verified",
                 )
@@ -128,14 +127,11 @@ class CustomUserAdmin(ModelAdmin, UserAdmin):
     def save_model(self, request, obj, form, change):
         if not change:  # Only for new users
             temp_password = random_string(12)
-            obj.unhashed_password = temp_password
             obj.set_password(temp_password)
             obj._temp_password = temp_password
         else:
-            # Handle password change for existing users
             if "password" in form.changed_data and form.cleaned_data["password"]:
                 obj.set_password(form.cleaned_data["password"])
-                obj.unhashed_password = form.cleaned_data["password"]
         super().save_model(request, obj, form, change)
 
     def get_urls(self):
@@ -159,9 +155,6 @@ class CustomUserAdmin(ModelAdmin, UserAdmin):
             form = AdminPasswordChangeForm(user, request.POST)
             if form.is_valid():
                 form.save()
-                # Update the unhashed_password field
-                user.unhashed_password = form.cleaned_data["password1"]
-                user.save()
                 from django.contrib import messages
 
                 messages.success(request, "Password changed successfully")

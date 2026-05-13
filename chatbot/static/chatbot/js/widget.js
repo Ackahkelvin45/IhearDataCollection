@@ -8,6 +8,15 @@
     let lastUserMessage = null;
     let onSessionChange = null;
 
+    // Attention effect state
+    let attentionShowTimer = null;
+    let attentionHideTimer = null;
+    let attentionReappearTimer = null;
+    let isAttentionActive = false;
+    const ATTENTION_INITIAL_DELAY = 3000;
+    const ATTENTION_VISIBLE_DURATION = 30000;
+    const ATTENTION_REAPPEAR_DELAY = 120000;
+
     const widget = document.getElementById('chatWidget');
     const toggleBtn = document.getElementById('chatWidgetToggle');
     const minimizeBtn = document.getElementById('chatWidgetMinimize');
@@ -21,6 +30,81 @@
     const chatIcon = toggleBtn ? toggleBtn.querySelector('.chat-icon') : null;
     const closeIcon = toggleBtn ? toggleBtn.querySelector('.close-icon') : null;
     const isHomePage = document.getElementById('homeChatContainer') != null;
+
+    // --- Attention effect helpers ---
+    function showTooltip() {
+        const tooltip = document.getElementById('chatWidgetTooltip');
+        if (tooltip) {
+            tooltip.classList.remove('hiding');
+            tooltip.classList.add('visible');
+        }
+    }
+
+    function hideTooltip() {
+        const tooltip = document.getElementById('chatWidgetTooltip');
+        if (tooltip) {
+            tooltip.classList.remove('visible');
+            tooltip.classList.add('hiding');
+        }
+    }
+
+    function activateRing() {
+        const ring = document.getElementById('chatWidgetRing');
+        if (ring) ring.classList.add('active');
+    }
+
+    function deactivateRing() {
+        const ring = document.getElementById('chatWidgetRing');
+        if (ring) ring.classList.remove('active');
+    }
+
+    function startAttention() {
+        if (isExpanded) return;
+        isAttentionActive = true;
+        showTooltip();
+        activateRing();
+        clearTimeout(attentionHideTimer);
+        attentionHideTimer = setTimeout(function() {
+            stopAttention();
+            scheduleReattention();
+        }, ATTENTION_VISIBLE_DURATION);
+    }
+
+    function stopAttention() {
+        isAttentionActive = false;
+        hideTooltip();
+        deactivateRing();
+        clearTimeout(attentionHideTimer);
+        clearTimeout(attentionReappearTimer);
+    }
+
+    function scheduleAttention() {
+        clearTimeout(attentionShowTimer);
+        if (isExpanded) return;
+        attentionShowTimer = setTimeout(function() {
+            startAttention();
+        }, ATTENTION_INITIAL_DELAY);
+    }
+
+    function scheduleReattention() {
+        clearTimeout(attentionReappearTimer);
+        attentionReappearTimer = setTimeout(function() {
+            if (!isExpanded) {
+                startAttention();
+            }
+        }, ATTENTION_REAPPEAR_DELAY);
+    }
+
+    function handleInteraction() {
+        stopAttention();
+        clearTimeout(attentionReappearTimer);
+        attentionReappearTimer = setTimeout(function() {
+            if (!isExpanded) {
+                startAttention();
+            }
+        }, ATTENTION_REAPPEAR_DELAY);
+    }
+    // --- End attention helpers ---
 
     function init() {
         if (!messageForm || !messageInput) {
@@ -47,13 +131,31 @@
         } else {
             initializeSession();
         }
+        // Schedule initial attention effect after a few seconds
+        scheduleAttention();
     }
 
     function setupEventListeners() {
         if (toggleBtn) toggleBtn.addEventListener('click', toggleWidget);
         if (minimizeBtn) minimizeBtn.addEventListener('click', toggleWidget);
 
+        // Attention: show tooltip on hover, hide on leave
+        if (toggleBtn) {
+            toggleBtn.addEventListener('mouseenter', function() {
+                if (!isExpanded && !isAttentionActive) {
+                    showTooltip();
+                }
+            });
+            toggleBtn.addEventListener('mouseleave', function() {
+                if (!isAttentionActive) {
+                    hideTooltip();
+                }
+            });
+        }
+
+        // Reset reappear timer on message submit
         messageForm.addEventListener('submit', function(e) {
+            handleInteraction();
             e.preventDefault();
             handleSendMessage(e);
         });
@@ -90,6 +192,7 @@
             if (chatIcon) chatIcon.classList.add('hidden');
             if (closeIcon) closeIcon.classList.remove('hidden');
             messageInput.focus();
+            handleInteraction();
         } else {
             widgetWindow.classList.add('hidden');
             if (chatIcon) chatIcon.classList.remove('hidden');
@@ -198,43 +301,37 @@
         let accumulatedContent = '';
         let sources = [];
         let scrollPending = false;
-        
-        // Debounced markdown rendering - render every 200ms or after 10 tokens
-        let renderTimeout = null;
-        let tokenCount = 0;
-        const renderMarkdown = () => {
-            if (accumulatedContent) {
-                // Remove cursor temporarily for rendering (only from this bubble)
-                const cursor = messageBubble.querySelector('.streaming-cursor');
-                if (cursor) cursor.remove();
-                
-                // Render markdown
-                contentDiv.innerHTML = parseMarkdown(accumulatedContent);
-                
-                // Re-add cursor only to this (current) streaming message
-                if (isStreaming && messageBubble.classList.contains('streaming')) {
-                    removeStreamingCursorFromOtherBubbles(messageBubble);
-                    const newCursor = document.createElement('span');
-                    newCursor.className = 'streaming-cursor';
-                    contentDiv.appendChild(newCursor);
-                }
-                
-                if (!scrollPending) {
-                    scrollPending = true;
-                    requestAnimationFrame(() => {
-                        scrollToBottom();
-                        scrollPending = false;
-                    });
-                }
-            }
-        };
-        
+
+        // rAF-based markdown rendering — at most one DOM update per frame (~16ms).
+        // No setTimeout debounce; every token schedules a render so the first
+        // one lands on the very next frame and later tokens in the same frame
+        // are batched together for free.
+        let rafScheduled = false;
         const scheduleMarkdownRender = () => {
-            // Clear existing timeout
-            if (renderTimeout) clearTimeout(renderTimeout);
-            
-            // Very short debounce (50ms) for near-instant rendering while still batching DOM updates
-            renderTimeout = setTimeout(renderMarkdown, 50);
+            if (!rafScheduled) {
+                rafScheduled = true;
+                requestAnimationFrame(() => {
+                    rafScheduled = false;
+                    if (accumulatedContent) {
+                        const cursor = messageBubble.querySelector('.streaming-cursor');
+                        if (cursor) cursor.remove();
+                        contentDiv.innerHTML = parseMarkdown(accumulatedContent);
+                        if (isStreaming && messageBubble.classList.contains('streaming')) {
+                            removeStreamingCursorFromOtherBubbles(messageBubble);
+                            const newCursor = document.createElement('span');
+                            newCursor.className = 'streaming-cursor';
+                            contentDiv.appendChild(newCursor);
+                        }
+                        if (!scrollPending) {
+                            scrollPending = true;
+                            requestAnimationFrame(() => {
+                                scrollToBottom();
+                                scrollPending = false;
+                            });
+                        }
+                    }
+                });
+            }
         };
 
         try {
@@ -243,11 +340,11 @@
                 headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
                 body: JSON.stringify({ message, stream: true })
             });
-            
+
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-            
+
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
@@ -258,22 +355,22 @@
 
                 // Decode chunk immediately
                 buffer += decoder.decode(value, { stream: true });
-                
+
                 // Process all complete SSE messages (separated by \n\n)
                 let messageEnd;
                 while ((messageEnd = buffer.indexOf('\n\n')) !== -1) {
                     const message = buffer.substring(0, messageEnd);
                     buffer = buffer.substring(messageEnd + 2);
-                    
+
                     if (!message.trim()) continue;
-                    
+
                     // Parse SSE message format:
                     // event: stream_token
                     // data: {"type":"token","content":"Hello"}
                     let currentEvent = null;
                     let currentData = null;
                     const lines = message.split('\n');
-                    
+
                     for (const line of lines) {
                         const trimmed = line.trim();
                         if (trimmed.startsWith('event: ')) {
@@ -292,7 +389,7 @@
                             }
                         }
                     }
-                    
+
                     // Process the parsed event and data IMMEDIATELY
                     if (currentData) {
                         if (currentData.type === 'querying') {
@@ -301,17 +398,9 @@
                             const token = currentData.content || '';
                             if (token) {
                                 accumulatedContent += token;
-                                tokenCount++;
-                                
-                                // Render immediately every token for true streaming feel
-                                // But debounce markdown parsing slightly
-                                if (tokenCount % 2 === 0) {
-                                    // Render every 2 tokens
-                                    renderMarkdown();
-                                } else {
-                                    // Schedule render for single tokens (debounced)
-                                    scheduleMarkdownRender();
-                                }
+                                // rAF-batched: renders on the next frame, so every
+                                // token is visible with full markdown formatting.
+                                scheduleMarkdownRender();
                             }
                         } else if (currentData.type === 'source') {
                             if (Array.isArray(currentData.sources)) {
@@ -322,25 +411,18 @@
                         } else if (currentData.type === 'table') {
                             addTableToMessage(messageBubble, currentData.table, lastUserMessage, currentData.pagination);
                         } else if (currentData.type === 'complete') {
-                            // Clear any pending render timeout
-                            if (renderTimeout) {
-                                clearTimeout(renderTimeout);
-                                renderTimeout = null;
-                            }
-                            
-                            // Final markdown render
+                            // Clear rAF-scheduled render — we do a final render inline
+                            rafScheduled = false;
+
                             const cursor = messageBubble.querySelector('.streaming-cursor');
                             if (cursor) cursor.remove();
                             messageBubble.classList.remove('streaming');
                             contentDiv.innerHTML = parseMarkdown(accumulatedContent);
-                            
+
                             if (sources.length > 0) addSourcesToMessage(messageBubble, sources);
                             scrollToBottom();
                         } else if (currentData.type === 'error') {
-                            if (renderTimeout) {
-                                clearTimeout(renderTimeout);
-                                renderTimeout = null;
-                            }
+                            rafScheduled = false;
                             const cursor = messageBubble.querySelector('.streaming-cursor');
                             if (cursor) cursor.remove();
                             messageBubble.classList.remove('streaming');
@@ -349,37 +431,8 @@
                     }
                 }
             }
-            
-            // Process any remaining buffer content
-            if (buffer.trim()) {
-                // Try to parse remaining buffer as SSE message
-                let currentEvent = null;
-                let currentData = null;
-                const lines = buffer.split('\n');
-                
-                for (const line of lines) {
-                    const trimmed = line.trim();
-                    if (trimmed.startsWith('event: ')) {
-                        currentEvent = trimmed.substring(7).trim();
-                    } else if (trimmed.startsWith('data: ')) {
-                        try {
-                            const jsonStr = trimmed.substring(6).trim();
-                            if (jsonStr) {
-                                currentData = JSON.parse(jsonStr);
-                            }
-                        } catch (e) {
-                            // Ignore parse errors for incomplete data
-                        }
-                    }
-                }
-                
-                if (currentData && currentData.type === 'token') {
-                    accumulatedContent += currentData.content || '';
-                    renderMarkdown();
-                }
-            }
 
-            // Handle any remaining buffer content
+            // Process any remaining buffer content after the SSE loop
             if (buffer.trim()) {
                 try {
                     if (buffer.startsWith('data: ')) {
@@ -388,7 +441,7 @@
                             accumulatedContent += data.content;
                             scheduleMarkdownRender();
                         } else if (data.type === 'complete') {
-                            if (renderTimeout) clearTimeout(renderTimeout);
+                            rafScheduled = false;
                             const cursor = messageBubble.querySelector('.streaming-cursor');
                             if (cursor) cursor.remove();
                             messageBubble.classList.remove('streaming');
@@ -399,22 +452,25 @@
                     }
                 } catch (e) { console.debug('Final buffer parse error:', e); }
             }
-            
-            // Final render if still streaming (safety net)
-            if (isStreaming && accumulatedContent) {
-                if (renderTimeout) clearTimeout(renderTimeout);
-                renderMarkdown();
-            }
         } catch (error) {
             console.error('Streaming error:', error);
-            if (renderTimeout) clearTimeout(renderTimeout);
+            rafScheduled = false;
             const cursor = messageBubble.querySelector('.streaming-cursor');
             if (cursor) cursor.remove();
             messageBubble.classList.remove('streaming');
             contentDiv.innerHTML = parseMarkdown('Connection failed. Please try again.');
+        } finally {
+            isStreaming = false;
         }
 
-        isStreaming = false;
+        // Safety net: if complete never arrived but we have content, do a final render.
+        if (accumulatedContent && messageBubble.classList.contains('streaming')) {
+            rafScheduled = false;
+            const cursor = messageBubble.querySelector('.streaming-cursor');
+            if (cursor) cursor.remove();
+            messageBubble.classList.remove('streaming');
+            contentDiv.innerHTML = parseMarkdown(accumulatedContent);
+        }
     }
 
     function addMessageToUI(role, content, sources = [], metadata = null, originQuestion = null) {
@@ -624,7 +680,7 @@
     function clearMessages() { messagesArea.innerHTML = ''; }
     function setInputState(enabled) { messageInput.disabled = !enabled; sendBtn.disabled = !enabled; }
     function scrollToBottom() { messagesArea.scrollTop = messagesArea.scrollHeight; }
-    
+
     // Initialize markdown parser once (singleton)
     let mdParser = null;
     function getMarkdownParser() {
@@ -638,17 +694,17 @@
         }
         return mdParser;
     }
-    
+
     function parseMarkdown(md) {
         if (!md) return '';
-        
+
         // Use singleton parser
         const parser = getMarkdownParser();
         if (!parser) {
             // Fallback if markdown-it not loaded
             return md.replace(/\n/g, '<br>');
         }
-        
+
         try {
             const rendered = parser.render(md);
             return window.DOMPurify ? window.DOMPurify.sanitize(rendered) : rendered;

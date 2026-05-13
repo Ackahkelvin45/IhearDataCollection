@@ -180,14 +180,28 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                 dataset_service = DatasetService()
                 result = dataset_service.query_dataset(message_text, {})
             else:
-                # Handle explanatory/document queries with RAG
+                # Handle explanatory/document queries with RAG.
+                # If the user pasted a URL or asked about a website, use the
+                # live-data path that fetches web content and adds it to the
+                # FAISS knowledge base for future retrieval.
                 rag_service = RAGService()
-                result = rag_service.query(message_text, chat_history=chat_history)
+                from .services import ChatbotService
+
+                if ChatbotService._is_web_query(message_text):
+                    result = rag_service.query_with_live_data(
+                        message_text,
+                        chat_history=chat_history,
+                        persist_to_kb=True,
+                    )
+                else:
+                    result = rag_service.query(message_text, chat_history=chat_history)
 
             response_time = time.time() - start_time
 
             # Ensure we have valid result data
-            answer = result.get("answer", "I couldn't generate a response. Please try again.")
+            answer = result.get(
+                "answer", "I couldn't generate a response. Please try again."
+            )
             tokens_used = result.get("tokens_used", 0) or len(answer.split())
             sources = result.get("sources", [])
 
@@ -224,7 +238,7 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error in send_message: {e}", exc_info=True)
             response_time = time.time() - start_time
-            
+
             # Save error message as assistant response so it's tracked
             error_message = f"I encountered an error while processing your question: {str(e)}. Please try again."
             try:
@@ -242,7 +256,7 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                     },
                 )
                 session.save()
-                
+
                 return Response(
                     {
                         "user_message": MessageSerializer(user_message).data,
@@ -297,10 +311,9 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
 
         # Create streaming response
         def stream_generator():
-            import json as _json
             start_time = time.time()
             assistant_message_saved = False
-            
+
             try:
                 from .services import (
                     ChatbotService,
@@ -315,8 +328,12 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                 response_time = time.time() - start_time
 
                 if intent == "NUMERIC":
+                    streaming_service = StreamingService()
+
                     # Only show "Querying database..." for numeric/database queries
-                    yield "data: " + _json.dumps({"type": "querying"}) + "\n\n"
+                    yield streaming_service.format_sse(
+                        {"type": "querying"}, event="stream_querying"
+                    )
                     # For numeric questions, return immediate result (no streaming needed)
                     answer = result.get("answer", "I processed your numeric query.")
                     tokens_used = result.get("tokens_used", 0) or len(answer.split())
@@ -326,9 +343,7 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                         "intent": result.get("intent"),
                         "method_used": result.get("method_used"),
                         "conversation_context": result.get("conversation_context"),
-                        "follow_up_suggestions": result.get(
-                            "follow_up_suggestions"
-                        ),
+                        "follow_up_suggestions": result.get("follow_up_suggestions"),
                         "processing_time": result.get("processing_time", response_time),
                     }
                     if result.get("table"):
@@ -346,70 +361,92 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                     )
                     assistant_message_saved = True
 
-                    # Yield a single complete response (use json.dumps to avoid escaping issues)
-                    import json as _json
-                    yield "data: " + _json.dumps({"type": "start"}) + "\n\n"
-                    yield "data: " + _json.dumps({"type": "token", "content": answer}) + "\n\n"
-                    yield "data: " + _json.dumps({
-                        "type": "source",
-                        "sources": result.get("sources", []),
-                        "intent": intent,
-                        "method": result.get("method_used", "database"),
-                        "follow_up_suggestions": result.get("follow_up_suggestions", []),
-                    }) + "\n\n"
+                    # Yield a single complete response using consistent format_sse
+                    yield streaming_service.format_sse(
+                        {"type": "start"}, event="stream_start"
+                    )
+                    yield streaming_service.format_sse(
+                        {"type": "token", "content": answer}, event="stream_token"
+                    )
+                    yield streaming_service.format_sse(
+                        {
+                            "type": "source",
+                            "sources": result.get("sources", []),
+                            "intent": intent,
+                            "method": result.get("method_used", "database"),
+                            "follow_up_suggestions": result.get(
+                                "follow_up_suggestions", []
+                            ),
+                        },
+                        event="stream_source",
+                    )
                     if result.get("table"):
-                        yield "data: " + _json.dumps({
-                            "type": "table",
-                            "table": result.get("table"),
-                            "pagination": result.get("pagination"),
-                        }) + "\n\n"
-                    yield "data: " + _json.dumps({"type": "complete", "tokens_used": tokens_used, "response_time": response_time}) + "\n\n"
-                    
+                        yield streaming_service.format_sse(
+                            {
+                                "type": "table",
+                                "table": result.get("table"),
+                                "pagination": result.get("pagination"),
+                            },
+                            event="stream_table",
+                        )
+                    yield streaming_service.format_sse(
+                        {
+                            "type": "complete",
+                            "tokens_used": tokens_used,
+                            "response_time": response_time,
+                        },
+                        event="stream_complete",
+                    )
+
                     # Update session timestamp
                     session.save()
                     return
 
                 else:
-                    # For explanatory questions, use streaming RAG with context
+                    # For explanatory questions, use streaming RAG with context.
+                    # If the question contains URLs or asks about a website, use the
+                    # live-data streaming path that pre-fetches web content.
                     rag_service = chatbot_service.rag_service
                     streaming_service = StreamingService()
+                    use_live_data = chatbot_service._is_web_query(message_text)
 
-                    # Stream the RAG response with enhanced context
-                    # Optimized: accumulate data while streaming without blocking
+                    # Stream the RAG response with enhanced context.
+                    # Use dict events: format to SSE for the client AND accumulate
+                    # content from the same dict — eliminates double-parsing.
                     accumulated_content = ""
                     accumulated_sources = []
                     tokens_used = 0
-                    stream_start_time = time.time()
 
-                    for sse_event in streaming_service.stream_response(
-                        rag_service, message_text, chat_history
+                    stream_source = (
+                        rag_service.query_stream_with_live_data(
+                            message_text, chat_history, persist_to_kb=True
+                        )
+                        if use_live_data
+                        else rag_service.query_stream(message_text, chat_history)
+                    )
+
+                    for event in streaming_service.stream_dict_events_from(
+                        stream_source
                     ):
-                        # Yield immediately - don't block on parsing
-                        yield sse_event
+                        event_type = event.get("type", "message")
 
-                        # Parse SSE: format is "event: stream_X\ndata: {...}\n\n" - extract data line
-                        data_line = None
-                        for line in sse_event.split("\n"):
-                            if line.startswith("data:"):
-                                data_line = line[5:].strip()
-                                break
-                        if not data_line:
-                            continue
-                        try:
-                            import json
-                            data = json.loads(data_line)
-                            event_type = data.get("type")
-                            if event_type == "token":
-                                accumulated_content += data.get("content", "")
-                            elif event_type == "source":
-                                if isinstance(data, dict) and "sources" in data:
-                                    accumulated_sources = data.get("sources", [])
-                                else:
-                                    accumulated_sources.append(data)
-                            elif event_type == "complete":
-                                tokens_used = data.get("tokens_used", 0) or len(accumulated_content.split())
-                        except Exception as parse_error:
-                            logger.debug(f"SSE parse error (non-critical): {parse_error}")
+                        # Format to SSE and yield immediately to client
+                        yield streaming_service.format_sse(
+                            event, event=f"stream_{event_type}"
+                        )
+
+                        # Accumulate from the same dict (no re-parsing)
+                        if event_type == "token":
+                            accumulated_content += event.get("content", "")
+                        elif event_type == "source":
+                            if isinstance(event, dict) and "sources" in event:
+                                accumulated_sources = event.get("sources", [])
+                            else:
+                                accumulated_sources.append(event)
+                        elif event_type == "complete":
+                            tokens_used = event.get("tokens_used", 0) or len(
+                                accumulated_content.split()
+                            )
 
                     # Calculate response time
                     response_time = time.time() - start_time
@@ -417,7 +454,9 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                     # Always save assistant message, even if content is empty (to track errors)
                     if not accumulated_content.strip():
                         accumulated_content = "I apologize, but I couldn't generate a response. Please try again or rephrase your question."
-                        logger.warning(f"Empty response generated for question: {message_text[:50]}")
+                        logger.warning(
+                            f"Empty response generated for question: {message_text[:50]}"
+                        )
 
                     # We are in the explanatory/streaming RAG branch
                     intent = "EXPLANATORY"
@@ -430,7 +469,11 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                         session=session,
                         role="assistant",
                         content=accumulated_content,
-                        sources=accumulated_sources if isinstance(accumulated_sources, list) else [],
+                        sources=(
+                            accumulated_sources
+                            if isinstance(accumulated_sources, list)
+                            else []
+                        ),
                         tokens_used=tokens_used,
                         response_time=response_time,
                         metadata={
@@ -447,7 +490,7 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
             except Exception as e:
                 logger.error(f"Error in async streaming: {e}", exc_info=True)
                 response_time = time.time() - start_time
-                
+
                 # Save error message as assistant response so it's tracked
                 if not assistant_message_saved:
                     error_message = f"I encountered an error while processing your question: {str(e)}. Please try again."
@@ -469,26 +512,33 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                         session.save()
                     except Exception as save_error:
                         logger.error(f"Failed to save error message: {save_error}")
-                
+
                 from .services import StreamingService
+
                 streaming_service = StreamingService()
                 yield streaming_service.format_sse(
                     {"type": "error", "message": str(e)}, event="error"
                 )
 
-        # Wrap sync generator in async iterator so ASGI doesn't warn and block
+        # Wrap sync generator in async iterator so ASGI doesn't warn and block.
+        # Use a sentinel to signal completion, with try/finally to guarantee the
+        # sentinel is always put — prevents the async consumer from hanging if
+        # the sync generator's initialization throws.
         _sentinel = object()
+
         def _feed_queue(sync_gen, q):
-            for item in sync_gen:
-                q.put_nowait(item)
-            q.put_nowait(_sentinel)
+            try:
+                for item in sync_gen:
+                    q.put_nowait(item)
+            finally:
+                q.put_nowait(_sentinel)
 
         async def async_stream():
             q = asyncio.Queue()
             loop = asyncio.get_event_loop()
             loop.run_in_executor(None, lambda: _feed_queue(stream_generator(), q))
             while True:
-                item = await q.get()
+                item = await asyncio.wait_for(q.get(), timeout=120.0)
                 if item is _sentinel:
                     break
                 yield item

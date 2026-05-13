@@ -11,7 +11,6 @@ from core.models import (
     CleanSpeechCategory,
     CleanSpeechClass,
     CleanSpeechSubClass,
-    
 )
 from authentication.models import CustomUser
 from django.contrib.postgres.fields import ArrayField
@@ -26,8 +25,6 @@ class Dataset(models.Model):
         ("mixed", "Mixed (Noise and Clean)"),
         ("non_standard_speech", "Non-standard Speech"),
         ("animals", "Animals"),
-      
-
     ]
 
     name = models.CharField(max_length=255, choices=DATASET_TYPES, unique=True)
@@ -42,7 +39,9 @@ class Dataset(models.Model):
 
 class NoiseDataset(models.Model):
 
-    dataset_type = models.ForeignKey(Dataset, on_delete=models.CASCADE,null=True,blank=True)
+    dataset_type = models.ForeignKey(
+        Dataset, on_delete=models.CASCADE, null=True, blank=True
+    )
 
     name = models.CharField(
         max_length=255, null=True, help_text="Name of Data set, auto generated"
@@ -96,7 +95,7 @@ class NoiseDataset(models.Model):
     )
     audio = models.FileField(upload_to="files/", help_text="Upload audio file")
     recording_date = models.DateTimeField(
-        null=True, help_text="Date when recording was made"
+        null=True, help_text="Date when recording was made", db_index=True
     )
     recording_device = models.CharField(
         max_length=255, help_text="Recording Device (e.g., iPhone 16, Zoom H4n, etc.)"
@@ -165,74 +164,67 @@ class NoiseDataset(models.Model):
             return None
 
     def save(self, *args, **kwargs):
-
-        # Ensure dataset type is always "noise"
+        # Ensure dataset type is always "noise" (only set on creation)
         if not self.id:
-            # create a Dataset of type noise if one doesn't exist
             noise_dataset, _ = Dataset.objects.get_or_create(
                 name="noise", defaults={"description": "Noise dataset"}
             )
             self.dataset_type = noise_dataset
-        else:
-            self.dataset_type.name = "noise"
-            self.dataset_type.save()
         super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.name}-{self.noise_id}"
 
 
-
-
 class Recording(models.Model):
-  
 
     RECORDING_TYPES = [
-        ('clean_speech', 'Clean Speech Recording'),
-        ('english_language', 'english_language'),
-        ('scripted_speech', 'scripted_speech'),
+        ("clean_speech", "Clean Speech Recording"),
+        ("english_language", "english_language"),
+        ("scripted_speech", "scripted_speech"),
     ]
 
     STATUS_CHOICES = [
-        ('pending', 'Pending Processing'),
-        ('processing', 'Processing'),
-        ('completed', 'Completed'),
-        ('failed', 'Failed'),
+        ("pending", "Pending Processing"),
+        ("processing", "Processing"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
     ]
 
     recording_type = models.CharField(
         max_length=50,
         choices=RECORDING_TYPES,
-        default='clean_speech',
-        help_text="Type of recording"
+        default="clean_speech",
+        help_text="Type of recording",
     )
 
     status = models.CharField(
         max_length=50,
         choices=STATUS_CHOICES,
-        default='pending',
-        help_text="Processing status of the recording"
+        default="pending",
+        help_text="Processing status of the recording",
+        db_index=True,
     )
 
     device_info = models.JSONField(
         null=True,
         blank=True,
-        help_text="Device and browser information when recording was made"
+        help_text="Device and browser information when recording was made",
     )
 
     contributor = models.ForeignKey(
         CustomUser,
         on_delete=models.PROTECT,
-        related_name='recordings_contributed',
+        related_name="recordings_contributed",
         help_text="The person who made this recording",
         null=True,
         blank=True,
     )
-    approved = models.BooleanField(default=False)
+    approved = models.BooleanField(default=False, db_index=True)
     approved_by = models.ForeignKey(
         CustomUser,
         on_delete=models.PROTECT,
-        related_name='recordings_approved',
+        related_name="recordings_approved",
         help_text="The person who approved this recording",
         null=True,
         blank=True,
@@ -241,7 +233,7 @@ class Recording(models.Model):
     audio = models.FileField(
         upload_to="recordings/",
         help_text="Raw audio recording file",
-          null=True,
+        null=True,
         blank=True,
     )
 
@@ -249,8 +241,6 @@ class Recording(models.Model):
         null=True,
         blank=True,
         help_text="Duration of recording in seconds",
-   
-
     )
 
     recording_date = models.DateTimeField(
@@ -269,7 +259,9 @@ class Recording(models.Model):
         verbose_name_plural = "Recordings"
 
     def __str__(self):
-        return f"{self.get_recording_type_display()} by {self.contributor.username} - {self.created_at.strftime('%Y-%m-%d %H:%M')}"
+        contributor = self.contributor.username if self.contributor_id else "unknown"
+        date = self.created_at.strftime("%Y-%m-%d %H:%M") if self.created_at else "?"
+        return f"{self.get_recording_type_display()} by {contributor} - {date}"
 
     def get_audio_hash(self):
         """Generate MD5 hash of the audio file content safely."""
@@ -292,11 +284,11 @@ class Recording(models.Model):
             return None
 
 
-
-
 class CleanSpeechDataset(models.Model):
 
-    dataset_type = models.ForeignKey(Dataset, on_delete=models.CASCADE,null=True,blank=True)
+    dataset_type = models.ForeignKey(
+        Dataset, on_delete=models.CASCADE, null=True, blank=True
+    )
 
     name = models.CharField(
         max_length=255, null=True, help_text="Name of Data set, auto generated"
@@ -317,15 +309,18 @@ class CleanSpeechDataset(models.Model):
         help_text="Select the region where recording was made",
     )
     category = models.ForeignKey(
-        CleanSpeechCategory, on_delete=models.PROTECT, null=True, help_text="Category of the data"
+        CleanSpeechCategory,
+        on_delete=models.PROTECT,
+        null=True,
+        help_text="Category of the data",
     )
 
     recording = models.ForeignKey(
-        'Recording',
+        "Recording",
         on_delete=models.CASCADE,
         null=True,
         blank=True,
-        help_text="The raw recording that was processed into this dataset"
+        help_text="The raw recording that was processed into this dataset",
     )
 
     time_of_day = models.ForeignKey(
@@ -341,7 +336,10 @@ class CleanSpeechDataset(models.Model):
         help_text="Specific community where recording was made",
     )
     class_name = models.ForeignKey(
-        CleanSpeechClass, on_delete=models.PROTECT, null=True, help_text="Class of the data"
+        CleanSpeechClass,
+        on_delete=models.PROTECT,
+        null=True,
+        help_text="Class of the data",
     )
     subclass = models.ForeignKey(
         CleanSpeechSubClass,
@@ -357,7 +355,7 @@ class CleanSpeechDataset(models.Model):
         help_text="Microphone Type",
     )
     recording_date = models.DateTimeField(
-        null=True, help_text="Date when recording was made"
+        null=True, help_text="Date when recording was made", db_index=True
     )
     recording_device = models.CharField(
         max_length=255, help_text="Recording Device (e.g., iPhone 16, Zoom H4n, etc.)"
@@ -377,7 +375,7 @@ class CleanSpeechDataset(models.Model):
         upload_to="clean_speech_files/",
         null=True,
         blank=True,
-        help_text="Processed clean speech audio file"
+        help_text="Processed clean speech audio file",
     )
 
     def save(self, *args, **kwargs):
@@ -444,7 +442,6 @@ class CleanSpeechDataset(models.Model):
         return f"{self.name}-{self.clean_speech_id}"
 
 
-
 class AudioFeature(models.Model):
     """Stores extracted audio features for analysis and visualization"""
 
@@ -497,7 +494,6 @@ class AudioFeature(models.Model):
         return f"Audio Features for {self.noise_dataset.name}"
 
 
-
 class NoiseAnalysis(models.Model):
     """Stores analysis results and statistics for noise data"""
 
@@ -528,7 +524,9 @@ class NoiseAnalysis(models.Model):
     )
 
     # Event detection
-    event_count = models.IntegerField(help_text="Number of distinct noise events", default=0)
+    event_count = models.IntegerField(
+        help_text="Number of distinct noise events", default=0
+    )
     event_durations = ArrayField(
         models.FloatField(),
         help_text="Durations of detected events in seconds",
@@ -537,7 +535,6 @@ class NoiseAnalysis(models.Model):
 
     def __str__(self):
         return f"Noise Analysis for {self.noise_dataset.name}"
-
 
 
 # Visualization Preset models for different dataset types
@@ -592,9 +589,6 @@ class VisualizationPreset(models.Model):
     def __str__(self):
         dataset_name = self.noise_dataset.name if self.noise_dataset else "No Dataset"
         return f"{self.name} ({self.chart_type}) - {dataset_name}"
-
-
-
 
 
 class BulkAudioUpload(models.Model):
@@ -707,7 +701,9 @@ class CleanSpeechAudioFeature(models.Model):
     )
 
     # Basic properties
-    duration = models.FloatField(help_text="Duration of the audio in seconds", null=True)
+    duration = models.FloatField(
+        help_text="Duration of the audio in seconds", null=True
+    )
     sample_rate = models.IntegerField(help_text="Sample rate of the audio", null=True)
     num_channels = models.IntegerField(help_text="Number of audio channels", null=True)
     bit_depth = models.IntegerField(help_text="Bit depth of the audio", null=True)
@@ -722,8 +718,12 @@ class CleanSpeechAudioFeature(models.Model):
     spectral_rolloff = models.FloatField(help_text="Spectral rolloff", null=True)
 
     # Other features
-    mfcc_mean = models.JSONField(help_text="Mean MFCC coefficients", null=True, blank=True)
-    mfcc_std = models.JSONField(help_text="Standard deviation of MFCC coefficients", null=True, blank=True)
+    mfcc_mean = models.JSONField(
+        help_text="Mean MFCC coefficients", null=True, blank=True
+    )
+    mfcc_std = models.JSONField(
+        help_text="Standard deviation of MFCC coefficients", null=True, blank=True
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -740,9 +740,9 @@ class CleanSpeechAnalysis(models.Model):
     """Analysis results for clean speech recordings"""
 
     ANALYSIS_TYPES = [
-        ('speech_quality', 'Speech Quality Analysis'),
-        ('clarity', 'Clarity Analysis'),
-        ('background_noise', 'Background Noise Analysis'),
+        ("speech_quality", "Speech Quality Analysis"),
+        ("clarity", "Clarity Analysis"),
+        ("background_noise", "Background Noise Analysis"),
     ]
 
     clean_speech_dataset = models.OneToOneField(
@@ -752,25 +752,35 @@ class CleanSpeechAnalysis(models.Model):
     analysis_type = models.CharField(
         max_length=50,
         choices=ANALYSIS_TYPES,
-        default='speech_quality',
-        help_text="Type of analysis performed"
+        default="speech_quality",
+        help_text="Type of analysis performed",
     )
 
     # Speech quality metrics
     snr = models.FloatField(help_text="Signal-to-Noise Ratio", null=True, blank=True)
-    speech_rate = models.FloatField(help_text="Speech rate (words per minute)", null=True, blank=True)
-    articulation_clarity = models.FloatField(help_text="Articulation clarity score (0-100)", null=True, blank=True)
+    speech_rate = models.FloatField(
+        help_text="Speech rate (words per minute)", null=True, blank=True
+    )
+    articulation_clarity = models.FloatField(
+        help_text="Articulation clarity score (0-100)", null=True, blank=True
+    )
 
     # Audio quality metrics
-    dynamic_range = models.FloatField(help_text="Dynamic range in dB", null=True, blank=True)
+    dynamic_range = models.FloatField(
+        help_text="Dynamic range in dB", null=True, blank=True
+    )
     crest_factor = models.FloatField(help_text="Crest factor", null=True, blank=True)
 
     # Analysis results
-    overall_quality_score = models.FloatField(help_text="Overall quality score (0-100)", null=True, blank=True)
+    overall_quality_score = models.FloatField(
+        help_text="Overall quality score (0-100)", null=True, blank=True
+    )
     recommendations = models.TextField(help_text="Analysis recommendations", blank=True)
 
     # Raw analysis data
-    analysis_data = models.JSONField(help_text="Raw analysis data", null=True, blank=True)
+    analysis_data = models.JSONField(
+        help_text="Raw analysis data", null=True, blank=True
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -778,11 +788,7 @@ class CleanSpeechAnalysis(models.Model):
     class Meta:
         verbose_name = "Clean Speech Analysis"
         verbose_name_plural = "Clean Speech Analyses"
-        unique_together = ['clean_speech_dataset', 'analysis_type']
+        unique_together = ["clean_speech_dataset", "analysis_type"]
 
     def __str__(self):
         return f"{self.get_analysis_type_display()} for {self.clean_speech_dataset.clean_speech_id}"
-
-
-
-

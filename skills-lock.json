@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "data-visualization": {
+      "source": "langchain-ai/deepagents",
+      "sourceType": "github",
+      "skillPath": "examples/nvidia_deep_agent/skills/data-visualization/SKILL.md",
+      "computedHash": "2deb6dbf6802b268eb6482e3c2b8f400205c976aab404a43619fc458646b1b07"
+    }
+  }
+}

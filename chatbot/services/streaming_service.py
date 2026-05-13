@@ -26,7 +26,7 @@ class StreamingService:
             Formatted SSE string
         """
         # Use faster JSON encoding with separators for compact output
-        json_data = json.dumps(data, separators=(',', ':'))
+        json_data = json.dumps(data, separators=(",", ":"))
         return f"event: {event}\ndata: {json_data}\n\n"
 
     def stream_events(
@@ -62,6 +62,49 @@ class StreamingService:
         for event in self.stream_events(rag_service, question, chat_history):
             event_type = event.get("type", "message")
             yield self.format_sse(event, event=f"stream_{event_type}")
+
+    def stream_events_from_generator(
+        self, generator: Generator
+    ) -> Generator[str, None, None]:
+        """
+        Wrap a pre-existing dict-event generator as SSE strings.
+        Use this when you already have a generator (e.g. query_stream_with_live_data)
+        and just need SSE formatting.
+        """
+        for event in generator:
+            event_type = event.get("type", "message")
+            yield self.format_sse(event, event=f"stream_{event_type}")
+
+    def stream_dict_events(
+        self, rag_service, question: str, chat_history: list = None
+    ) -> Generator[Dict[str, Any], None, None]:
+        """
+        Stream RAG response as dict events (no SSE formatting).
+        Use this when the caller wants to both yield SSE to the client
+        AND accumulate content for persistence — no double-parsing needed.
+        """
+        return self.stream_events(rag_service, question, chat_history)
+
+    def stream_dict_events_from(
+        self, generator: Generator
+    ) -> Generator[Dict[str, Any], None, None]:
+        """
+        Pass through dict events from any generator, validating event types.
+        Use this when you have a pre-made generator (e.g. query_stream_with_live_data)
+        and need dict events for dual-purpose: SSE formatting + content accumulation.
+        """
+        for event in generator:
+            event_type = event.get("type", "")
+            if event_type in (
+                "start",
+                "token",
+                "source",
+                "table",
+                "querying",
+                "complete",
+                "error",
+            ):
+                yield event
 
     async def astream_response(
         self, rag_service, question: str, chat_history: list = None

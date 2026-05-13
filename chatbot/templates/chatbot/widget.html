@@ -2,15 +2,22 @@
 <!-- Floating Chat Widget -->
 <div id="chatWidget" class="chat-widget">
     <!-- Chat Button (collapsed state) -->
-    <button id="chatWidgetToggle" class="chat-widget-toggle" aria-label="Open AI Assistant">
-        <svg class="chat-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path>
-        </svg>
-        <svg class="close-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-        </svg>
-        <span class="notification-badge hidden">0</span>
-    </button>
+    <div class="chat-toggle-wrapper">
+        <div class="chat-widget-ring" id="chatWidgetRing"></div>
+        <div class="chat-widget-tooltip" id="chatWidgetTooltip">
+            <span class="tooltip-icon">💬</span>
+            <span class="tooltip-text">Ask me anything!</span>
+        </div>
+        <button id="chatWidgetToggle" class="chat-widget-toggle" aria-label="Open AI Assistant">
+            <svg class="chat-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path>
+            </svg>
+            <svg class="close-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+            <span class="notification-badge hidden">0</span>
+        </button>
+    </div>
 
     <!-- Chat Window (expanded state) -->
     <div id="chatWidgetWindow" class="chat-widget-window hidden">
@@ -63,8 +70,15 @@
         <!-- Messages Area -->
         <div id="widgetChatMessages" class="chat-widget-messages">
             <div class="welcome-message">
+                <!-- Intro bubble so users immediately notice the assistant -->
+                <div class="message-bubble assistant" style="margin-bottom: 12px;">
+                    <div class="message-content">
+                        Hi, I’m the <strong>I Hear Assistant</strong>. Ask me anything about the I Hear Project and its datasets.
+                    </div>
+                </div>
+
                 <h4 class="welcome-title">Welcome!</h4>
-                <p class="welcome-text">I'm your AI assistant. Upload documents and ask me questions about your project.</p>
+                <p class="welcome-text">Ask me questions about your project, datasets, and workflows.</p>
                 <div class="welcome-suggestions">
                     <button class="suggestion-btn" data-question="How do I upload audio files?">
                         How do I upload audio files?

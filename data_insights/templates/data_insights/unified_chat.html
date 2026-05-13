@@ -1,6 +1,5 @@
 {% extends 'datacollection/layout.html' %}
 {% load static %}
-{% csrf_token %}
 
 {% block content %}
 <!-- CSRF Token -->
@@ -77,43 +76,15 @@
 
 
                 <!-- Input Form -->
- <form id="welcomeForm" style="width:100%; padding: 5px; margin:0 auto; margin-bottom: 10px;">
-  <div style="position:relative; width:100%;">
+ <form id="welcomeForm" style="width:100%; padding:5px; margin:0 auto 10px auto;">
+  <div class="chat-input-wrapper">
     <input
       id="welcomeInput"
       type="text"
       placeholder="Type your question..."
-      style="
-        width:100%;
-        background-color:#f8fafc;
-        border:1px solid #e2e8f0;
-        border-radius:9999px;
-        padding:1rem 4rem 1rem 1rem;
-        outline:none;
-        color:#334155;
-        font-size:1rem;
-      "
+      class="chat-input-field"
     />
-    <button
-      type="submit"
-      aria-label="Send"
-      style="
-        position:absolute;
-        right:0.5rem;
-        top:50%;
-        transform:translateY(-50%);
-        width:3rem;
-        height:3rem;
-        border-radius:9999px;
-        background-color:#22c55e; /* secondary color */
-        color:#fff;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        box-shadow:0 1px 3px rgba(0,0,0,0.2);
-        cursor:pointer;
-      "
-    >
+    <button type="submit" aria-label="Send" class="chat-input-send">
       <i class="fa-solid fa-paper-plane"></i>
     </button>
   </div>
@@ -128,6 +99,9 @@
                 <!-- Messages will be dynamically added here -->
             </div>
         </div>
+
+        <!-- Clarification Panel — floats above the input -->
+        <div id="clarificationPanel" class="hidden mx-4 mb-3 p-6 bg-[#f9fafb] border border-gray-200/80 rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.08)]"></div>
 
         <!-- Chat Input (Active Session) -->
         <div id="chatInputContainer" class="bg-white border-t border-gray-200 p-4 hidden">
@@ -208,13 +182,15 @@ class UnifiedAudioDataChat {
         this.scrollThrottle = null;
         this.updateQueue = new Map();
         this.isUpdating = false;
-        this._markdownCache = null;
         this.streamingStats = {
             messagesReceived: 0,
             lastUpdate: Date.now(),
             updateTimes: []
         };
         this.messageIdMap = new Map();
+        this._streamRAFScheduled = false;
+        this._pendingStreamContent = null;
+        this._pendingStreamMessageId = null;
 
         this.initializeEventListeners();
         this.updateModeUI();
@@ -242,6 +218,7 @@ class UnifiedAudioDataChat {
         // Welcome form submission
         document.getElementById('welcomeForm').addEventListener('submit', (e) => {
             e.preventDefault();
+            if (this.isLoading) return;
             const input = document.getElementById('welcomeInput');
             if (input.value.trim()) {
                 this.createSessionAndSendMessage(input.value.trim());
@@ -256,14 +233,7 @@ class UnifiedAudioDataChat {
             if (input.value.trim() && this.currentSession) {
                 this.sendMessage(input.value.trim());
                 input.value = '';
-                this.autoResizeTextarea(input);
             }
-        });
-
-        // Auto-resize textarea
-        const messageInput = document.getElementById('messageInput');
-        messageInput.addEventListener('input', () => {
-            this.autoResizeTextarea(messageInput);
         });
 
         const messagesContainer = document.getElementById('messagesContainer');
@@ -284,11 +254,10 @@ class UnifiedAudioDataChat {
 
             messagesContainer.addEventListener('change', (e) => {
                 const select = e.target.closest('[data-pagination-limit]');
-                if (!select) return;
-                const messageId = select.dataset.messageId;
-                if (!messageId) return;
-                const limit = parseInt(select.value || '20', 10);
-                this.fetchTablePage(messageId, limit, 0, select);
+                if (!select || !select.dataset.messageId) return;
+                const limit = parseInt(select.value, 10);
+                if (!limit || limit < 1) return;
+                this.fetchTablePage(select.dataset.messageId, limit, 0, select);
             });
 
             messagesContainer.addEventListener('click', (e) => {
@@ -312,12 +281,30 @@ class UnifiedAudioDataChat {
                 }
             });
         }
+
+        // Event delegation for sessions list (replaces inline onclick handlers)
+        const sessionsList = document.getElementById('sessionsList');
+        if (sessionsList) {
+            sessionsList.addEventListener('click', (e) => {
+                const deleteBtn = e.target.closest('[data-delete-session]');
+                if (deleteBtn) {
+                    e.stopPropagation();
+                    const sessionId = parseInt(deleteBtn.dataset.deleteSession, 10);
+                    if (sessionId) this.deleteSession(sessionId);
+                    return;
+                }
+                const sessionItem = e.target.closest('.session-item');
+                if (sessionItem && sessionItem.dataset.sessionId) {
+                    const sessionId = parseInt(sessionItem.dataset.sessionId, 10);
+                    if (sessionId) this.loadSession(sessionId);
+                }
+            });
+        }
     }
 
-    autoResizeTextarea(textarea) {
-        textarea.style.height = 'auto';
-        textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
-    }
+    // =====================================================================
+    // Session management
+    // =====================================================================
 
     async loadSessions() {
         try {
@@ -360,23 +347,26 @@ class UnifiedAudioDataChat {
             return;
         }
 
-        container.innerHTML = this.sessions.map(session => `
+        container.innerHTML = this.sessions.map(session => {
+            const rawTitle = session.title || 'Untitled Session';
+            const title = rawTitle.length > 25
+                ? this.escapeHtml(rawTitle.substring(0, 25)) + '...'
+                : this.escapeHtml(rawTitle);
+            return `
             <div class="session-item py-2 px-2 rounded-lg cursor-pointer transition-colors border-b   mb-2 ${
                 this.currentSession?.id === session.id ? 'bg-primary-light border border-primary ' : 'hover:bg-gray-50'
-            }" data-session-id="${session.id}" onclick="window.unifiedChat.loadSession(${session.id})">
+            }" data-session-id="${session.id}">
                 <div class="flex items-start justify-between">
                     <div class="flex-1 min-w-0">
                 <h6 class="font-medium text-gray-800">
-                ${ (session.title && session.title.length > 25)
-                    ? session.title.substring(0, 25) + "..."
-                    : (session.title || "Untitled Session") }
+                ${title}
                 </h6>
 
                         <p class="text-xs text-gray-400">${this.formatDate(session.created_at)}</p>
                     </div>
                     <div class="flex items-center space-x-1 ml-2">
                         <button class="session-delete-btn p-1 text-gray-400 hover:text-red-500"
-                                onclick="event.stopPropagation(); window.unifiedChat.deleteSession(${session.id})">
+                                data-delete-session="${session.id}">
                             <svg xmlns="http://www.w3.org/2000/svg"
      viewBox="0 0 24 24"
      fill="none"
@@ -392,7 +382,8 @@ class UnifiedAudioDataChat {
                     </div>
                 </div>
             </div>
-        `).join('');
+        `;
+        }).join('');
     }
 
     async createNewSession() {
@@ -535,7 +526,20 @@ class UnifiedAudioDataChat {
         this.currentMode = mode;
         sessionStorage.setItem('insightsMode', mode);
         this.updateModeUI();
+
+        // Persist the mode change to the server if a session is active
+        if (this.currentSession?.id) {
+            fetch(`${this.apiBaseUrl}/insights/sessions/${this.currentSession.id}/`, {
+                method: 'PATCH',
+                headers: this.headers,
+                body: JSON.stringify({ mode }),
+            }).catch(() => {}); // fire-and-forget; next POST /messages/ also sends mode
+        }
     }
+
+    // =====================================================================
+    // UI rendering & messages
+    // =====================================================================
 
     renderSuggestions(list) {
         const container = document.getElementById('suggestionsContainer');
@@ -544,7 +548,8 @@ class UnifiedAudioDataChat {
         list.forEach((s) => {
             const btn = document.createElement('button');
             btn.textContent = s;
-            btn.style = "margin-right: 10px; margin-bottom: 10px; padding: 8px 14px; border-radius: 9999px; background: #eafff1; color: #0f766e; border: 1px solid #c7f9dd; box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer;";
+            btn.className = 'suggestion-btn';
+            btn.style.margin = '0 10px 10px 0';
             btn.addEventListener('click', () => startChatWithSuggestion(s));
             container.appendChild(btn);
         });
@@ -576,13 +581,18 @@ class UnifiedAudioDataChat {
                         assistant_response: message.assistant_response,
                         created_at: message.created_at,
                         status: message.status,
-                        visulization: message.visulization
+                        visualization: message.visualization
                     });
 
-                    // Add visualization if it exists
-                    if (message.visulization) {
+                    // Add visualization if it exists (supports both old single-chart and new artifact format)
+                    if (message.visualization) {
                         setTimeout(() => {
-                            this.addVisualizationToMessage(message.id + '_assistant', message.visulization);
+                            const viz = message.visualization;
+                            if (viz.widgets) {
+                                this.renderArtifact(message.id + '_assistant', viz);
+                            } else {
+                                this.addVisualizationToMessage(message.id + '_assistant', viz);
+                            }
                         }, 100);
                     }
                 } else if (message.status === 'failed') {
@@ -601,7 +611,11 @@ class UnifiedAudioDataChat {
     }
 
     async sendMessage(userInput) {
-        if (!this.currentSession || this.isLoading) return;
+        if (!this.currentSession) return;
+        if (this.isLoading) {
+            this.showErrorToast('Please wait — still processing your previous message');
+            return;
+        }
 
         this.isLoading = true;
         this.setSendButtonLoading(true);
@@ -669,6 +683,10 @@ class UnifiedAudioDataChat {
             this.setSendButtonLoading(false);
         }
     }
+
+    // =====================================================================
+    // Streaming handler
+    // =====================================================================
 
     async handleStreamingResponse(response, assistantMessage) {
         const reader = response.body.getReader();
@@ -776,28 +794,10 @@ class UnifiedAudioDataChat {
                 break;
 
             case 'llm':
-                // Performance tracking
-                const startTime = performance.now();
-                this.streamingStats.messagesReceived++;
-
-                // Accumulate the response
-                if (!assistantMessage.assistant_response) {
-                    assistantMessage.assistant_response = '';
-                }
-                assistantMessage.assistant_response += data;
-
-                // Update UI immediately for fast rendering
-                this.updateMessageContent(assistantMessage.id, assistantMessage.assistant_response);
-
-                // Track performance
-                const updateTime = performance.now() - startTime;
-                this.streamingStats.updateTimes.push(updateTime);
-                this.streamingStats.lastUpdate = Date.now();
-
-                // Log performance if updates are slow
-                if (updateTime > 50) {
-                    console.warn(`Slow streaming update: ${updateTime.toFixed(2)}ms for message ${assistantMessage.id}`);
-                }
+                assistantMessage.assistant_response = (assistantMessage.assistant_response || '') + data;
+                // Incremental markdown rendering: text is formatted each frame (~16ms)
+                // so users see well-structured markdown, not raw **bold** or `code`.
+                this.appendStreamText(assistantMessage.id, assistantMessage.assistant_response);
                 break;
 
             case 'visualization':
@@ -808,10 +808,29 @@ class UnifiedAudioDataChat {
                 this.addVisualizationToMessage(assistantMessage.id, data, assistantMessage.toolResponses);
                 break;
 
+            case 'dashboard':
+                assistantMessage.artifacts = assistantMessage.artifacts || [];
+                assistantMessage.artifacts.push(data);
+                this.renderArtifact(assistantMessage.id, data, assistantMessage.toolResponses);
+                break;
+
             case 'completed':
-                this.updateStreamStatus(assistantMessage.id, 'Completed');
-                this.updateMessageStatus(assistantMessage.id, 'completed');
-                this.hideToolActivity(assistantMessage.id);
+                // Store the real DB message ID for clarification / confirmation flows
+                if (data?.message_id) {
+                    assistantMessage.dbId = data.message_id;
+                    const msgDiv = document.getElementById(`message-${assistantMessage.id}`);
+                    if (msgDiv) msgDiv.dataset.realMessageId = data.message_id;
+                }
+
+                if (data && data.status === 'clarification_pending') {
+                    // Message is waiting for clarification — don't mark as completed
+                    this.updateStreamStatus(assistantMessage.id, 'Waiting for your answer...');
+                    this.hideToolActivity(assistantMessage.id);
+                } else {
+                    this.updateStreamStatus(assistantMessage.id, 'Completed');
+                    this.updateMessageStatus(assistantMessage.id, 'completed');
+                    this.hideToolActivity(assistantMessage.id);
+                }
 
                 // Final fallback: if no llm content arrived, synthesize from latest tool response
                 if (!assistantMessage.assistant_response && assistantMessage.toolResponses?.length) {
@@ -821,6 +840,11 @@ class UnifiedAudioDataChat {
                         assistantMessage.assistant_response = synthesizedText;
                         this.updateMessageContent(assistantMessage.id, synthesizedText);
                     }
+                }
+
+                // Final markdown formatting: replace raw streamed text with formatted HTML
+                if (assistantMessage.assistant_response) {
+                    this.formatStreamedText(assistantMessage.id, assistantMessage.assistant_response);
                 }
 
                 if (data && data.visualization) {
@@ -835,6 +859,14 @@ class UnifiedAudioDataChat {
 
                 // Refresh sessions list asynchronously to avoid blocking
                 setTimeout(() => this.loadSessions(), 100);
+                break;
+
+            case 'clarification':
+                this.showClarificationUI(assistantMessage.id, data);
+                break;
+
+            case 'confirmation':
+                this.showConfirmationUI(assistantMessage.id, data);
                 break;
 
             case 'error':
@@ -904,65 +936,31 @@ class UnifiedAudioDataChat {
   messageDiv.id = `message-${message.id}`;
 
   if (message.user_input && !message.assistant_response) {
-    // 🧑 User message → right aligned
+    // User message — right aligned
     messageDiv.innerHTML = `
       <div style="display:flex; justify-content:flex-end; margin-bottom:1rem;">
         <div style="max-width:70%; text-align:right; min-width:0;">
-          <div
-            style="
-              background-color:#d9fdd3;   /* WhatsApp user green */
-              border:1px solid #b7e6a1;
-              border-top-left-radius:0.75rem;
-              border-bottom-right-radius:0.75rem;
-              border-bottom-left-radius:0.75rem;
-              padding:0.75rem 1rem;
-              box-shadow:0 1px 2px rgba(0,0,0,0.05);
-              color:#111827;
-              font-size:0.95rem;
-              word-wrap:break-word;
-              overflow-wrap:break-word;
-              max-width:100%;
-            "
-          >
+          <div class="msg-bubble msg-bubble-user" style="max-width:100%;">
             ${this.escapeHtml(message.user_input)}
           </div>
           <p style="font-size:0.75rem; color:#667781; margin-top:0.25rem;">
             ${this.formatTime(message.created_at)}
           </p>
         </div>
-        <div style="flex-shrink:0; margin-left:0.75rem;">
-          <div class="rounded-full border border-primary" style="width:2rem; height:2rem; border-radius:9999px; display:flex; align-items:center; justify-content:center;">
-            <img src="{% static 'assets/img/rail.png' %}" alt="User" style="width:1.5rem; height:1.5rem;"/>
-
-          </div>
+        <div class="msg-avatar" style="margin-left:0.75rem; border:1px solid var(--color-primary);">
+          <img src="{% static 'assets/img/rail.png' %}" alt="User"/>
         </div>
       </div>
     `;
   } else {
-    // 🤖 Assistant message → left aligned
+    // Assistant message — left aligned
     messageDiv.innerHTML = `
       <div style="display:flex; justify-content:flex-start; margin-bottom:1rem;">
-        <div style="flex-shrink:0; margin-right:0.75rem;">
-          <div class="border border-primary rounded-full" style="width:2rem; height:2rem; border-radius:9999px; display:flex; align-items:center; justify-content:center;">
-                        <img src="{% static 'assets/img/ai.png' %}" alt="User" style="width:1.5rem; height:1.5rem;"/>
-
-          </div>
+        <div class="msg-avatar" style="margin-right:0.75rem; border:1px solid var(--color-primary);">
+          <img src="{% static 'assets/img/ai.png' %}" alt="AI"/>
         </div>
         <div style="max-width:70%; min-width:0; flex:1;">
-          <div style="
-            background-color:#ffffff;   /* WhatsApp assistant white */
-            border:1px solid #e5e7eb;
-            border-top-right-radius:0.75rem;
-            border-bottom-right-radius:0.75rem;
-            border-bottom-left-radius:0.75rem;
-            padding:0.75rem 1rem;
-            box-shadow:0 1px 2px rgba(0,0,0,0.05);
-            color:#111827;
-            font-size:0.95rem;
-            word-wrap:break-word;
-            overflow-wrap:break-word;
-            max-width:100%;
-          ">
+          <div class="msg-bubble msg-bubble-assistant" style="max-width:100%;">
             <div class="message-content">
               ${message.assistant_response ? this.formatMarkdown(message.assistant_response) :
                 '<div style="display:flex; align-items:center; gap:0.5rem;"><span style="color:#6b7280;">Thinking</span><div class="thinking-dots"><span>.</span><span>.</span><span>.</span></div></div>'}
@@ -1008,53 +1006,152 @@ class UnifiedAudioDataChat {
             }
         }
 
-        if (contentDiv) {
-            // Use requestAnimationFrame for smooth updates
+        if (!contentDiv) return;
+
+        // requestAnimationFrame batching — renders at most once per frame (~16ms).
+        // Unlike a debounce timer (which keeps getting reset by rapid chunks and
+        // never fires until the stream ends), rAF guarantees every chunk is
+        // rendered on the very next frame for true streaming UX.
+        this._pendingStreamContent = content;
+        this._pendingStreamMessageId = messageId;
+
+        if (!this._streamRAFScheduled) {
+            this._streamRAFScheduled = true;
             requestAnimationFrame(() => {
-                try {
-                    // Immediately display the content as it streams in
-                    contentDiv.innerHTML = this.formatMarkdown(content);
-
-                    // Ensure the message container maintains its styling
-                    const messageContainer = contentDiv.closest('div[style*="background-color:#ffffff"]');
-                    if (messageContainer) {
-                        // Maintain consistent styling during streaming
-                        messageContainer.style.wordWrap = 'break-word';
-                        messageContainer.style.overflowWrap = 'break-word';
-                        messageContainer.style.maxWidth = '100%';
-                    }
-
-                    // Auto-scroll to show new content (throttled)
-                    this.throttledScrollToBottom();
-                } catch (error) {
-                    console.error('Error updating message content:', error);
-                    // Fallback: just set text content
-                    contentDiv.textContent = content;
-                }
+                this._streamRAFScheduled = false;
+                this._renderStreamFrame();
             });
-        } else {
-            console.error(`Could not find content div for message ${messageId}`);
         }
+    }
+
+    appendStreamText(messageId, fullText) {
+        const messageDiv = document.getElementById(`message-${messageId}`);
+        if (!messageDiv) return;
+
+        const contentDiv = messageDiv.querySelector('.message-content');
+        if (!contentDiv) return;
+
+        // First token: render markdown immediately for instant feedback.
+        // Subsequent tokens: batch via requestAnimationFrame so the DOM is
+        // updated at most once per frame (~16ms) with full markdown formatting.
+        const isFirstToken = !contentDiv.hasAttribute('data-streaming');
+        if (isFirstToken) {
+            contentDiv.setAttribute('data-streaming', 'true');
+            contentDiv.innerHTML = this.formatMarkdown(fullText);
+        }
+
+        // Schedule rAF-batched markdown render for every chunk.
+        // _renderStreamFrame replaces innerHTML with fully formatted markdown,
+        // so the user always sees well-structured output — no raw **bold** or `###`.
+        this._pendingStreamContent = fullText;
+        this._pendingStreamMessageId = messageId;
+        if (!this._streamRAFScheduled) {
+            this._streamRAFScheduled = true;
+            requestAnimationFrame(() => {
+                this._streamRAFScheduled = false;
+                this._renderStreamFrame();
+            });
+        }
+
+        const bubble = contentDiv.closest('.msg-bubble-assistant');
+        if (bubble) {
+            bubble.style.wordWrap = 'break-word';
+            bubble.style.overflowWrap = 'break-word';
+            bubble.style.maxWidth = '100%';
+        }
+        this.throttledScrollToBottom();
+    }
+
+    formatStreamedText(messageId, text) {
+        const messageDiv = document.getElementById(`message-${messageId}`);
+        if (!messageDiv) return;
+        const contentDiv = messageDiv.querySelector('.message-content');
+        if (!contentDiv) return;
+        contentDiv.removeAttribute('data-streaming');
+        contentDiv.innerHTML = this.formatMarkdown(text);
+        const bubble = contentDiv.closest('.msg-bubble-assistant');
+        if (bubble) {
+            bubble.style.wordWrap = 'break-word';
+            bubble.style.overflowWrap = 'break-word';
+            bubble.style.maxWidth = '100%';
+        }
+        this.scrollToBottom();
+    }
+
+    _renderStreamFrame() {
+        const messageId = this._pendingStreamMessageId;
+        const content = this._pendingStreamContent;
+        this._pendingStreamContent = null;
+        this._pendingStreamMessageId = null;
+
+        if (!messageId || content == null) return;
+
+        const messageDiv = document.getElementById(`message-${messageId}`);
+        if (!messageDiv) return;
+
+        const contentDiv = messageDiv.querySelector('.message-content');
+        if (!contentDiv) return;
+
+        // Render full markdown each frame — the raw content is short enough
+        // (< 5000 chars) that regex-based formatting is sub-millisecond.
+        contentDiv.innerHTML = this.formatMarkdown(content);
+        const bubble = contentDiv.closest('.msg-bubble-assistant');
+        if (bubble) {
+            bubble.style.wordWrap = 'break-word';
+            bubble.style.overflowWrap = 'break-word';
+            bubble.style.maxWidth = '100%';
+        }
+        this.throttledScrollToBottom();
     }
 
     updateMessageStatus(messageId, status) {
         const messageDiv = document.getElementById(`message-${messageId}`);
-        if (messageDiv) {
-            // Find the message-content div in the new structure
-            const contentDiv = messageDiv.querySelector('.message-content');
-            if (contentDiv && status === 'failed') {
-                contentDiv.innerHTML = '<div style="color:#ef4444;">Failed to process message. Please try again.</div>';
+        if (!messageDiv) return;
+
+        // Find the message-content div in the new structure
+        let contentDiv = messageDiv.querySelector('.message-content');
+
+        // Defensive fallback: search for the white background bubble
+        if (!contentDiv) {
+            const whiteBgDiv = messageDiv.querySelector('.msg-bubble-assistant') || messageDiv.querySelector('.msg-bubble');
+            if (whiteBgDiv) {
+                contentDiv = whiteBgDiv.querySelector('.message-content');
+                if (!contentDiv) {
+                    // Use the white bubble itself as the content container
+                    contentDiv = whiteBgDiv;
+                }
+            }
+        }
+
+        if (contentDiv && status === 'failed') {
+            contentDiv.innerHTML = '<div style="color:#ef4444;">Failed to process message. Please try again.</div>';
+        }
+
+        // Update stream-status div
+        const streamStatusDiv = messageDiv.querySelector('.stream-status');
+        if (streamStatusDiv) {
+            if (status === 'failed') {
+                streamStatusDiv.textContent = 'Failed';
+                streamStatusDiv.style.color = '#ef4444';
+                streamStatusDiv.style.display = 'block';
+            } else if (status === 'completed') {
+                streamStatusDiv.style.display = 'none';
             }
         }
     }
+
+    // =====================================================================
+    // Visualization & charts
+    // =====================================================================
 
     addVisualizationToMessage(messageId, visualizationData, toolResponses = []) {
         const messageDiv = document.getElementById(`message-${messageId}`);
         if (messageDiv) {
             const container = messageDiv.querySelector('.visualizations-container');
             if (container) {
-                if (container.dataset.rendered === 'true') {
-                    return;
+                const vizName = visualizationData?.visualization_name || '';
+                if (vizName && container.querySelector(`[data-viz-name="${this.escapeHtml(vizName)}"]`)) {
+                    return; // already rendered this specific visualization
                 }
                 const chartType = this.normalizeChartType(visualizationData?.frontend_data?.type);
                 const tableData = visualizationData?.frontend_data?.table;
@@ -1070,14 +1167,15 @@ class UnifiedAudioDataChat {
                 }
                 const chartId = `chart-${messageId}-${Date.now()}`;
                 const vizDiv = document.createElement('div');
-                vizDiv.className = 'visualization mb-6 p-4 bg-gradient-to-r from-green-600 to-lime-400 rounded-lg ';
+                vizDiv.className = 'visualization viz-card';
+                vizDiv.setAttribute('data-viz-name', visualizationData.visualization_name);
                 const layoutStyle = hasTable ? "display:flex; gap:12px; flex-wrap:wrap;" : "";
                 const chartWrapStyle = hasTable ? "flex:1; min-width:260px;" : "";
                 const tableWrapStyle = hasTable ? "flex:1; min-width:260px;" : "";
                 vizDiv.innerHTML = `
                     <div class="flex items-center mb-3">
                         <div class="w-3 h-3 bg-blue-500 rounded-full mr-2"></div>
-                        <h4 class="font-semibold text-white text-gray-800"> ${visualizationData.visualization_name || 'Data Visualization'}</h4>
+                        <h4 class="font-semibold text-white"> ${visualizationData.visualization_name || 'Data Visualization'}</h4>
                     </div>
                     <div style="${layoutStyle}">
                         ${hasChart ? `<div style="${chartWrapStyle}">
@@ -1087,7 +1185,7 @@ class UnifiedAudioDataChat {
                         </div>` : ''}
                         ${hasTable ? `<div style="${tableWrapStyle}">${tableHtml}</div>` : ''}
                     </div>
-                    <div class="mt-3   text-base  text-white text-gray-600">
+                    <div class="mt-3 text-base text-white">
                         <p>${visualizationData.frontend_data?.description || visualizationData.recommendation?.reasoning || 'Interactive chart based on your audio data'}</p>
                     </div>
                 `;
@@ -1099,7 +1197,6 @@ class UnifiedAudioDataChat {
                         this.createChart(visualizationData, chartId, toolResponses);
                     }, 100);
                 }
-                container.dataset.rendered = 'true';
             }
         }
     }
@@ -1120,6 +1217,7 @@ class UnifiedAudioDataChat {
 
             // Extract actual data from the tool responses
             const actualData = this.extractChartData(visualizationData, toolResponses);
+            if (!actualData) return;
 
             console.log('Creating chart:', chartType, 'with data:', actualData);
 
@@ -1776,23 +1874,25 @@ class UnifiedAudioDataChat {
             }
         }
 
-        // Fallback: Use the data from the sample response (Ashanti region with 2 files)
-        return {
-            labels: ['Ashanti'],
-            data: [2],
-            colors: ['#FF6384'],
-            title: 'Distribution of Audio Files by Region'
-        };
+        return null;
     }
 
     generateColors(count) {
         const colors = [
             '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0',
-            '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF',
-            '#4BC0C0', '#FF6384', '#36A2EB', '#FFCE56'
+            '#9966FF', '#FF9F40', '#8B5CF6', '#EC4899',
+            '#10B981', '#F59E0B', '#3B82F6', '#EF4444'
         ];
-        return colors.slice(0, count);
+        const result = [];
+        for (let i = 0; i < count; i++) {
+            result.push(colors[i % colors.length]);
+        }
+        return result;
     }
+
+    // =====================================================================
+    // Markdown & table formatting
+    // =====================================================================
 
     buildTableHtml(tableData) {
         if (!tableData || !Array.isArray(tableData.columns) || !Array.isArray(tableData.rows) || tableData.rows.length === 0) {
@@ -1818,6 +1918,506 @@ class UnifiedAudioDataChat {
             </div>
         `;
     }
+
+    // =====================================================================
+    // Multi-widget artifact rendering
+    // =====================================================================
+
+    renderArtifact(messageId, artifact, toolResponses = []) {
+        if (!artifact?.widgets?.length) return;
+        const messageDiv = document.getElementById(`message-${messageId}`);
+        if (!messageDiv) return;
+        const container = messageDiv.querySelector('.visualizations-container');
+        if (!container) return;
+
+        const layout = artifact.layout_template || 'single';
+        container.classList.add(`viz-layout-${layout}`);
+
+        artifact.widgets.forEach(widget => {
+            const widgetId = widget.id || `widget-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+            if (container.querySelector(`[data-widget-id="${widgetId}"]`)) return;
+
+            const widgetDiv = document.createElement('div');
+            widgetDiv.className = `widget-card widget-${widget.type}`;
+            widgetDiv.setAttribute('data-widget-id', widgetId);
+
+            const hasChartData = Array.isArray(widget.data?.labels)
+                             && widget.data.labels.length > 0
+                             && Array.isArray(widget.data?.data)
+                             && widget.data.data.length > 0;
+            const chartType = this.normalizeChartType(widget.data?.type);
+
+            if (widget.type === 'stat_card') {
+                widgetDiv.innerHTML = this.buildStatCardHtml(widget);
+                container.appendChild(widgetDiv);
+            } else if (widget.type === 'progress_bar') {
+                widgetDiv.innerHTML = this.buildProgressBarHtml(widget);
+                container.appendChild(widgetDiv);
+            } else if (widget.type === 'insight') {
+                const obs = (widget.data.observations || []).map(o =>
+                    `<div class="insight-item">
+                        <span class="insight-marker">•</span>
+                        <span>${this.escapeHtml(o)}</span>
+                    </div>`
+                ).join('');
+                widgetDiv.innerHTML = `
+                    <h4 style="font-weight:600; color:#fff; margin-bottom:0.75rem;">
+                        ${this.escapeHtml(widget.title)}
+                    </h4>
+                    <div class="insight-list">${obs}</div>`;
+                container.appendChild(widgetDiv);
+            } else if (widget.type === 'ranking_highlight') {
+                const items = (widget.data.items || []).map(item => {
+                    const rankBadge = item.rank <= 3
+                        ? `<span class="rank-badge rank-top">#${item.rank}</span>`
+                        : `<span class="rank-badge rank-bottom">#${item.rank}</span>`;
+                    return `<div class="rank-item">
+                        ${rankBadge}
+                        <span class="rank-label">${this.escapeHtml(item.label)}</span>
+                        <span class="rank-primary">${this.escapeHtml(item.primary)}</span>
+                        ${item.secondary ? `<span class="rank-secondary">${this.escapeHtml(item.secondary)}</span>` : ''}
+                    </div>`;
+                }).join('');
+                widgetDiv.innerHTML = `
+                    <h4 style="font-weight:600; color:#fff; margin-bottom:0.75rem;">
+                        ${this.escapeHtml(widget.title)}
+                    </h4>
+                    <div class="rank-list">${items}</div>
+                    ${widget.data.total > widget.data.limit
+                        ? `<p class="rank-note">Showing top and bottom ${widget.data.limit} of ${widget.data.total}</p>`
+                        : ''}`;
+                container.appendChild(widgetDiv);
+            } else if ((widget.type === 'table' || widget.data?.table) && !hasChartData) {
+                const tableHtml = this.buildTableHtml(widget.data.table);
+                widgetDiv.innerHTML = `<h4 style="font-weight:600; color:#fff; margin-bottom:0.5rem;">${this.escapeHtml(widget.title)}</h4>${tableHtml}`;
+                container.appendChild(widgetDiv);
+            } else if (chartType && chartType !== 'none' && hasChartData) {
+                const chartId = `chart-${widgetId}`;
+                widgetDiv.innerHTML = `
+                    <h4 style="font-weight:600; color:#fff; margin-bottom:0.5rem;">${this.escapeHtml(widget.title)}</h4>
+                    <div style="background:#fff; border-radius:0.5rem; padding:0.75rem;">
+                        <canvas id="${chartId}" width="400" height="200"></canvas>
+                    </div>
+                    ${widget.data?.description ? `<p style="font-size:0.8rem; color:rgba(255,255,255,0.8); margin-top:0.5rem;">${this.escapeHtml(widget.data.description)}</p>` : ''}
+                `;
+                container.appendChild(widgetDiv);
+                setTimeout(() => {
+                    this.createChart(
+                        {frontend_data: widget.data, visualization_name: widget.title},
+                        chartId,
+                        toolResponses
+                    );
+                }, 50);
+            } else if (widget.data?.description) {
+                widgetDiv.innerHTML = `<p style="color:#fff; font-size:0.9rem;">${this.escapeHtml(widget.data.description)}</p>`;
+                container.appendChild(widgetDiv);
+            }
+        });
+
+        // Add save button after all widgets are rendered
+        if (artifact.widgets.length > 0) {
+            const saveBar = document.createElement('div');
+            saveBar.className = 'widget-save-bar';
+            saveBar.innerHTML = `
+                <button class="widget-save-btn" title="Save dashboard">
+                    <i class="fa-regular fa-bookmark"></i> Save Dashboard
+                </button>
+            `;
+            saveBar.querySelector('.widget-save-btn').onclick = () => this.saveDashboard(messageId, artifact);
+            container.appendChild(saveBar);
+        }
+
+        // "Analyze" button — opt-in LLM insight
+        const insightBar = document.createElement('div');
+        insightBar.className = 'insight-bar';
+        const insightBtn = document.createElement('button');
+        insightBtn.className = 'insight-btn';
+        insightBtn.textContent = 'What do you notice?';
+        insightBtn.onclick = () => this.fetchInsight(messageId, artifact, insightBar);
+        insightBar.appendChild(insightBtn);
+        container.appendChild(insightBar);
+
+        // Render follow-up chips
+        const followUps = artifact.follow_ups;
+        if (Array.isArray(followUps) && followUps.length > 0) {
+            const chipsRow = document.createElement('div');
+            chipsRow.className = 'followup-chips-row';
+            followUps.forEach(question => {
+                const chip = document.createElement('button');
+                chip.className = 'followup-chip';
+                chip.textContent = question;
+                chip.onclick = () => {
+                    // Find the active chat input and populate it
+                    const chatInput = document.querySelector('#chatForm .chat-input-field')
+                                    || document.querySelector('#welcomeInput');
+                    if (chatInput) {
+                        chatInput.value = question;
+                        chatInput.focus();
+                    }
+                    this.sendMessage(question);
+                };
+                chipsRow.appendChild(chip);
+            });
+            container.appendChild(chipsRow);
+        }
+    }
+
+    async saveDashboard(messageId, artifact) {
+        const title = prompt('Dashboard title:');
+        if (!title) return;
+
+        // Generate thumbnail from the first chart canvas in this container
+        let thumbnail = null;
+        const messageDiv = document.getElementById(`message-${messageId}`);
+        if (messageDiv) {
+            const canvas = messageDiv.querySelector('.visualizations-container canvas');
+            if (canvas) {
+                try {
+                    thumbnail = canvas.toDataURL('image/jpeg', 0.5);
+                } catch (e) {
+                    // Canvas may be tainted or not yet rendered
+                }
+            }
+        }
+
+        const sessionId = this.currentSession?.id;
+        const realMessageIdEl = document.getElementById(`message-${messageId}`);
+        const realMessageId = realMessageIdEl?.dataset?.realMessageId;
+        if (!sessionId || !realMessageId) {
+            alert('Cannot save: session not ready.');
+            return;
+        }
+
+        try {
+            const resp = await fetch(
+                `${this.apiBaseUrl}/insights/sessions/${sessionId}/messages/${realMessageId}/save-dashboard/`,
+                {
+                    method: 'POST',
+                    headers: this.headers,
+                    body: JSON.stringify({title, thumbnail}),
+                }
+            );
+            if (resp.ok) {
+                const data = await resp.json();
+                alert(`Dashboard "${data.title}" saved!`);
+            } else {
+                const err = await resp.json().catch(() => ({}));
+                alert(`Save failed: ${err.error || 'Unknown error'}`);
+            }
+        } catch (e) {
+            alert('Network error saving dashboard.');
+        }
+    }
+
+    async fetchInsight(messageId, artifact, insightBar) {
+        const btn = insightBar.querySelector('.insight-btn');
+        if (!btn) return;
+
+        btn.textContent = 'Analyzing...';
+        btn.disabled = true;
+
+        // Build a lightweight summary from the artifact
+        const parts = [];
+        if (artifact.widgets) {
+            artifact.widgets.forEach(w => {
+                const label = w.title || w.type;
+                const val = w.data?.stats
+                    ? Object.entries(w.data.stats).map(([k, v]) => `${k}=${v}`).join(', ')
+                    : (w.data?.labels?.length ? `${w.data.labels.length} items` : '');
+                parts.push(`${label}: ${val}`);
+            });
+        }
+        const summary = parts.join('; ') || 'Data results';
+
+        const sessionId = this.currentSession?.id;
+        const realMessageIdEl = document.getElementById(`message-${messageId}`);
+        const realMessageId = realMessageIdEl?.dataset?.realMessageId;
+        if (!sessionId || !realMessageId) {
+            btn.textContent = 'What do you notice?';
+            btn.disabled = false;
+            return;
+        }
+
+        try {
+            const resp = await fetch(
+                `${this.apiBaseUrl}/insights/sessions/${sessionId}/messages/${realMessageId}/insight/`,
+                {
+                    method: 'POST',
+                    headers: this.headers,
+                    body: JSON.stringify({summary}),
+                }
+            );
+            if (resp.ok) {
+                const data = await resp.json();
+                if (data.insight) {
+                    // Replace button with insight card
+                    const card = document.createElement('div');
+                    card.className = 'insight-card';
+                    const paragraphs = data.insight.split('\n\n').filter(Boolean);
+                    card.innerHTML = paragraphs.map(p =>
+                        `<p>${this.escapeHtml(p)}</p>`
+                    ).join('');
+                    insightBar.replaceWith(card);
+                    return;
+                }
+            }
+        } catch (e) {
+            // fall through to reset button
+        }
+        btn.textContent = 'What do you notice?';
+        btn.disabled = false;
+    }
+
+    buildStatCardHtml(widget) {
+        const stats = widget.data?.stats || {};
+        const rows = Object.entries(stats).map(([label, value]) => {
+            const formatted = typeof value === 'number' ? value.toLocaleString() : String(value ?? '--');
+            return `<div style="margin-bottom:0.75rem;">
+                <div class="stat-card-value">${this.escapeHtml(formatted)}</div>
+                <div class="stat-card-label">${this.escapeHtml(this.humaniseKey(label))}</div>
+            </div>`;
+        }).join('');
+        return `<h4 style="font-weight:600; color:#fff; margin-bottom:0.75rem;">${this.escapeHtml(widget.title)}</h4>
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(110px,1fr)); gap:0.5rem;">${rows}</div>`;
+    }
+
+    buildProgressBarHtml(widget) {
+        const items = widget.data?.items || [];
+        const bars = items.map(item => {
+            const pct = Math.min(100, Math.max(0, parseFloat(item.value) || 0));
+            const color = item.color || '#22c55e';
+            return `<div style="margin-bottom:0.75rem;">
+                <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:rgba(255,255,255,0.9); margin-bottom:0.25rem;">
+                    <span>${this.escapeHtml(item.label)}</span>
+                    <span style="font-weight:600;">${pct.toFixed(1)}%</span>
+                </div>
+                <div class="progress-bar-track">
+                    <div class="progress-bar-fill" style="width:${pct}%; background:${color};"></div>
+                </div>
+            </div>`;
+        }).join('');
+        return `<h4 style="font-weight:600; color:#fff; margin-bottom:0.75rem;">${this.escapeHtml(widget.title)}</h4>${bars}`;
+    }
+
+    humaniseKey(key) {
+        if (!key) return '';
+        return String(key).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    // =====================================================================
+    // Clarification / confirmation UI
+    // =====================================================================
+
+    showClarificationUI(messageId, data) {
+        const panel = document.getElementById('clarificationPanel');
+        if (!panel) return;
+
+        // Store clarification context on the panel for re-display and response routing
+        panel.dataset.messageId = messageId;
+        panel.dataset.clarificationData = JSON.stringify(data);
+
+        const question = data.question || 'Could you clarify?';
+        const options = data.options || [];
+        const allowCustom = data.allow_custom !== false;
+        const customPlaceholder = data.custom_placeholder || 'Type your own answer...';
+
+        let optionsHtml = '';
+        if (options.length > 0) {
+            optionsHtml = '<div class="clarify-options">';
+            options.forEach((opt) => {
+                optionsHtml += `<button type="button" class="clarify-chip" data-option="${this.escapeHtml(opt)}">${this.escapeHtml(opt)}</button>`;
+            });
+            optionsHtml += '</div>';
+        }
+
+        let customHtml = '';
+        if (allowCustom) {
+            customHtml = `
+                <div class="clarify-custom-row">
+                    <input type="text" class="clarify-custom-input" placeholder="${this.escapeHtml(customPlaceholder)}" />
+                    <button type="button" class="clarify-submit" disabled>Continue</button>
+                </div>`;
+        } else {
+            customHtml = `
+                <div style="display:flex; justify-content:flex-end; margin-top:4px;">
+                    <button type="button" class="clarify-submit" disabled>Continue</button>
+                </div>`;
+        }
+
+        panel.innerHTML = `
+            <p class="clarify-question">${this.escapeHtml(question)}</p>
+            ${optionsHtml}
+            ${customHtml}`;
+        panel.classList.remove('hidden');
+
+        this._wireClarificationEvents(panel, messageId);
+    }
+
+    hideClarificationPanel() {
+        const panel = document.getElementById('clarificationPanel');
+        if (panel) {
+            panel.classList.add('hidden');
+            panel.innerHTML = '';
+        }
+    }
+
+    _wireClarificationEvents(container, messageId) {
+        const submitBtn = container.querySelector('.clarify-submit');
+        const customInput = container.querySelector('.clarify-custom-input');
+        const chips = container.querySelectorAll('.clarify-chip');
+
+        let selectedOption = null;
+
+        const updateSubmitState = () => {
+            const hasSelection = selectedOption !== null || (customInput && customInput.value.trim());
+            if (hasSelection) {
+                submitBtn.classList.add('active');
+                submitBtn.disabled = false;
+            } else {
+                submitBtn.classList.remove('active');
+                submitBtn.disabled = true;
+            }
+        };
+
+        chips.forEach(chip => {
+            chip.addEventListener('click', () => {
+                const opt = chip.dataset.option;
+                if (selectedOption === opt) {
+                    // Deselect
+                    selectedOption = null;
+                    chip.classList.remove('selected');
+                } else {
+                    // Select this one, deselect others
+                    chips.forEach(c => c.classList.remove('selected'));
+                    selectedOption = opt;
+                    chip.classList.add('selected');
+                    if (customInput) customInput.value = '';
+                }
+                updateSubmitState();
+            });
+        });
+
+        if (customInput) {
+            customInput.addEventListener('input', () => {
+                if (customInput.value.trim()) {
+                    selectedOption = null;
+                    chips.forEach(c => c.classList.remove('selected'));
+                }
+                updateSubmitState();
+            });
+
+            customInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !submitBtn.disabled) {
+                    e.preventDefault();
+                    submitBtn.click();
+                }
+            });
+        }
+
+        submitBtn.addEventListener('click', () => {
+            const isCustom = !!((customInput && customInput.value.trim() && !selectedOption));
+            const answer = isCustom ? customInput.value.trim() : selectedOption;
+            if (!answer) return;
+
+            submitBtn.disabled = true;
+            submitBtn.classList.remove('active');
+            submitBtn.textContent = 'Sending...';
+            chips.forEach(c => { c.disabled = true; c.style.opacity = '0.5'; });
+            if (customInput) customInput.disabled = true;
+
+            this.hideClarificationPanel();
+            this.sendClarificationResponse(messageId, answer, isCustom);
+        });
+    }
+
+    showConfirmationUI(messageId, data) {
+        const panel = document.getElementById('clarificationPanel');
+        if (!panel) return;
+
+        panel.dataset.messageId = messageId;
+        const message = data.message || 'Does that look right?';
+
+        panel.innerHTML = `
+            <p class="confirm-message">${this.escapeHtml(message)}</p>
+            <div class="confirm-actions">
+                <button type="button" class="confirm-btn-yes">Yes, proceed</button>
+                <button type="button" class="confirm-btn-no">No, let me rephrase</button>
+            </div>`;
+        panel.classList.remove('hidden');
+
+        const yesBtn = panel.querySelector('.confirm-btn-yes');
+        const noBtn = panel.querySelector('.confirm-btn-no');
+
+        yesBtn.addEventListener('click', () => {
+            yesBtn.disabled = true;
+            noBtn.disabled = true;
+            yesBtn.textContent = 'Proceeding...';
+            noBtn.style.opacity = '0.5';
+            this.hideClarificationPanel();
+            this.sendClarificationResponse(messageId, '__CONFIRMED__', false);
+        });
+
+        noBtn.addEventListener('click', () => {
+            try {
+                const storedData = JSON.parse(panel.dataset.clarificationData || '{}');
+                const restoreData = {
+                    question: storedData.question || (data.dimension ? `What should I use for ${data.dimension}?` : 'Could you clarify?'),
+                    options: storedData.options || [],
+                    dimension: data.dimension || '',
+                    allow_custom: true,
+                    custom_placeholder: 'Type your answer...',
+                };
+                this.showClarificationUI(messageId, restoreData);
+            } catch (e) {
+                console.warn('No stored clarification data for rephrase');
+            }
+        });
+    }
+
+    async sendClarificationResponse(messageId, answer, isCustom) {
+        if (!this.currentSession) return;
+
+        // Resolve the real DB message ID (the client-generated id may be stale)
+        const msgDiv = document.getElementById(`message-${messageId}`);
+        const realMessageId = msgDiv?.dataset?.realMessageId || messageId;
+
+        try {
+            const body = { answer: answer, is_custom: isCustom };
+
+            const response = await fetch(
+                `${this.apiBaseUrl}/insights/sessions/${this.currentSession.id}/messages/${realMessageId}/clarify/`,
+                {
+                    method: 'POST',
+                    headers: this.headers,
+                    body: JSON.stringify(body),
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error('Failed to send clarification response');
+            }
+
+            // Use the streaming handler to process the continued stream
+            const assistantMessage = {
+                id: messageId,
+                user_input: '',
+                assistant_response: '',
+                created_at: new Date().toISOString(),
+                status: 'processing',
+                visualizations: [],
+                toolResponses: [],
+            };
+            await this.handleStreamingResponse(response, assistantMessage);
+
+        } catch (error) {
+            console.error('Error sending clarification response:', error);
+            this.showErrorToast('Failed to send your answer');
+        }
+    }
+
+    // =====================================================================
+    // Utility helpers
+    // =====================================================================
 
     calculateMedian(sortedArray) {
         const n = sortedArray.length;
@@ -1868,6 +2468,7 @@ class UnifiedAudioDataChat {
         document.getElementById('chatContainer').classList.add('hidden');
         document.getElementById('chatInputContainer').classList.add('hidden');
         document.getElementById('messagesContainer').innerHTML = '';
+        this.hideClarificationPanel();
         this.updateChatTitle('Welcome to Data Insights!');
         this.updateModeUI();
     }
@@ -1876,6 +2477,7 @@ class UnifiedAudioDataChat {
         document.getElementById('welcomeScreen').classList.add('hidden');
         document.getElementById('chatContainer').classList.remove('hidden');
         document.getElementById('chatInputContainer').classList.remove('hidden');
+        this.hideClarificationPanel();
     }
 
     updateChatTitle(title) {
@@ -2013,11 +2615,6 @@ class UnifiedAudioDataChat {
             return '';
         }
 
-        // Cache for performance during streaming
-        if (this._markdownCache && this._markdownCache.input === text) {
-            return this._markdownCache.output;
-        }
-
         let formattedText = text;
 
         try {
@@ -2093,9 +2690,6 @@ class UnifiedAudioDataChat {
             // Fallback: just escape HTML and preserve line breaks
             formattedText = text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
         }
-
-        // Cache the result for repeated calls during streaming
-        this._markdownCache = { input: text, output: formattedText };
 
         return formattedText;
     }
@@ -2399,24 +2993,304 @@ function debugStreamingDOM() {
     }
 }
 
-// Add to global scope for debugging
-window.debugStreamingDOM = debugStreamingDOM;
-window.testAllCharts = () => window.unifiedChat.testAllChartTypes();
+// Add to global scope for debugging (development only)
+if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    window.debugStreamingDOM = debugStreamingDOM;
+    window.testAllCharts = () => window.unifiedChat.testAllChartTypes();
+}
 
 // Initialize the unified chat when the page loads
 document.addEventListener('DOMContentLoaded', () => {
     window.unifiedChat = new UnifiedAudioDataChat();
-
-    // Add global debugging
-    window.debugStreaming = () => window.unifiedChat.debugStreamingPerformance();
-
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        window.debugStreaming = () => window.unifiedChat.debugStreamingPerformance();
+        console.log('💡 Debug commands available: debugStreamingDOM(), debugStreaming()');
+    }
     console.log('🎵 Unified Audio Data Chat initialized');
-    console.log('💡 Debug commands available: debugStreamingDOM(), debugStreaming()');
 });
 </script>
 
 <style>
 /* Custom styles for the unified chat interface */
+
+/* =====================================================================
+ * Utility classes
+ * ===================================================================== */
+.hidden {
+    display: none !important;
+}
+
+/* =====================================================================
+ * Design tokens — use these instead of hardcoded colors
+ * ===================================================================== */
+:root {
+    --color-primary: #22c55e;
+    --color-primary-light: #eafff1;
+    --color-primary-dark: #0f766e;
+    --color-secondary: #2563eb;
+    --color-secondary-light: #dbeafe;
+    --color-bg-slate: #f8fafc;
+    --color-border: #e2e8f0;
+    --color-text: #334155;
+    --color-text-muted: #6b7280;
+}
+
+/* =====================================================================
+ * Visualization container — replaces inline green gradient blocks
+ * ===================================================================== */
+.viz-card {
+    background: linear-gradient(to right, #16a34a, #a3e635);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+/* ── Multi-widget dashboard layouts ─────────────────────────────────────── */
+.viz-layout-two_column {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+.viz-layout-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+}
+.viz-layout-single {
+    display: block;
+}
+
+/* ── Widget card variants ───────────────────────────────────────────────── */
+.widget-card {
+    background: linear-gradient(135deg, #1e293b, #334155);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    color: #ffffff;
+}
+.widget-stat_card {
+    background: linear-gradient(135deg, #1e40af, #3b82f6);
+    text-align: center;
+    padding: 1.25rem;
+}
+.widget-progress_bar {
+    border: 1px solid rgba(255,255,255,0.15);
+}
+
+/* ── Stat card internals ─────────────────────────────────────────────────── */
+.stat-card-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #ffffff;
+    line-height: 1.2;
+}
+.stat-card-label {
+    font-size: 0.8rem;
+    color: rgba(255,255,255,0.75);
+    margin-top: 0.2rem;
+}
+
+/* ── Progress bar ────────────────────────────────────────────────────────── */
+.progress-bar-track {
+    background: rgba(255,255,255,0.2);
+    border-radius: 9999px;
+    height: 10px;
+    overflow: hidden;
+    margin-top: 0.4rem;
+}
+.progress-bar-fill {
+    height: 100%;
+    border-radius: 9999px;
+    transition: width 0.6s ease;
+}
+
+/* ── Insight widget ────────────────────────────────────────────────────── */
+.widget-insight {
+    border: 1px solid rgba(255,255,255,0.12);
+}
+.insight-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+.insight-item {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+    color: rgba(255,255,255,0.88);
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+.insight-marker {
+    color: #22c55e;
+    font-weight: bold;
+    flex-shrink: 0;
+}
+
+/* ── Ranking Highlight widget ──────────────────────────────────────────── */
+.widget-ranking_highlight {
+    border: 1px solid rgba(255,255,255,0.08);
+}
+.rank-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.rank-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.45rem 0.6rem;
+    background: rgba(255,255,255,0.08);
+    border-radius: 0.4rem;
+}
+.rank-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.8rem;
+    height: 1.5rem;
+    border-radius: 0.3rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+.rank-top {
+    background: rgba(34, 197, 94, 0.2);
+    color: #22c55e;
+}
+.rank-bottom {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}
+.rank-label {
+    flex: 1;
+    font-size: 0.82rem;
+    color: rgba(255,255,255,0.9);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.rank-primary {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #fff;
+    white-space: nowrap;
+}
+.rank-secondary {
+    font-size: 0.72rem;
+    color: rgba(255,255,255,0.55);
+    white-space: nowrap;
+}
+.rank-note {
+    margin-top: 0.5rem;
+    font-size: 0.72rem;
+    color: rgba(255,255,255,0.5);
+}
+
+/* =====================================================================
+ * Message bubble base — used by both user and assistant messages
+ * ===================================================================== */
+.msg-bubble {
+    max-width: 70%;
+    min-width: 0;
+    padding: 0.75rem 1rem;
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    color: #111827;
+    font-size: 0.95rem;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.msg-bubble-user {
+    background-color: #d9fdd3;
+    border: 1px solid #b7e6a1;
+    border-top-right-radius: 0;
+}
+
+.msg-bubble-assistant {
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-top-left-radius: 0;
+}
+
+/* =====================================================================
+ * Avatar circle
+ * ===================================================================== */
+.msg-avatar {
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.msg-avatar img {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+/* =====================================================================
+ * Suggestion pill buttons
+ * ===================================================================== */
+.suggestion-btn {
+    padding: 8px 14px;
+    border-radius: 9999px;
+    background: var(--color-primary-light);
+    color: var(--color-primary-dark);
+    border: 1px solid #c7f9dd;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: background 0.15s ease;
+}
+
+.suggestion-btn:hover {
+    background: #d1fae5;
+}
+
+/* =====================================================================
+ * Chat input wrapper
+ * ===================================================================== */
+.chat-input-wrapper {
+    width: 100%;
+    position: relative;
+}
+
+.chat-input-field {
+    width: 100%;
+    background-color: var(--color-bg-slate);
+    border: 1px solid var(--color-border);
+    border-radius: 9999px;
+    padding: 1rem 4rem 1rem 1rem;
+    outline: none;
+    color: var(--color-text);
+    font-size: 1rem;
+}
+
+.chat-input-send {
+    position: absolute;
+    right: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3rem;
+    height: 3rem;
+    border-radius: 9999px;
+    background-color: var(--color-primary);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    cursor: pointer;
+    border: none;
+}
+
+/* =====================================================================
+ * Message animations
+ * ===================================================================== */
 .message {
     animation: fadeIn 0.3s ease-in;
 }
@@ -2429,6 +3303,183 @@ document.addEventListener('DOMContentLoaded', () => {
 @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
+}
+
+/* =====================================================================
+ * Clarification & confirmation UI — floating panel with pill chips
+ * ===================================================================== */
+#clarificationPanel {
+    animation: clarifySlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    max-width: 640px;
+    width: calc(100% - 2rem);
+}
+
+@keyframes clarifySlideUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Question */
+.clarify-question {
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: #111827;
+    margin: 0 0 20px 0;
+    line-height: 1.55;
+    letter-spacing: -0.01em;
+}
+
+/* Option chips */
+.clarify-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 18px;
+}
+
+.clarify-chip {
+    padding: 10px 20px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 9999px;
+    background: #ffffff;
+    color: #374151;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 450;
+    line-height: 1.4;
+    transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+    white-space: nowrap;
+    user-select: none;
+    outline: none;
+}
+
+.clarify-chip:hover {
+    background: #f9fafb;
+    border-color: #d1d5db;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+.clarify-chip:focus-visible {
+    box-shadow: 0 0 0 3px rgba(17,24,39,0.12);
+}
+
+.clarify-chip.selected {
+    background: #111827;
+    color: #ffffff;
+    border-color: #111827;
+    box-shadow: 0 2px 8px rgba(17,24,39,0.15);
+    font-weight: 500;
+}
+
+/* Custom input row */
+.clarify-custom-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.clarify-custom-input {
+    flex: 1;
+    padding: 11px 18px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 9999px;
+    font-size: 0.875rem;
+    color: #374151;
+    outline: none;
+    background: #ffffff;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    font-family: inherit;
+}
+
+.clarify-custom-input::placeholder {
+    color: #9ca3af;
+}
+
+.clarify-custom-input:focus {
+    border-color: #6b7280;
+    box-shadow: 0 0 0 3px rgba(107,114,128,0.08);
+}
+
+/* Submit / Continue button */
+.clarify-submit {
+    flex-shrink: 0;
+    padding: 11px 22px;
+    background: #111827;
+    color: #fff;
+    border: none;
+    border-radius: 9999px;
+    cursor: default;
+    font-size: 0.875rem;
+    font-weight: 500;
+    opacity: 0.35;
+    transition: opacity 0.2s ease, background 0.15s ease;
+    pointer-events: none;
+    letter-spacing: 0.01em;
+}
+
+.clarify-submit.active {
+    opacity: 1;
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.clarify-submit.active:hover {
+    background: #1f2937;
+}
+
+.clarify-submit.active:active {
+    background: #0f1722;
+    transform: scale(0.98);
+}
+
+/* Confirmation variant */
+.confirm-message {
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: #111827;
+    margin: 0 0 20px 0;
+    line-height: 1.55;
+    letter-spacing: -0.01em;
+}
+
+.confirm-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.confirm-btn-yes {
+    padding: 11px 22px;
+    background: #111827;
+    color: #fff;
+    border: none;
+    border-radius: 9999px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    transition: background 0.15s ease;
+}
+
+.confirm-btn-yes:hover {
+    background: #1f2937;
+}
+
+.confirm-btn-no {
+    padding: 11px 22px;
+    background: #ffffff;
+    color: #dc2626;
+    border: 1.5px solid #fecaca;
+    border-radius: 9999px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.confirm-btn-no:hover {
+    background: #fef2f2;
+    border-color: #fca5a5;
 }
 
 .session-item {
@@ -2704,6 +3755,84 @@ document.addEventListener('DOMContentLoaded', () => {
 #chatContainer::-webkit-scrollbar-thumb:hover,
 #sessionsList::-webkit-scrollbar-thumb:hover {
     background: #a8a8a8;
+}
+
+/* ── Dashboard save bar ───────────────────────────────────────────────── */
+.widget-save-bar {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(255,255,255,0.25);
+    text-align: right;
+}
+.widget-save-btn {
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 0.5rem;
+    padding: 0.4rem 1rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.widget-save-btn:hover {
+    background: rgba(255,255,255,0.25);
+}
+
+/* ── Insight bar / card ────────────────────────────────────────────────── */
+.insight-bar {
+    margin-top: 0.75rem;
+}
+.insight-btn {
+    background: transparent;
+    color: rgba(255,255,255,0.7);
+    border: 1px dashed rgba(255,255,255,0.3);
+    border-radius: 0.5rem;
+    padding: 0.35rem 0.9rem;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+}
+.insight-btn:hover {
+    color: #fff;
+    border-color: rgba(255,255,255,0.5);
+}
+.insight-card {
+    margin-top: 0.75rem;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+}
+.insight-card p {
+    color: rgba(255,255,255,0.9);
+    font-size: 0.82rem;
+    line-height: 1.5;
+    margin: 0 0 0.4rem 0;
+}
+.insight-card p:last-child {
+    margin-bottom: 0;
+}
+
+/* ── Follow-up chips ───────────────────────────────────────────────────── */
+.followup-chips-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+.followup-chip {
+    background: rgba(255,255,255,0.12);
+    color: rgba(255,255,255,0.9);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 9999px;
+    padding: 0.35rem 0.9rem;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+.followup-chip:hover {
+    background: rgba(255,255,255,0.22);
+    border-color: rgba(255,255,255,0.4);
 }
 </style>
 {% endblock %}

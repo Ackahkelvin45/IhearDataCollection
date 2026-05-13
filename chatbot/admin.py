@@ -9,8 +9,9 @@ from .models import (
     Message,
     MessageFeedback,
     QueryCache,
+    KnowledgeBaseURL,
 )
-from .tasks import process_document_task
+from .tasks import process_document_task, refresh_kb_url_task
 
 
 @admin.register(Document)
@@ -180,3 +181,81 @@ class ChunkMetadataAdmin(ModelAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("chunk")
+
+
+@admin.register(KnowledgeBaseURL)
+class KnowledgeBaseURLAdmin(ModelAdmin):
+    list_display = [
+        "title",
+        "url_preview",
+        "is_active",
+        "refresh_frequency",
+        "total_chunks",
+        "last_fetched_at",
+        "last_fetch_success",
+    ]
+    list_filter = ["is_active", "refresh_frequency", "last_fetch_success", "created_at"]
+    search_fields = ["title", "url", "description"]
+    readonly_fields = [
+        "id",
+        "created_at",
+        "last_fetched_at",
+        "last_fetch_success",
+        "last_fetch_error",
+        "total_chunks",
+        "total_chars",
+    ]
+    actions = ["refresh_selected", "activate_selected", "deactivate_selected"]
+
+    fieldsets = (
+        (
+            "Basic Information",
+            {"fields": ("id", "title", "url", "description", "added_by")},
+        ),
+        (
+            "Configuration",
+            {"fields": ("is_active", "refresh_frequency", "max_chars_per_fetch")},
+        ),
+        (
+            "Fetch Status",
+            {
+                "fields": (
+                    "last_fetched_at",
+                    "last_fetch_success",
+                    "last_fetch_error",
+                    "total_chunks",
+                    "total_chars",
+                )
+            },
+        ),
+        (
+            "Timestamps",
+            {
+                "fields": ("created_at",),
+                "classes": ("collapse",),
+            },
+        ),
+    )
+
+    def url_preview(self, obj):
+        return obj.url[:80] + "..." if len(obj.url) > 80 else obj.url
+
+    url_preview.short_description = "URL"
+
+    @admin.action(description="Refresh selected KB URLs now")
+    def refresh_selected(self, request, queryset):
+        count = 0
+        for kb_url in queryset.filter(is_active=True):
+            refresh_kb_url_task.delay(str(kb_url.id))
+            count += 1
+        self.message_user(request, f"Queued {count} KB URLs for refresh.")
+
+    @admin.action(description="Activate selected KB URLs")
+    def activate_selected(self, request, queryset):
+        updated = queryset.update(is_active=True)
+        self.message_user(request, f"Activated {updated} KB URLs.")
+
+    @admin.action(description="Deactivate selected KB URLs")
+    def deactivate_selected(self, request, queryset):
+        updated = queryset.update(is_active=False)
+        self.message_user(request, f"Deactivated {updated} KB URLs.")

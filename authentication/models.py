@@ -42,10 +42,8 @@ class CustomUser(AbstractUser):
         null=True,
         help_text="Optional. If not provided, a random password will be generated.",
     )
-    unhashed_password = models.CharField(max_length=255, blank=True, null=True)
 
     def __init__(self, *args, **kwargs):
-
         super().__init__(*args, **kwargs)
         self._temp_password = None
 
@@ -85,13 +83,9 @@ class CustomUser(AbstractUser):
         if is_new_user and not self.password:
             temp_password = random_string(12)
             self.set_password(temp_password)
-            self.unhashed_password = temp_password
             self._temp_password = temp_password
 
         super().save(*args, **kwargs)
-        if not is_new_user and "password" in kwargs.get("update_fields", []):
-            self.unhashed_password = self._temp_password
-            super().save(update_fields=["unhashed_password"])
 
     class Meta:
         verbose_name = "Custom User"

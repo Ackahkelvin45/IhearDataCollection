@@ -2,12 +2,14 @@ from pydantic import BaseModel, Field, model_validator
 from typing import Dict, List, Any, Literal, Optional
 from typing import Optional, Dict, Any
 from pydantic import BaseModel
+from django.conf import settings
 from django.db.models import Q
 from django.db import models
 import uuid
 import logging
 import os
 import re
+from contextvars import ContextVar
 from langchain_core.tools import BaseTool
 from django.utils import timezone
 from datetime import timedelta, datetime
@@ -18,7 +20,28 @@ from langchain_core.tools.base import ArgsSchema
 from langchain_core.messages import HumanMessage
 from .sql_agent import TextToSQLAgent
 
+
+class ToolAmbiguityError(Exception):
+    """Raised by a tool when it cannot determine the right parameters for a query.
+
+    The agent layer catches this and routes back to the clarification gate
+    instead of completing the turn. Fields:
+        dimension:  which gate dimension is ambiguous (analysis_type, entity, etc.)
+        query:      the user query that triggered the ambiguity
+    """
+
+    def __init__(self, dimension: str, query: str):
+        self.dimension = dimension
+        self.query = query
+        super().__init__(f"Tool ambiguity on dimension={dimension} query={query[:100]}")
+
+
 logger = logging.getLogger(__name__)
+
+# Set by the view before each agent invocation so tools can attribute cache entries correctly.
+_current_user_id: ContextVar[Optional[int]] = ContextVar(
+    "current_user_id", default=None
+)
 
 # Performance optimization settings
 QUERY_TIMEOUT = 30  # seconds
@@ -176,6 +199,7 @@ DB_CONFIG = AI_CONFIG.get("DATABASE", {})
 AGENT_CONFIG = AI_CONFIG.get("AGENT", {})
 SECURITY_CONFIG = AI_CONFIG.get("SECURITY", {})
 
+
 # Use Docker DB ('db') when available, otherwise Django's default
 def _get_data_insights_db_uri():
     """Use Docker DB ('db') when available, otherwise Django's default."""
@@ -207,6 +231,7 @@ def _get_data_insights_db_uri():
         f"{DB_CONFIG.get('PORT', 5432)}/"
         f"{DB_CONFIG.get('NAME', 'iheardatadb')}"
     )
+
 
 DB_URI = _get_data_insights_db_uri()
 from data.models import (
@@ -399,7 +424,7 @@ class NoiseDatasetSearchTool(BaseTool):
                     query_type="noise_dataset_search",
                     query_sql=str(queryset.query),
                     result_count=total_count,
-                    created_by_id=1,  # TODO: pull from context/session
+                    created_by_id=_current_user_id.get(),
                     metadata={
                         "filter_criteria": filter_criteria,
                         "include_features": include_features,
@@ -582,7 +607,7 @@ class AudioFeatureSearchTool(BaseTool):
                     query_type="audio_feature_search",
                     query_sql=str(queryset.query),
                     result_count=total_count,
-                    created_by_id=1,  # TODO: replace with real user context
+                    created_by_id=_current_user_id.get(),
                     metadata={"filter_criteria": filter_criteria},
                 )
 
@@ -645,6 +670,53 @@ class AudioFeatureSearchTool(BaseTool):
             return {"error": user_friendly_error, "technical_details": str(e)}
 
 
+class AudioAnalysisInput(BaseModel):
+    query: str = Field(description="The natural language question about audio data")
+    analysis_type: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional. Leave null/omit — the tool auto-detects the right analysis from the query. "
+            "Only set this if you are certain: 'energy', 'spectral', 'frequency', 'correlation', "
+            "'statistical', 'temporal', or 'overview'."
+        ),
+    )
+    force_analysis_type: Optional[str] = Field(
+        default=None,
+        description=(
+            "When set, skip auto-detection entirely and use this as the analysis_type. "
+            "Set this ONLY when the system's clarification gate has resolved the analysis "
+            "type with the user (clarification_dimension='analysis_type'). "
+            "Valid values: 'energy', 'spectral', 'frequency', 'correlation', "
+            "'statistical', 'temporal', 'overview'."
+        ),
+    )
+    group_by: Optional[str] = Field(
+        default=None,
+        description=(
+            "Dimension to break results down by. Pick the one mentioned in the query: "
+            "'region', 'category', 'community', 'microphone_type', 'time_of_day'. "
+            "Omit (null) if no grouping is requested."
+        ),
+    )
+    force_entity: Optional[str] = Field(
+        default=None,
+        description=(
+            "When set by the clarification gate (dimension='entity'), use this "
+            "entity name as a hard constraint for group_by. Set to 'all' if the "
+            "user chose 'All areas'. Overrides group_by."
+        ),
+    )
+    force_time_range: Optional[str] = Field(
+        default=None,
+        description=(
+            "When set by the clarification gate (dimension='time_range'), use "
+            "this as a hard constraint for temporal analysis. Values: "
+            "'last_7_days', 'last_30_days', 'last_3_months', 'last_year', "
+            "'all_time'."
+        ),
+    )
+
+
 class AudioAnalysisTool(BaseTool):
     name: str = "analyze_audio_data"
     description: str = """Comprehensive audio analysis tool for energy, spectral, frequency, and statistical analysis.
@@ -655,87 +727,22 @@ class AudioAnalysisTool(BaseTool):
     - Statistical analysis: distributions, correlations, comparisons
     - Grouped analysis: by region, category, microphone type, community
     - Temporal analysis: trends over time, cumulative metrics"""
+    args_schema: type[BaseModel] = AudioAnalysisInput
 
     def _run(
         self,
         query: str,
-        analysis_type: Optional[str] = None,
+        analysis_type: str = "overview",
         group_by: Optional[str] = None,
+        force_analysis_type: Optional[str] = None,
+        force_entity: Optional[str] = None,
+        force_time_range: Optional[str] = None,
         **kwargs,
     ) -> Dict[str, Any]:
         try:
             from django.db import models
             from django.db.models import Avg, Max, Min, Count, StdDev, Sum
             from django.db.models.functions import TruncMonth, TruncDate
-
-            # Determine analysis type from query if not specified
-            query_lower = query.lower()
-
-            if not analysis_type:
-                # Prioritize statistical analysis for distribution queries
-                if any(
-                    word in query_lower
-                    for word in [
-                        "distribution",
-                        "statistical",
-                        "quartile",
-                        "outlier",
-                        "spread",
-                        "range",
-                    ]
-                ):
-                    analysis_type = "statistical"
-                elif any(
-                    word in query_lower
-                    for word in ["trend", "over time", "month", "date", "timeline"]
-                ):
-                    analysis_type = "temporal"
-                elif any(
-                    word in query_lower
-                    for word in ["correlation", "relationship", "vs", "against"]
-                ):
-                    analysis_type = "correlation"
-                elif any(
-                    word in query_lower
-                    for word in ["cumulative", "total over", "area under"]
-                ):
-                    analysis_type = "temporal"  # Cumulative is temporal
-                elif any(
-                    word in query_lower
-                    for word in ["energy", "rms", "decibel", "db", "amplitude"]
-                ):
-                    analysis_type = "energy"
-                elif any(
-                    word in query_lower
-                    for word in [
-                        "spectral",
-                        "centroid",
-                        "bandwidth",
-                        "rolloff",
-                        "flatness",
-                    ]
-                ):
-                    analysis_type = "spectral"
-                elif any(
-                    word in query_lower
-                    for word in ["frequency", "dominant", "hz", "crossing"]
-                ):
-                    analysis_type = "frequency"
-                else:
-                    analysis_type = "overview"
-
-            # Determine grouping from query
-            if not group_by:
-                if "region" in query_lower:
-                    group_by = "region"
-                elif "category" in query_lower:
-                    group_by = "category"
-                elif "community" in query_lower:
-                    group_by = "community"
-                elif "microphone" in query_lower or "device" in query_lower:
-                    group_by = "microphone_type"
-                elif "time" in query_lower and "day" in query_lower:
-                    group_by = "time_of_day"
 
             # Get base queryset with all related data
             queryset = NoiseDataset.objects.select_related(
@@ -747,6 +754,65 @@ class AudioAnalysisTool(BaseTool):
                 "microphone_type",
                 "time_of_day",
             ).filter(audio_features__isnull=False, noise_analysis__isnull=False)
+
+            # force_analysis_type takes absolute precedence — set by the
+            # clarification gate when the user explicitly picked an analysis type.
+            # This prevents _auto_detect_analysis() from silently overriding the
+            # user's answer.
+            if force_analysis_type:
+                analysis_type = force_analysis_type
+            elif not analysis_type:
+                analysis_type = self._auto_detect_analysis(query)
+                if analysis_type is None:
+                    v2_enabled = settings.AI_INSIGHT.get("AGENT", {}).get(
+                        "CLARIFICATION_V2_ENABLED", False
+                    )
+                    if v2_enabled:
+                        return {
+                            "_tool_ambiguity": True,
+                            "dimension": "analysis_type",
+                            "query": query,
+                            "message": (
+                                "The analysis type could not be determined from the "
+                                "query. Ask the user what kind of analysis they want."
+                            ),
+                        }
+                    return {
+                        "analysis_type": "unresolved",
+                        "message": (
+                            "The analysis type could not be determined from the query. "
+                            "Ask the user what kind of analysis they want: energy, "
+                            "spectral, frequency, correlation, statistical, temporal, "
+                            "or overview."
+                        ),
+                        "skip_visualization": True,
+                    }
+
+            # force_entity / force_time_range (V2 only) take precedence over
+            # LLM-supplied parameters when the gate resolved the dimension.
+            v2_enabled = settings.AI_INSIGHT.get("AGENT", {}).get(
+                "CLARIFICATION_V2_ENABLED", False
+            )
+            if v2_enabled:
+                if force_entity and force_entity != "all":
+                    group_by = "region"
+                elif force_entity == "all":
+                    group_by = None
+
+                if force_time_range:
+                    from datetime import timedelta
+
+                    now = timezone.now()
+                    time_deltas = {
+                        "last_7_days": timedelta(days=7),
+                        "last_30_days": timedelta(days=30),
+                        "last_3_months": timedelta(days=90),
+                        "last_year": timedelta(days=365),
+                    }
+                    delta = time_deltas.get(force_time_range)
+                    if delta:
+                        cutoff = now - delta
+                        queryset = queryset.filter(recording_date__gte=cutoff)
 
             # Perform analysis based on type
             if analysis_type == "energy":
@@ -770,6 +836,117 @@ class AudioAnalysisTool(BaseTool):
                 str(e), "analyzing audio data"
             )
             return {"error": user_friendly_error, "technical_details": str(e)}
+
+    def _auto_detect_analysis(self, query: str) -> Optional[str]:
+        """Detect the appropriate analysis type from the query text.
+
+        Returns the single best-matching type, or None if no keywords match
+        (zero confidence — caller should ask the user for clarification rather
+        than silently defaulting).
+        """
+        q = query.lower()
+
+        # Score each type by keyword matches
+        scores = {
+            "temporal": sum(
+                1
+                for w in [
+                    "over time",
+                    "trend",
+                    "monthly",
+                    "daily",
+                    "timeline",
+                    "change",
+                    "progression",
+                    "history",
+                    "over the past",
+                    "this month",
+                    "this year",
+                    "last month",
+                    "last year",
+                ]
+                if w in q
+            ),
+            "correlation": sum(
+                1
+                for w in [
+                    "correlation",
+                    "relationship between",
+                    " vs ",
+                    "against",
+                    "compared to",
+                    "plotted against",
+                ]
+                if w in q
+            ),
+            "statistical": sum(
+                1
+                for w in [
+                    "distribution",
+                    "quartile",
+                    "outlier",
+                    "spread",
+                    "range",
+                    "statistical",
+                    "median",
+                    "standard deviation",
+                    "variance",
+                ]
+                if w in q
+            ),
+            "energy": sum(
+                1
+                for w in [
+                    "rms",
+                    "energy",
+                    "decibel",
+                    "db",
+                    "amplitude",
+                    "loudness",
+                    "loudest",
+                    "quietest",
+                    "cumulative energy",
+                ]
+                if w in q
+            ),
+            "spectral": sum(
+                1
+                for w in [
+                    "spectral",
+                    "centroid",
+                    "bandwidth",
+                    "rolloff",
+                    "flatness",
+                    "mfcc",
+                    "chroma",
+                    "mel",
+                ]
+                if w in q
+            ),
+            "frequency": sum(
+                1
+                for w in [
+                    "frequency",
+                    "zero crossing",
+                    "zcr",
+                    "hz",
+                    "pitch",
+                    "dominant",
+                ]
+                if w in q
+            ),
+        }
+
+        best = max(scores, key=scores.get)
+        # Under V2: require score >= 2 (at least two keyword hits or one
+        # multi-word phrase). A single keyword is too ambiguous to route
+        # on confidently. Under V1: keep old behavior (score > 0 = "overview").
+        v2_enabled = settings.AI_INSIGHT.get("AGENT", {}).get(
+            "CLARIFICATION_V2_ENABLED", False
+        )
+        if v2_enabled:
+            return best if scores[best] >= 2 else None
+        return best if scores[best] > 0 else "overview"
 
     def _energy_analysis(self, queryset, group_by, query):
         """Analyze energy-related metrics"""
@@ -836,6 +1013,12 @@ class AudioAnalysisTool(BaseTool):
                 "analysis_type": "energy_analysis",
                 "grouped_by": group_by,
                 "results": results,
+                "rows": results if group_by else [],
+                "columns": list(results[0].keys()) if group_by and results else [],
+                "chart_hint": (
+                    {"x": f"{group_by}__name", "y": "avg_decibel"} if group_by else None
+                ),
+                "skip_visualization": not bool(group_by),
                 "query": query,
                 "summary": f"Energy analysis shows audio power levels and decibel measurements",
             }
@@ -891,6 +1074,14 @@ class AudioAnalysisTool(BaseTool):
                 "analysis_type": "spectral_analysis",
                 "grouped_by": group_by,
                 "results": results,
+                "rows": results if group_by else [],
+                "columns": list(results[0].keys()) if group_by and results else [],
+                "chart_hint": (
+                    {"x": f"{group_by}__name", "y": "avg_spectral_centroid"}
+                    if group_by
+                    else None
+                ),
+                "skip_visualization": not bool(group_by),
                 "query": query,
                 "summary": f"Spectral analysis shows frequency distribution characteristics",
             }
@@ -948,6 +1139,14 @@ class AudioAnalysisTool(BaseTool):
                 "analysis_type": "frequency_analysis",
                 "grouped_by": group_by,
                 "results": results,
+                "rows": results if group_by else [],
+                "columns": list(results[0].keys()) if group_by and results else [],
+                "chart_hint": (
+                    {"x": f"{group_by}__name", "y": "avg_dominant_frequency"}
+                    if group_by
+                    else None
+                ),
+                "skip_visualization": not bool(group_by),
                 "query": query,
                 "summary": f"Frequency analysis shows dominant frequencies and zero crossing rates",
             }
@@ -1028,29 +1227,28 @@ class AudioAnalysisTool(BaseTool):
             # For distribution queries, provide actual data values for box plots
             if "distribution" in query_lower and group_by:
                 if group_by == "category":
-                    # Get actual decibel values grouped by category for box plot
-                    categories = queryset.values_list(
-                        "category__name", flat=True
-                    ).distinct()
-                    distribution_data = {}
+                    rows = queryset.filter(
+                        category__name__isnull=False,
+                        noise_analysis__mean_db__isnull=False,
+                    ).values("category__name", "noise_analysis__mean_db")
 
-                    for category in categories:
-                        if category:  # Skip null categories
-                            decibel_values = list(
-                                queryset.filter(
-                                    category__name=category,
-                                    noise_analysis__mean_db__isnull=False,
-                                ).values_list("noise_analysis__mean_db", flat=True)
-                            )
+                    grouped = {}
+                    for row in rows:
+                        name = row["category__name"]
+                        grouped.setdefault(name, []).append(
+                            float(row["noise_analysis__mean_db"])
+                        )
 
-                            if decibel_values:  # Only include categories with data
-                                distribution_data[category] = {
-                                    "decibel_values": decibel_values,
-                                    "count": len(decibel_values),
-                                    "avg": sum(decibel_values) / len(decibel_values),
-                                    "max": max(decibel_values),
-                                    "min": min(decibel_values),
-                                }
+                    distribution_data = {
+                        name: {
+                            "decibel_values": values,
+                            "count": len(values),
+                            "avg": sum(values) / len(values),
+                            "max": max(values),
+                            "min": min(values),
+                        }
+                        for name, values in grouped.items()
+                    }
 
                     return {
                         "analysis_type": "statistical_distribution",
@@ -1062,27 +1260,28 @@ class AudioAnalysisTool(BaseTool):
                     }
 
                 elif group_by == "region":
-                    # Get actual decibel values grouped by region for box plot
-                    regions = queryset.values_list("region__name", flat=True).distinct()
-                    distribution_data = {}
+                    rows = queryset.filter(
+                        region__name__isnull=False,
+                        noise_analysis__mean_db__isnull=False,
+                    ).values("region__name", "noise_analysis__mean_db")
 
-                    for region in regions:
-                        if region:  # Skip null regions
-                            decibel_values = list(
-                                queryset.filter(
-                                    region__name=region,
-                                    noise_analysis__mean_db__isnull=False,
-                                ).values_list("noise_analysis__mean_db", flat=True)
-                            )
+                    grouped = {}
+                    for row in rows:
+                        name = row["region__name"]
+                        grouped.setdefault(name, []).append(
+                            float(row["noise_analysis__mean_db"])
+                        )
 
-                            if decibel_values:  # Only include regions with data
-                                distribution_data[region] = {
-                                    "decibel_values": decibel_values,
-                                    "count": len(decibel_values),
-                                    "avg": sum(decibel_values) / len(decibel_values),
-                                    "max": max(decibel_values),
-                                    "min": min(decibel_values),
-                                }
+                    distribution_data = {
+                        name: {
+                            "decibel_values": values,
+                            "count": len(values),
+                            "avg": sum(values) / len(values),
+                            "max": max(values),
+                            "min": min(values),
+                        }
+                        for name, values in grouped.items()
+                    }
 
                     return {
                         "analysis_type": "statistical_distribution",
@@ -1279,12 +1478,11 @@ class NoiseDetailTool(BaseTool):
                     "time_of_day": getattr(dataset, "time_of_day", None),
                 }
 
-            # Include collector (uploader/owner)
+            # Include collector (uploader/owner) — email omitted: PII, not needed by LLM
             if include_collector and hasattr(dataset, "collector"):
                 dataset_data["collector"] = {
                     "id": dataset.collector.id,
                     "username": getattr(dataset.collector, "username", None),
-                    "email": getattr(dataset.collector, "email", None),
                 }
 
             # Include extracted audio features
@@ -1327,15 +1525,33 @@ class NoiseDetailTool(BaseTool):
             return {"error": f"Failed to get noise dataset details: {str(e)}"}
 
 
-llm = ChatOpenAI(
-    model=AGENT_CONFIG.get("MODEL", "gpt-4"), api_key=os.getenv("OPENAI_API_KEY")
-)
+_llm: Optional[ChatOpenAI] = None
+
+
+def _get_llm() -> ChatOpenAI:
+    global _llm
+    if _llm is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is not set")
+        _llm = ChatOpenAI(
+            model=AGENT_CONFIG.get("MODEL", "gpt-4"), api_key=api_key, streaming=True
+        )
+    return _llm
+
 
 allowed_tables = SECURITY_CONFIG.get("DEFAULT_ALLOWED_TABLES", [])
 
 
 def _get_default_allowed_tables() -> List[str]:
     """Discover data/core tables for SQL tools when not explicitly configured."""
+    # Tables that should never be exposed to the SQL agent — admin/internal
+    # tables whose FKs point outside the allowed schema or that aren't useful
+    # for data insights queries.
+    _TABLE_BLOCKLIST = {
+        "data_bulkaudioupload",
+        "data_bulkreprocessingtask",
+    }
     try:
         from django.apps import apps
 
@@ -1347,7 +1563,7 @@ def _get_default_allowed_tables() -> List[str]:
                 continue
             for model in app_config.get_models():
                 tables.append(model._meta.db_table)
-        return sorted(set(tables))
+        return sorted(set(tables) - _TABLE_BLOCKLIST)
     except Exception as e:
         logger.warning(f"Failed to discover allowed tables: {e}")
         return []
@@ -1357,17 +1573,88 @@ if not allowed_tables:
     allowed_tables = _get_default_allowed_tables()
 
 
+_DATA_ANALYSIS_GROUP_FIELD_MAP: Dict[str, str] = {
+    "region": "region__name",
+    "community": "community__name",
+    "category": "category__name",
+    "class": "class_name__name",
+    "recording_device": "recording_device",
+}
+
+
 class DataAnalysisInput(BaseModel):
-    query: str = Field(description="The natural language query to analyst")
+    query: str = Field(
+        description="The natural language question about audio dataset records"
+    )
+    query_type: Literal[
+        "recent_datasets",
+        "top_collectors_monthly",
+        "category_class_count",
+        "group_count",
+        "dataset_count",
+        "decibel_ranked",
+        "decibel_grouped",
+        "sql",
+    ] = Field(
+        description=(
+            "The query category — pick the closest match:\n"
+            "- 'recent_datasets': latest/most recent N recordings\n"
+            "- 'top_collectors_monthly': who contributed the most datasets this month\n"
+            "- 'category_class_count': dataset counts broken down by category × class\n"
+            "- 'group_count': dataset counts grouped by one dimension (region, community, category, class, device)\n"
+            "- 'dataset_count': scalar count, optionally filtered by region, category, date, or device\n"
+            "- 'decibel_ranked': top or bottom N recordings ordered by decibel level\n"
+            "- 'decibel_grouped': average decibel aggregated by a group dimension\n"
+            "- 'sql': complex, multi-condition, or free-form question — routes to the SQL agent"
+        )
+    )
+    limit: Optional[int] = Field(
+        default=None,
+        description="Row cap for 'recent_datasets' and 'decibel_ranked'. Defaults to 10 if omitted.",
+    )
+    group_by: Optional[
+        Literal["region", "community", "category", "class", "recording_device"]
+    ] = Field(
+        default=None,
+        description="Required for 'group_count' and 'decibel_grouped'. Which dimension to aggregate by.",
+    )
+    sort_direction: Optional[Literal["highest", "lowest"]] = Field(
+        default="highest",
+        description="For 'decibel_ranked': 'highest' returns loudest recordings, 'lowest' returns quietest.",
+    )
+    force_entity: Optional[str] = Field(
+        default=None,
+        description=(
+            "When set by the clarification gate (dimension='entity'), use this "
+            "entity name as a hard constraint for filtering or grouping. "
+            "Set to 'all' if the user chose 'All areas'. Overrides group_by "
+            "and any entity name extraction from the query."
+        ),
+    )
+    force_time_range: Optional[str] = Field(
+        default=None,
+        description=(
+            "When set by the clarification gate (dimension='time_range'), use "
+            "this as a hard constraint. Values: 'last_7_days', 'last_30_days', "
+            "'last_3_months', 'last_year', 'all_time'. Overrides any date filter "
+            "extraction from the query."
+        ),
+    )
 
 
 class DataAnalysisTool(BaseTool):
     name: str = "data_analysis"
-    description: str = """Use this tool to analyze data based on a natural language query.
-    It can be used to analyze data from a database or any other source."""
+    description: str = """Queries audio dataset records — counts, rankings, groupings, and recent uploads.
+    Use this for:
+    - Dataset counts by region, category, class, community, or device
+    - Highest/lowest decibel recordings
+    - Recent/latest N datasets
+    - Top collectors this month
+    - Dataset counts grouped by any dimension
+    - Complex or filtered questions that require SQL"""
     agent: Any = None
     top_k: int = 10
-    args_schema: Optional[type[BaseModel]] = DataAnalysisInput
+    args_schema: type[BaseModel] = DataAnalysisInput
 
     @model_validator(mode="before")
     def add_agent(cls, data: Dict[str, Any]):
@@ -1376,31 +1663,16 @@ class DataAnalysisTool(BaseTool):
 
         top_k = data.get("top_k", 10)
         data["agent"] = TextToSQLAgent(
-            llm=llm,
+            llm=_get_llm(),
             system_prompt=SQL_SYSTEM_TEMPLATE,
             include_tables=allowed_tables,
             top_k=top_k,
             ai_answer=False,
-            sample_rows_in_table_info=0,
+            sample_rows_in_table_info=3,
             max_string_length=40,
+            max_retries=2,
         ).compile_workflow()
         return data
-
-    def _is_count_query(self, query_lower: str) -> bool:
-        return bool(
-            re.search(
-                r"\b(how many|count|number of|total|quantity of)\b", query_lower
-            )
-        )
-
-    def _extract_top_n(self, query_lower: str, default: int = 1) -> int:
-        top_match = re.search(r"\b(top|highest|lowest)\s+(\d{1,3})\b", query_lower)
-        if top_match:
-            return max(1, min(int(top_match.group(2)), 50))
-        alt_match = re.search(r"\b(\d{1,3})\s+(highest|lowest|top)\b", query_lower)
-        if alt_match:
-            return max(1, min(int(alt_match.group(1)), 50))
-        return default
 
     def _match_entity_name(self, query_lower: str, names: List[str]) -> Optional[str]:
         if not names:
@@ -1473,581 +1745,401 @@ class DataAnalysisTool(BaseTool):
         year_matches = re.findall(r"\b(20\d{2})\b", query_lower)
         if year_matches:
             years = [int(y) for y in year_matches]
-            if any(word in query_lower for word in ["between", "from", "to", "through"]):
+            if any(
+                word in query_lower for word in ["between", "from", "to", "through"]
+            ):
                 date_filters["recording_date__year__gte"] = min(years)
                 date_filters["recording_date__year__lte"] = max(years)
             else:
                 date_filters["recording_date__year"] = years[0]
         return date_filters
 
-    def _get_group_field(self, query_lower: str) -> Optional[str]:
-        group_mappings = {
-            "region": "region__name",
-            "community": "community__name",
-            "category": "category__name",
-            "class": "class_name__name",
-            "subclass": "subclass__name",
-            "dataset type": "dataset_type__name",
-            "dataset_type": "dataset_type__name",
-            "recording device": "recording_device",
-            "device": "recording_device",
+    def _run(
+        self,
+        query: str,
+        query_type: str = "sql",
+        limit: Optional[int] = None,
+        group_by: Optional[str] = None,
+        sort_direction: str = "highest",
+        force_entity: Optional[str] = None,
+        force_time_range: Optional[str] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        # force_entity takes precedence over LLM-supplied group_by.
+        if force_entity and force_entity != "all":
+            group_by = "region"
+        elif force_entity == "all":
+            group_by = None
+
+        # force_time_range — gate-resolved time range. Map known values
+        # to recency limits for _recent_datasets or date-filtered queries.
+        _time_range_limit_map = {
+            "last_7_days": 7,
+            "last_30_days": 30,
+            "last_3_months": None,  # handled by date filter, not recency count
+            "last_year": None,
+            "all_time": None,
+        }
+        if force_time_range and force_time_range in _time_range_limit_map:
+            forced_limit = _time_range_limit_map[force_time_range]
+            if forced_limit is not None and limit is None:
+                limit = forced_limit
+            # For "last_3_months" and "last_year": the LLM should set
+            # date filters in the query — this is documented via the
+            # CLARIFICATION_CONTEXT_TEMPLATE.
+
+        try:
+            if query_type == "recent_datasets":
+                return self._recent_datasets(limit or 10)
+            if query_type == "top_collectors_monthly":
+                return self._top_collectors_monthly()
+            if query_type == "category_class_count":
+                return self._category_class_count()
+            if query_type == "group_count":
+                return self._group_count(group_by)
+            if query_type == "dataset_count":
+                return self._dataset_count(query)
+            if query_type == "decibel_ranked":
+                return self._decibel_ranked(limit or 10, sort_direction)
+            if query_type == "decibel_grouped":
+                return self._decibel_grouped(group_by)
+            return self._invoke_sql_agent(query)
+        except Exception as e:
+            error_str = str(e) if e else repr(e)
+            logger.error(f"Error in data analysis tool: {error_str}")
+            return {
+                "error": True,
+                "message": (
+                    f"The query could not be processed directly. "
+                    f"Ask the user to rephrase with a specific dimension — "
+                    f"for example: 'by region', 'by category', 'over time', "
+                    f"or name a specific recording or device."
+                ),
+            }
+
+    def _recent_datasets(self, limit: int) -> Dict[str, Any]:
+        limit = max(1, min(limit, 200))
+        qs = NoiseDataset.objects.select_related(
+            "region", "community", "category", "dataset_type"
+        ).order_by("-recording_date", "-created_at")
+        total_count = qs.count()
+        rows = [
+            {
+                "name": item.name,
+                "region": item.region.name if item.region else None,
+                "community": item.community.name if item.community else None,
+                "category": item.category.name if item.category else None,
+                "recording_date": item.recording_date,
+                "recording_device": item.recording_device,
+            }
+            for item in qs[:limit]
+        ]
+        return {
+            "analysis_type": "recent_datasets",
+            "rows": rows,
+            "columns": [
+                "name",
+                "region",
+                "community",
+                "category",
+                "recording_date",
+                "recording_device",
+            ],
+            "row_count": len(rows),
+            "limit": limit,
+            "offset": 0,
+            "total_count": total_count,
+            "has_more": total_count > limit,
+            "skip_visualization": False,
+            "chart_hint": {
+                "x": "recording_date",
+                "y": "count",
+                "group_by": "category",
+            },
         }
 
-        for key, field in group_mappings.items():
-            if key in query_lower and any(
-                phrase in query_lower
-                for phrase in ["by ", "per ", "grouped by", "distribution", "breakdown"]
-            ):
-                return field
-
-        return None
-
-    def _run(self, query: str, **kwargs) -> Dict[str, Any]:
-        try:
-            query_lower = (query or "").lower()
-
-            # Fast-path: category vs class counts (stacked bar/table friendly)
-            if (
-                "category" in query_lower
-                and "class" in query_lower
-                and any(word in query_lower for word in ["count", "counts", "total", "totals", "breakdown", "distribution", "stacked"])
-            ):
-                qs = (
-                    NoiseDataset.objects.values("category__name", "class_name__name")
-                    .annotate(count=models.Count("id"))
-                    .order_by("category__name", "-count")
-                )
-
-                rows = []
-                for item in qs:
-                    category_name = item.get("category__name")
-                    class_name = item.get("class_name__name")
-                    if not category_name or not class_name:
-                        continue
-                    rows.append(
-                        {
-                            "category": category_name,
-                            "class": class_name,
-                            "count": item.get("count", 0),
-                        }
-                    )
-
-                return {
-                    "analysis_type": "category_class_count",
-                    "rows": rows,
-                    "columns": ["category", "class", "count"],
-                    "row_count": len(rows),
-                    "limit": len(rows),
-                    "offset": 0,
-                    "has_more": False,
-                    "skip_visualization": False,
-                }
-
-            # Fast-path: top collectors this month (avoid SQL-agent loop for this common question)
-            if (
-                any(word in query_lower for word in ["collector", "collectors", "contributor", "contributors"])
-                and any(word in query_lower for word in ["month", "this month", "monthly"])
-                and any(word in query_lower for word in ["most", "top", "highest", "contributed", "datasets", "recordings"])
-            ):
-                now = timezone.now()
-                month_qs = NoiseDataset.objects.filter(
-                    collector__isnull=False,
-                    recording_date__year=now.year,
-                    recording_date__month=now.month,
-                )
-
-                collector_rows = list(
-                    month_qs.values(
-                        "collector__id",
-                        "collector__username",
-                        "collector__first_name",
-                        "collector__last_name",
-                    )
-                    .annotate(dataset_count=models.Count("id"))
-                    .order_by("-dataset_count")[:10]
-                )
-
-                rows = []
-                for row in collector_rows:
-                    first = (row.get("collector__first_name") or "").strip()
-                    last = (row.get("collector__last_name") or "").strip()
-                    full_name = f"{first} {last}".strip()
-                    username = row.get("collector__username") or "Unknown"
-                    rows.append(
-                        {
-                            "collector_id": row.get("collector__id"),
-                            "collector": full_name or username,
-                            "username": username,
-                            "dataset_count": row.get("dataset_count", 0),
-                        }
-                    )
-
-                return {
-                    "analysis_type": "top_collectors_monthly",
-                    "rows": rows,
-                    "columns": ["collector_id", "collector", "username", "dataset_count"],
-                    "row_count": len(rows),
-                    "limit": 10,
-                    "offset": 0,
-                    "has_more": False,
-                    "period": now.strftime("%Y-%m"),
-                    "skip_visualization": True,
-                }
-
-            # Fast-path: recent N datasets (no LLM)
-            recent_match = re.search(r"\b(recent|latest|last)\s+(\d{1,3})\b", query_lower)
-            if recent_match and any(word in query_lower for word in ["dataset", "data", "recording", "collected"]):
-                limit = int(recent_match.group(2))
-                limit = max(1, min(limit, 200))
-                qs = NoiseDataset.objects.select_related(
-                    "region",
-                    "community",
-                    "category",
-                    "dataset_type",
-                ).order_by("-recording_date", "-created_at")
-                total_count = qs.count()
-                qs = qs[:limit]
-
-                rows = []
-                for item in qs:
-                    rows.append(
-                        {
-                            "name": item.name,
-                            "region": item.region.name if item.region else None,
-                            "community": item.community.name if item.community else None,
-                            "category": item.category.name if item.category else None,
-                            "recording_date": item.recording_date,
-                            "recording_device": item.recording_device,
-                        }
-                    )
-
-                columns = ["name", "region", "community", "category", "recording_date", "recording_device"]
-                return {
-                    "analysis_type": "recent_datasets",
-                    "rows": rows,
-                    "columns": columns,
-                    "row_count": len(rows),
-                    "limit": limit,
-                    "offset": 0,
-                    "total_count": total_count,
-                    "has_more": total_count > limit,
-                    "pagination": {
-                        "limit": limit,
-                        "offset": 0,
-                        "has_more": total_count > limit,
-                        "total_count": total_count,
-                        "query_kind": "recent_datasets",
-                    },
-                    "skip_visualization": True,
-                }
-
-            # Fast-path: highest/lowest decibel levels
-            if any(word in query_lower for word in ["decibel", "db"]):
-                # Fast-path: grouped average decibel (e.g., "region vs average decibel")
-                has_avg_intent = any(
-                    word in query_lower for word in ["average", "avg", "mean"]
-                )
-                has_group_intent = any(
-                    word in query_lower
-                    for word in ["by", "per", "group", "grouped", "across", "vs", "versus"]
-                )
-                if has_avg_intent and has_group_intent:
-                    group_field = None
-                    group_label = None
-                    if "region" in query_lower:
-                        group_field = "region__name"
-                        group_label = "region"
-                    elif "community" in query_lower:
-                        group_field = "community__name"
-                        group_label = "community"
-                    elif "category" in query_lower:
-                        group_field = "category__name"
-                        group_label = "category"
-                    elif "class" in query_lower:
-                        group_field = "class_name__name"
-                        group_label = "class"
-                    elif "device" in query_lower or "recording device" in query_lower:
-                        group_field = "recording_device"
-                        group_label = "recording_device"
-
-                    if group_field:
-                        grouped = (
-                            NoiseDataset.objects.exclude(
-                                **{f"{group_field}__isnull": True}
-                            )
-                            .values(group_field)
-                            .annotate(
-                                avg_db=models.Avg("noise_analysis__mean_db"),
-                                sample_count=models.Count("id"),
-                            )
-                            .exclude(avg_db__isnull=True)
-                            .order_by("-avg_db")
-                        )
-                        rows = []
-                        for item in grouped:
-                            rows.append(
-                                {
-                                    group_label: item.get(group_field),
-                                    "avg_db": item.get("avg_db"),
-                                    "sample_count": item.get("sample_count"),
-                                }
-                            )
-                        return {
-                            "analysis_type": f"avg_decibel_by_{group_label}",
-                            "rows": rows,
-                            "columns": [group_label, "avg_db", "sample_count"],
-                            "row_count": len(rows),
-                            "limit": len(rows),
-                            "offset": 0,
-                            "has_more": False,
-                            "skip_visualization": False,
-                        }
-
-                if any(word in query_lower for word in ["highest", "max", "top"]):
-                    limit = self._extract_top_n(query_lower, default=1)
-                    qs = (
-                        NoiseAnalysis.objects.select_related(
-                            "noise_dataset",
-                            "noise_dataset__region",
-                            "noise_dataset__community",
-                            "noise_dataset__category",
-                            "noise_dataset__dataset_type",
-                        )
-                        .exclude(mean_db__isnull=True)
-                        .order_by("-mean_db")
-                    )[:limit]
-
-                    rows = []
-                    for item in qs:
-                        ds = item.noise_dataset
-                        rows.append(
-                            {
-                                "name": ds.name if ds else None,
-                                "mean_db": item.mean_db,
-                                "region": ds.region.name if ds and ds.region else None,
-                                "community": ds.community.name if ds and ds.community else None,
-                                "category": ds.category.name if ds and ds.category else None,
-                                "recording_date": ds.recording_date if ds else None,
-                                "recording_device": ds.recording_device if ds else None,
-                            }
-                        )
-
-                    columns = [
-                        "name",
-                        "mean_db",
-                        "region",
-                        "community",
-                        "category",
-                        "recording_date",
-                        "recording_device",
-                    ]
-                    return {
-                        "analysis_type": "highest_decibel",
-                        "rows": rows,
-                        "columns": columns,
-                        "row_count": len(rows),
-                        "limit": limit,
-                        "offset": 0,
-                        "has_more": False,
-                    }
-
-                if any(word in query_lower for word in ["lowest", "min", "bottom"]):
-                    limit = self._extract_top_n(query_lower, default=1)
-                    qs = (
-                        NoiseAnalysis.objects.select_related(
-                            "noise_dataset",
-                            "noise_dataset__region",
-                            "noise_dataset__community",
-                            "noise_dataset__category",
-                            "noise_dataset__dataset_type",
-                        )
-                        .exclude(mean_db__isnull=True)
-                        .order_by("mean_db")
-                    )[:limit]
-
-                    rows = []
-                    for item in qs:
-                        ds = item.noise_dataset
-                        rows.append(
-                            {
-                                "name": ds.name if ds else None,
-                                "mean_db": item.mean_db,
-                                "region": ds.region.name if ds and ds.region else None,
-                                "community": ds.community.name if ds and ds.community else None,
-                                "category": ds.category.name if ds and ds.category else None,
-                                "recording_date": ds.recording_date if ds else None,
-                                "recording_device": ds.recording_device if ds else None,
-                            }
-                        )
-
-                    columns = [
-                        "name",
-                        "mean_db",
-                        "region",
-                        "community",
-                        "category",
-                        "recording_date",
-                        "recording_device",
-                    ]
-                    return {
-                        "analysis_type": "lowest_decibel",
-                        "rows": rows,
-                        "columns": columns,
-                        "row_count": len(rows),
-                        "limit": limit,
-                        "offset": 0,
-                        "has_more": False,
-                    }
-
-                # Decibel query without an explicit ranking direction
-                # Return a compact summary instead of falling through.
-                stats = NoiseAnalysis.objects.exclude(mean_db__isnull=True).aggregate(
-                    avg_db=models.Avg("mean_db"),
-                    max_db=models.Max("mean_db"),
-                    min_db=models.Min("mean_db"),
-                    total=models.Count("id"),
-                )
-                return {
-                    "analysis_type": "decibel_summary",
-                    "total_count": stats.get("total", 0) or 0,
-                    "avg_db": stats.get("avg_db"),
-                    "max_db": stats.get("max_db"),
-                    "min_db": stats.get("min_db"),
-                    "skip_visualization": True,
-                }
-
-            # Extract simple filters for fast ORM operations
-            filters: Dict[str, Any] = {}
-            filter_meta: Dict[str, Any] = {}
-            filter_hits = 0
-
-            region_name = self._match_entity_name(
-                query_lower, list(Region.objects.values_list("name", flat=True))
+    def _top_collectors_monthly(self) -> Dict[str, Any]:
+        now = timezone.now()
+        collector_rows = list(
+            NoiseDataset.objects.filter(
+                collector__isnull=False,
+                recording_date__year=now.year,
+                recording_date__month=now.month,
             )
-            if not region_name and "region" in query_lower:
-                region_match = re.search(
-                    r"(?:from|in|within|inside)\s+(?:the\s+)?([a-z0-9\s-]+?)\s+region",
-                    query_lower,
-                )
-                if region_match:
-                    candidate = region_match.group(1).strip()
-                    region_obj = Region.objects.filter(
-                        name__icontains=candidate
-                    ).first()
-                    if region_obj:
-                        region_name = region_obj.name
-            if region_name:
-                filters["region__name__iexact"] = region_name
-                filter_meta["region"] = region_name
-                filter_hits += 1
-
-            community_name = self._match_entity_name(
-                query_lower, list(Community.objects.values_list("name", flat=True))
+            .values(
+                "collector__id",
+                "collector__username",
+                "collector__first_name",
+                "collector__last_name",
             )
-            if not community_name and "community" in query_lower:
-                community_match = re.search(
-                    r"(?:from|in|within|inside)\s+(?:the\s+)?([a-z0-9\s-]+?)\s+community",
-                    query_lower,
-                )
-                if community_match:
-                    candidate = community_match.group(1).strip()
-                    community_obj = Community.objects.filter(
-                        name__icontains=candidate
-                    ).first()
-                    if community_obj:
-                        community_name = community_obj.name
-            if community_name:
-                filters["community__name__iexact"] = community_name
-                filter_meta["community"] = community_name
-                filter_hits += 1
-
-            category_name = self._match_entity_name(
-                query_lower, list(Category.objects.values_list("name", flat=True))
+            .annotate(dataset_count=models.Count("id"))
+            .order_by("-dataset_count")[:10]
+        )
+        rows = []
+        for row in collector_rows:
+            first = (row.get("collector__first_name") or "").strip()
+            last = (row.get("collector__last_name") or "").strip()
+            username = row.get("collector__username") or "Unknown"
+            rows.append(
+                {
+                    "collector_id": row.get("collector__id"),
+                    "collector": f"{first} {last}".strip() or username,
+                    "username": username,
+                    "dataset_count": row.get("dataset_count", 0),
+                }
             )
-            if category_name:
-                filters["category__name__iexact"] = category_name
-                filter_meta["category"] = category_name
-                filter_hits += 1
+        return {
+            "analysis_type": "top_collectors_monthly",
+            "rows": rows,
+            "columns": ["collector_id", "collector", "username", "dataset_count"],
+            "row_count": len(rows),
+            "limit": 10,
+            "offset": 0,
+            "has_more": False,
+            "period": now.strftime("%Y-%m"),
+            "skip_visualization": False,
+            "chart_hint": {
+                "x": "collector",
+                "y": "dataset_count",
+            },
+        }
 
-            class_name = self._match_entity_name(
-                query_lower, list(Class.objects.values_list("name", flat=True))
-            )
-            if class_name:
-                filters["class_name__name__iexact"] = class_name
-                filter_meta["class"] = class_name
-                filter_hits += 1
+    def _category_class_count(self) -> Dict[str, Any]:
+        qs = (
+            NoiseDataset.objects.values("category__name", "class_name__name")
+            .annotate(count=models.Count("id"))
+            .order_by("category__name", "-count")
+        )
+        rows = [
+            {
+                "category": r["category__name"],
+                "class": r["class_name__name"],
+                "count": r["count"],
+            }
+            for r in qs
+            if r["category__name"] and r["class_name__name"]
+        ]
+        return {
+            "analysis_type": "category_class_count",
+            "rows": rows,
+            "columns": ["category", "class", "count"],
+            "row_count": len(rows),
+            "limit": len(rows),
+            "offset": 0,
+            "has_more": False,
+            "skip_visualization": False,
+            "chart_hint": {
+                "x": "category",
+                "y": "count",
+                "group_by": "class",
+            },
+        }
 
-            subclass_name = self._match_entity_name(
-                query_lower, list(SubClass.objects.values_list("name", flat=True))
-            )
-            if subclass_name:
-                filters["subclass__name__iexact"] = subclass_name
-                filter_meta["subclass"] = subclass_name
-                filter_hits += 1
+    def _group_count(self, group_by: Optional[str]) -> Dict[str, Any]:
+        field = _DATA_ANALYSIS_GROUP_FIELD_MAP.get(group_by or "") if group_by else None
+        if not field:
+            return {
+                "error": f"Unknown group_by: {group_by!r}. Must be one of {list(_DATA_ANALYSIS_GROUP_FIELD_MAP)}"
+            }
+        rows = list(
+            NoiseDataset.objects.values(field)
+            .annotate(count=models.Count("id"))
+            .order_by("-count")[:25]
+        )
+        return {
+            "analysis_type": "group_count",
+            "rows": rows,
+            "columns": [field, "count"],
+            "row_count": len(rows),
+            "limit": 25,
+            "offset": 0,
+            "has_more": False,
+            "chart_hint": {
+                "x": field,
+                "y": "count",
+            },
+        }
 
-            dataset_type_value = self._match_dataset_type(query_lower)
-            if dataset_type_value and "dataset" in query_lower:
-                filters["dataset_type__name__iexact"] = dataset_type_value
-                filter_meta["dataset_type"] = dataset_type_value
-                filter_hits += 1
+    def _dataset_count(self, query: str) -> Dict[str, Any]:
+        query_lower = query.lower()
+        filters: Dict[str, Any] = {}
+        filter_meta: Dict[str, Any] = {}
 
-            device_value = self._extract_device_value(query_lower)
-            if device_value:
-                filter_meta["recording_device"] = device_value
-                filters["recording_device__icontains"] = device_value
-                filter_hits += 1
+        region_name = self._match_entity_name(
+            query_lower, list(Region.objects.values_list("name", flat=True))
+        )
+        if region_name:
+            filters["region__name__iexact"] = region_name
+            filter_meta["region"] = region_name
 
-            date_filters = self._extract_date_filters(query_lower)
-            if date_filters:
-                filters.update(date_filters)
-                filter_meta["recording_date"] = True
-                filter_hits += 1
+        community_name = self._match_entity_name(
+            query_lower, list(Community.objects.values_list("name", flat=True))
+        )
+        if community_name:
+            filters["community__name__iexact"] = community_name
+            filter_meta["community"] = community_name
 
-            # Group-by counts (region/community/category/etc.)
-            group_field = self._get_group_field(query_lower)
-            if group_field:
-                qs = NoiseDataset.objects
-                if filters:
-                    qs = qs.filter(**{k: v for k, v in filters.items() if k != group_field})
-                group_rows = (
-                    qs.values(group_field)
-                    .annotate(count=models.Count("id"))
-                    .order_by("-count")
-                )
-                rows = list(group_rows[:25])
-                columns = [group_field, "count"]
-                return {
-                    "analysis_type": "group_count",
-                    "rows": rows,
-                    "columns": columns,
-                    "row_count": len(rows),
-                    "limit": 25,
-                    "offset": 0,
-                    "has_more": False,
-                }
+        category_name = self._match_entity_name(
+            query_lower, list(Category.objects.values_list("name", flat=True))
+        )
+        if category_name:
+            filters["category__name__iexact"] = category_name
+            filter_meta["category"] = category_name
 
-            # Distinct category count
-            if self._is_count_query(query_lower) and "category" in query_lower and "dataset" in query_lower:
-                distinct_categories = (
-                    NoiseDataset.objects.values("category__name")
-                    .exclude(category__name__isnull=True)
-                    .distinct()
-                )
-                rows = list(distinct_categories[:50])
-                columns = ["category__name"]
-                return {
-                    "analysis_type": "category_count",
-                    "rows": rows,
-                    "columns": columns,
-                    "row_count": len(rows),
-                    "total_count": distinct_categories.count(),
-                    "limit": 50,
-                    "offset": 0,
-                    "has_more": distinct_categories.count() > 50,
-                    "pagination": {
-                        "limit": 50,
-                        "offset": 0,
-                        "has_more": distinct_categories.count() > 50,
-                        "total_count": distinct_categories.count(),
-                        "query_kind": "category_count",
-                    },
-                    "skip_visualization": True,
-                }
+        class_name = self._match_entity_name(
+            query_lower, list(Class.objects.values_list("name", flat=True))
+        )
+        if class_name:
+            filters["class_name__name__iexact"] = class_name
+            filter_meta["class"] = class_name
 
-            # Count questions (single filter -> ORM; multi-filter -> SQL)
-            if self._is_count_query(query_lower):
-                if filter_hits >= 2:
-                    response = self.agent.invoke({"messages": [HumanMessage(content=query)]})
-                    # Safely extract message content
-                    if response and "messages" in response and response["messages"]:
-                        last_message = response["messages"][-1]
-                        if hasattr(last_message, "content"):
-                            msg = str(last_message.content) if last_message.content else ""
-                        else:
-                            msg = str(last_message) if last_message else ""
-                    else:
-                        msg = "No response received"
-                    return {"message": msg}
+        subclass_name = self._match_entity_name(
+            query_lower, list(SubClass.objects.values_list("name", flat=True))
+        )
+        if subclass_name:
+            filters["subclass__name__iexact"] = subclass_name
+            filter_meta["subclass"] = subclass_name
 
-                qs = NoiseDataset.objects
-                if filters:
-                    qs = qs.filter(**filters)
+        dataset_type_value = self._match_dataset_type(query_lower)
+        if dataset_type_value:
+            filters["dataset_type__name__iexact"] = dataset_type_value
+            filter_meta["dataset_type"] = dataset_type_value
 
-                # Apply fuzzy device filter if present
-                if device_value:
-                    try:
-                        from django.contrib.postgres.search import TrigramSimilarity
+        date_filters = self._extract_date_filters(query_lower)
+        if date_filters:
+            filters.update(date_filters)
+            filter_meta["recording_date"] = True
 
-                        qs = (
-                            qs.annotate(
-                                similarity=TrigramSimilarity(
-                                    "recording_device", device_value
-                                )
-                            )
-                            .filter(similarity__gt=0.2)
-                            .order_by("-similarity")
-                        )
-                    except Exception:
-                        qs = qs.filter(recording_device__icontains=device_value)
-
-                total_count = qs.count()
-                return {
-                    "analysis_type": "dataset_count",
-                    "total_count": total_count,
-                    "filters": filter_meta,
-                    "limit": 0,
-                    "offset": 0,
-                    "has_more": False,
-                    "skip_visualization": True,
-                }
-
-            # Fast-path: region with most data collected
-            if "region" in query_lower and any(word in query_lower for word in ["most", "highest", "top", "max"]):
-                region_counts = (
-                    NoiseDataset.objects.values("region__name")
-                    .annotate(count=models.Count("id"))
-                    .order_by("-count")
-                )
-                rows = list(region_counts[:10])
-                columns = ["region__name", "count"]
-                return {
-                    "analysis_type": "region_counts",
-                    "rows": rows,
-                    "columns": columns,
-                    "row_count": len(rows),
-                    "limit": 10,
-                    "offset": 0,
-                    "has_more": False,
-                }
-
-            response = self.agent.invoke({"messages": [HumanMessage(content=query)]})
-
-            # Safely extract message content
-            if response and "messages" in response and response["messages"]:
-                last_message = response["messages"][-1]
-                # Handle different message types safely
-                if hasattr(last_message, "content"):
-                    msg = str(last_message.content) if last_message.content else ""
-                else:
-                    msg = str(last_message) if last_message else ""
-            else:
-                msg = "No response received"
-
-            if "no results found" in msg.lower():
-                return {"message": "No results found"}
-            if "error" in msg.lower():
-                return {"message": "Error in data analysis tool"}
-
-            return {"message": msg}
-
-        except Exception as e:
-            # Ensure error message is JSON serializable
+        device_value = self._extract_device_value(query_lower)
+        qs = (
+            NoiseDataset.objects.filter(**filters)
+            if filters
+            else NoiseDataset.objects.all()
+        )
+        if device_value:
+            filter_meta["recording_device"] = device_value
             try:
-                error_str = str(e) if e else "Unknown error occurred"
+                from django.contrib.postgres.search import TrigramSimilarity
+
+                qs = qs.annotate(
+                    similarity=TrigramSimilarity("recording_device", device_value)
+                ).filter(similarity__gt=0.2)
             except Exception:
-                error_str = "Error occurred but could not be converted to string"
-            logger.error(f"Error in data analysis tool: {error_str}")
-            return {"message": "Error in data analysis tool"}
+                qs = qs.filter(recording_device__icontains=device_value)
+
+        return {
+            "analysis_type": "dataset_count",
+            "total_count": qs.count(),
+            "filters": filter_meta,
+            "limit": 0,
+            "offset": 0,
+            "has_more": False,
+            "skip_visualization": True,
+        }
+
+    def _decibel_ranked(self, limit: int, sort_direction: str) -> Dict[str, Any]:
+        limit = max(1, min(limit, 50))
+        order = "-mean_db" if sort_direction == "highest" else "mean_db"
+        qs = (
+            NoiseAnalysis.objects.select_related(
+                "noise_dataset",
+                "noise_dataset__region",
+                "noise_dataset__community",
+                "noise_dataset__category",
+            )
+            .exclude(mean_db__isnull=True)
+            .order_by(order)
+        )[:limit]
+        rows = []
+        for item in qs:
+            ds = item.noise_dataset
+            rows.append(
+                {
+                    "name": ds.name if ds else None,
+                    "mean_db": item.mean_db,
+                    "region": ds.region.name if ds and ds.region else None,
+                    "community": ds.community.name if ds and ds.community else None,
+                    "category": ds.category.name if ds and ds.category else None,
+                    "recording_date": ds.recording_date if ds else None,
+                    "recording_device": ds.recording_device if ds else None,
+                }
+            )
+        return {
+            "analysis_type": f"{sort_direction}_decibel",
+            "merge_group": "decibel_extremes",
+            "rows": rows,
+            "columns": [
+                "name",
+                "mean_db",
+                "region",
+                "community",
+                "category",
+                "recording_date",
+                "recording_device",
+            ],
+            "row_count": len(rows),
+            "limit": limit,
+            "offset": 0,
+            "has_more": False,
+            "chart_hint": {
+                "x": "name",
+                "y": "mean_db",
+                "group_by": "category",
+            },
+        }
+
+    def _decibel_grouped(self, group_by: Optional[str]) -> Dict[str, Any]:
+        field = _DATA_ANALYSIS_GROUP_FIELD_MAP.get(group_by or "") if group_by else None
+        if not field:
+            return {
+                "error": f"Unknown group_by: {group_by!r}. Must be one of {list(_DATA_ANALYSIS_GROUP_FIELD_MAP)}"
+            }
+        grouped = (
+            NoiseDataset.objects.exclude(**{f"{field}__isnull": True})
+            .values(field)
+            .annotate(
+                avg_db=models.Avg("noise_analysis__mean_db"),
+                sample_count=models.Count("id"),
+            )
+            .exclude(avg_db__isnull=True)
+            .order_by("-avg_db")
+        )
+        rows = [
+            {
+                group_by: r[field],
+                "avg_db": r["avg_db"],
+                "sample_count": r["sample_count"],
+            }
+            for r in grouped
+        ]
+        return {
+            "analysis_type": f"avg_decibel_by_{group_by}",
+            "merge_group": "decibel_by_dimension",
+            "rows": rows,
+            "columns": [group_by, "avg_db", "sample_count"],
+            "row_count": len(rows),
+            "limit": len(rows),
+            "offset": 0,
+            "has_more": False,
+            "skip_visualization": False,
+            "chart_hint": {
+                "x": group_by,
+                "y": "avg_db",
+            },
+        }
+
+    def _invoke_sql_agent(self, query: str) -> Dict[str, Any]:
+        response = self.agent.invoke({"messages": [HumanMessage(content=query)]})
+        if response and "messages" in response and response["messages"]:
+            last_message = response["messages"][-1]
+            msg = (
+                str(last_message.content)
+                if hasattr(last_message, "content") and last_message.content
+                else str(last_message)
+            )
+        else:
+            msg = "No response received"
+        return {"message": msg}
 
 
 class VisualizationAnalysisInput(BaseModel):
@@ -2060,7 +2152,11 @@ class VisualizationAnalysisInput(BaseModel):
 
 
 class VisualizationAnalysisTool(BaseTool):
-    """Tool for analyzing data and recommending the best visualization type"""
+    """Tool for analyzing data and recommending the best visualization type.
+
+    Delegates chart type selection to chart_builder's pure-Python decision tree.
+    No LLM calls — deterministic, instant, and debuggable.
+    """
 
     name: str = "visualization_analysis"
     description: str = """
@@ -2072,801 +2168,39 @@ class VisualizationAnalysisTool(BaseTool):
     args_schema: Optional[type[BaseModel]] = VisualizationAnalysisInput
 
     def _run(
-        self, query: str, data_summary: Optional[str] = None, **kwargs
+        self,
+        query: str,
+        data_summary: Optional[str] = None,
+        data_block: Optional[Dict[str, Any]] = None,
+        **kwargs,
     ) -> Dict[str, Any]:
-        try:
-            # First, analyze the query characteristics
-            query_analysis = self._analyze_query_characteristics(query, data_summary)
+        from .chart_builder import resolve_chart
 
-            # Create enhanced analysis prompt for the LLM
-            analysis_prompt = f"""
-            You are an expert data visualization analyst specializing in audio data. Your task is to recommend the BEST chart type for this specific audio data query.
-
-            QUERY: "{query}"
-            DATA SUMMARY: {data_summary or "No specific data provided"}
-
-            QUERY ANALYSIS:
-            - Query Type: {query_analysis['query_type']}
-            - Data Dimensions: {query_analysis['dimensions']}
-            - Temporal Aspect: {query_analysis['temporal']}
-            - Comparison Needed: {query_analysis['comparison']}
-            - Statistical Focus: {query_analysis['statistical']}
-
-            CHART SELECTION RULES (FOLLOW STRICTLY):
-
-            🥧 PIE CHART - Use ONLY when:
-            - Query asks for proportions, percentages, or parts of a whole
-            - Keywords: "distribution of", "percentage of", "proportion", "share"
-            - Data shows how categories make up 100% of something
-            - Example: "What percentage of audio files are in each category?"
-
-            📊 BAR CHART - Use when:
-            - Comparing discrete values across categories
-            - Keywords: "compare", "which has higher", "levels across", "by region/category"
-            - Data has distinct categories with values to compare
-            - Example: "Compare decibel levels across different regions"
-
-            📈 LINE CHART - Use when:
-            - Showing trends, changes, or progression over time
-            - Keywords: "over time", "trends", "changes", "timeline", "progression"
-            - Data has temporal or sequential component
-            - Example: "Show me audio recording trends over time"
-
-            🔥 HEATMAP - Use when:
-            - Showing correlations, patterns, or 2D relationships
-            - Keywords: "correlation", "pattern", "relationship between", "matrix"
-            - Data has two dimensions that interact
-            - Example: "Show correlation between frequency and amplitude"
-
-            🔵 SCATTER PLOT - Use when:
-            - Showing relationship between two continuous variables
-            - Keywords: "relationship between X and Y", "vs", "against", "correlation"
-            - Data points need to show individual relationships
-            - Example: "Plot RMS energy vs spectral centroid"
-
-            📦 BOX PLOT - Use when:
-            - Showing statistical distributions, quartiles, outliers
-            - Keywords: "distribution", "outliers", "quartiles", "statistical", "range"
-            - Data needs to show statistical properties
-            - Example: "Show distribution of decibel levels across categories"
-
-            🏔️ AREA CHART - Use when:
-            - Showing cumulative data or area under curves
-            - Keywords: "cumulative", "total over time", "area under", "spectrum"
-            - Data shows accumulation or stacked composition
-            - Example: "Show cumulative audio energy over time"
-
-            RESPOND WITH ONLY JSON:
-            {{
-                "recommended_chart": "chart_type",
-                "reasoning": "Detailed explanation why this specific chart type is optimal for this audio data query",
-                "data_requirements": ["field1", "field2"],
-                "confidence": "high"
-            }}
-            """
-
-            # Use LLM to analyze and recommend
-            llm = ChatOpenAI(
-                model=AGENT_CONFIG.get("MODEL", "gpt-5-nano"),
-                temperature=0.1,  # Low temperature for consistent reasoning
-                api_key=os.getenv("OPENAI_API_KEY"),
-            )
-            response = llm.invoke([HumanMessage(content=analysis_prompt)])
-
-            # Parse the response and create chart template
-            recommendation = self._parse_visualization_recommendation(
-                response.content, query
-            )
-
-            # Validate and potentially override the recommendation
-            final_recommendation = self._validate_recommendation(
-                recommendation, query_analysis, query
-            )
-
-            chart_type = self._normalize_chart_type(
-                final_recommendation["recommended_chart"]
-            )
-            final_recommendation["recommended_chart"] = chart_type
-            chart_template = self._generate_chart_template(chart_type)
-
-            return {
-                "visualization_type": chart_type,
-                "visualization_name": self._get_visualization_name(chart_type),
-                "chart_template": chart_template,
-                "recommendation": final_recommendation,
-                "frontend_data": {
-                    "type": chart_type,
-                    "name": self._get_visualization_name(chart_type),
-                    "config": chart_template["config"],
-                    "data_structure": self._get_data_structure(chart_type),
-                    "description": final_recommendation.get(
-                        "reasoning", "Audio data visualization"
+        if data_block and isinstance(data_block, dict):
+            chart_config = resolve_chart(data_block)
+            if chart_config:
+                return {
+                    "chart": chart_config,
+                    "visualization_type": chart_config.get(
+                        "visualization_type", "bar_chart"
                     ),
-                },
-                "message": f"Recommended {self._get_visualization_name(chart_type)} for this data analysis",
-            }
-
-        except Exception as e:
-            logger.error(f"Error in visualization analysis: {e}")
-            chart_type = "bar_chart"
-            chart_template = self._generate_chart_template(chart_type)
-
-            return {
-                "visualization_type": chart_type,
-                "visualization_name": self._get_visualization_name(chart_type),
-                "chart_template": chart_template,
-                "recommendation": {
-                    "recommended_chart": chart_type,
-                    "reasoning": "Default recommendation due to analysis error",
-                    "data_requirements": ["category", "value"],
-                },
-                "frontend_data": {
-                    "type": chart_type,
-                    "name": self._get_visualization_name(chart_type),
-                    "config": chart_template["config"],
-                    "data_structure": self._get_data_structure(chart_type),
-                    "description": "Default bar chart for audio data visualization",
-                },
-                "message": "Error in visualization analysis, using default bar chart",
-            }
-
-    def _analyze_query_characteristics(
-        self, query: str, data_summary: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Analyze query characteristics to inform visualization choice"""
-        query_lower = query.lower()
-
-        # Determine query type
-        query_type = "unknown"
-        if any(
-            word in query_lower
-            for word in ["distribution", "percentage", "proportion", "share"]
-        ):
-            query_type = "distribution"
-        elif any(
-            word in query_lower
-            for word in ["compare", "comparison", "vs", "against", "between"]
-        ):
-            query_type = "comparison"
-        elif any(
-            word in query_lower for word in ["trend", "over time", "timeline", "change"]
-        ):
-            query_type = "temporal"
-        elif any(
-            word in query_lower for word in ["correlation", "relationship", "pattern"]
-        ):
-            query_type = "correlation"
-        elif any(
-            word in query_lower for word in ["cumulative", "total", "sum", "area under"]
-        ):
-            query_type = "cumulative"
-        elif any(
-            word in query_lower
-            for word in ["outlier", "quartile", "statistical", "distribution"]
-        ):
-            query_type = "statistical"
-
-        # Determine data dimensions
-        dimensions = 1
-        if any(
-            word in query_lower
-            for word in ["vs", "against", "correlation", "relationship between"]
-        ):
-            dimensions = 2
-        elif any(
-            word in query_lower
-            for word in ["by region and category", "cross", "matrix"]
-        ):
-            dimensions = 3
-
-        # Check for temporal aspect
-        temporal = any(
-            word in query_lower
-            for word in ["time", "date", "month", "day", "timeline", "trend"]
-        )
-
-        # Check for comparison needs
-        comparison = any(
-            word in query_lower
-            for word in ["compare", "vs", "higher", "lower", "best", "worst"]
-        )
-
-        # Check for statistical focus
-        statistical = any(
-            word in query_lower
-            for word in [
-                "distribution",
-                "outlier",
-                "quartile",
-                "statistical",
-                "median",
-                "average",
-            ]
-        )
-
-        # Suggest chart type based on analysis
-        suggested_type = self._suggest_chart_type(
-            query_type, dimensions, temporal, comparison, statistical
-        )
+                    "visualization_name": chart_config.get(
+                        "visualization_name", "Bar Chart"
+                    ),
+                    "frontend_data": chart_config.get("frontend_data", {}),
+                    "message": f"Recommended {chart_config.get('visualization_name', 'Bar Chart')} for this data",
+                }
 
         return {
-            "query_type": query_type,
-            "dimensions": dimensions,
-            "temporal": temporal,
-            "comparison": comparison,
-            "statistical": statistical,
-            "suggested_type": suggested_type,
-            "reasoning": f"Query appears to be {query_type} analysis with {dimensions} dimensions",
+            "chart": None,
+            "visualization_type": "bar_chart",
+            "visualization_name": "Bar Chart",
+            "message": "No data available for visualization analysis",
         }
-
-    def _suggest_chart_type(
-        self,
-        query_type: str,
-        dimensions: int,
-        temporal: bool,
-        comparison: bool,
-        statistical: bool,
-    ) -> str:
-        """Suggest chart type based on query characteristics"""
-
-        # Temporal data almost always needs line or area charts
-        if temporal and query_type == "cumulative":
-            return "area_chart"
-        elif temporal:
-            return "line_chart"
-
-        # Statistical analysis usually needs box plots
-        if statistical and query_type == "statistical":
-            return "box_plot"
-
-        # Correlation analysis needs scatter plots or heatmaps
-        if query_type == "correlation":
-            if dimensions == 2:
-                return "scatter_plot"
-            else:
-                return "heatmap"
-
-        # Distribution analysis - pie only for parts of whole
-        if query_type == "distribution":
-            return "pie_chart"
-
-        # Comparison analysis needs bar charts
-        if query_type == "comparison" or comparison:
-            return "bar_chart"
-
-        # Cumulative data needs area charts
-        if query_type == "cumulative":
-            return "area_chart"
-
-        # Default to bar chart for general comparisons
-        return "bar_chart"
-
-    def _validate_recommendation(
-        self, recommendation: Dict[str, Any], query_analysis: Dict[str, Any], query: str
-    ) -> Dict[str, Any]:
-        """Validate and potentially override LLM recommendation based on query analysis"""
-
-        llm_chart = self._normalize_chart_type(
-            recommendation.get("recommended_chart", "bar_chart")
-        )
-        suggested_chart = query_analysis["suggested_type"]
-        suggested_chart = self._normalize_chart_type(suggested_chart)
-
-        # Override pie chart if it's not truly a distribution query
-        if llm_chart == "pie_chart" and query_analysis["query_type"] != "distribution":
-            query_lower = query.lower()
-            if not any(
-                word in query_lower
-                for word in ["percentage", "proportion", "share", "part of"]
-            ):
-                logger.info(f"Overriding pie chart recommendation for query: {query}")
-                return {
-                    "recommended_chart": suggested_chart,
-                    "reasoning": f"Changed from pie chart to {suggested_chart} because this query is about {query_analysis['query_type']}, not proportions",
-                    "data_requirements": recommendation.get(
-                        "data_requirements", ["category", "value"]
-                    ),
-                    "confidence": "high",
-                    "override_reason": f"Query type '{query_analysis['query_type']}' is better suited for {suggested_chart}",
-                }
-
-        # Override if temporal data is using wrong chart type
-        if query_analysis["temporal"] and llm_chart not in ["line_chart", "area_chart"]:
-            logger.info(f"Overriding {llm_chart} for temporal query: {query}")
-            chart_type = "area_chart" if "cumulative" in query.lower() else "line_chart"
-            return {
-                "recommended_chart": self._normalize_chart_type(chart_type),
-                "reasoning": f"Changed to {chart_type} because this query involves temporal data which is best shown with time-based charts",
-                "data_requirements": ["time", "value"],
-                "confidence": "high",
-                "override_reason": "Temporal data requires time-based visualization",
-            }
-
-        # Override if correlation data is using wrong chart type
-        if query_analysis["query_type"] == "correlation" and llm_chart not in [
-            "scatter_plot",
-            "heatmap",
-        ]:
-            logger.info(f"Overriding {llm_chart} for correlation query: {query}")
-            chart_type = (
-                "scatter_plot" if query_analysis["dimensions"] == 2 else "heatmap"
-            )
-            return {
-                "recommended_chart": chart_type,
-                "reasoning": f"Changed to {chart_type} because correlation analysis requires charts that show relationships between variables",
-                "data_requirements": ["variable_x", "variable_y"],
-                "confidence": "high",
-                "override_reason": "Correlation data requires relationship visualization",
-            }
-
-        # If LLM recommendation is good, use it
-        return recommendation
-
-    def _normalize_chart_type(self, chart_type: str) -> str:
-        """Normalize chart type strings from LLM responses."""
-        if not chart_type:
-            return "bar_chart"
-        chart = chart_type.strip().lower()
-        chart = chart.replace("-", " ").replace("_", " ")
-        chart = " ".join(chart.split())
-
-        mapping = {
-            "pie chart": "pie_chart",
-            "pie": "pie_chart",
-            "bar chart": "bar_chart",
-            "bar": "bar_chart",
-            "line chart": "line_chart",
-            "line": "line_chart",
-            "box plot": "box_plot",
-            "boxplot": "box_plot",
-            "scatter plot": "scatter_plot",
-            "scatter": "scatter_plot",
-            "area chart": "area_chart",
-            "area": "area_chart",
-            "heatmap": "heatmap",
-            "heat map": "heatmap",
-        }
-        return mapping.get(chart, chart.replace(" ", "_"))
-
-    def _parse_visualization_recommendation(
-        self, llm_response: str, query: str
-    ) -> Dict[str, Any]:
-        """Parse LLM response and extract visualization recommendation with intelligent fallback"""
-        try:
-            # Try to parse JSON response from LLM first
-            import json
-            import re
-
-            # Look for JSON in the response
-            json_match = re.search(
-                r'\{[^}]*"recommended_chart"[^}]*\}', llm_response, re.DOTALL
-            )
-            if json_match:
-                try:
-                    parsed_json = json.loads(json_match.group())
-                    if "recommended_chart" in parsed_json:
-                        parsed_json["recommended_chart"] = self._normalize_chart_type(
-                            parsed_json["recommended_chart"]
-                        )
-                        logger.info(
-                            f"Successfully parsed LLM recommendation: {parsed_json['recommended_chart']}"
-                        )
-                        return parsed_json
-                except json.JSONDecodeError as je:
-                    logger.warning(f"JSON parsing failed: {je}")
-
-            # If JSON parsing fails, use intelligent keyword analysis
-            logger.info(f"Using fallback keyword analysis for query: {query}")
-            return self._intelligent_keyword_analysis(query, llm_response)
-
-        except Exception as e:
-            logger.error(f"Error parsing visualization recommendation: {e}")
-            return self._intelligent_keyword_analysis(query, "")
-
-    def _intelligent_keyword_analysis(
-        self, query: str, llm_response: str = ""
-    ) -> Dict[str, Any]:
-        """Intelligent keyword-based chart selection with strict rules to avoid pie chart bias"""
-        query_lower = query.lower()
-
-        # 1. TEMPORAL ANALYSIS - Line/Area Charts (HIGH PRIORITY)
-        if any(
-            word in query_lower
-            for word in [
-                "over time",
-                "timeline",
-                "trend",
-                "change",
-                "month",
-                "date",
-                "day",
-                "progression",
-            ]
-        ):
-            if any(
-                word in query_lower
-                for word in ["cumulative", "total", "sum", "area under"]
-            ):
-                return {
-                    "recommended_chart": "area_chart",
-                    "reasoning": "Temporal query with cumulative aspect - area chart shows accumulation over time",
-                    "data_requirements": ["time", "cumulative_value"],
-                    "confidence": "high",
-                }
-            else:
-                return {
-                    "recommended_chart": "line_chart",
-                    "reasoning": "Temporal query - line chart best shows trends and changes over time",
-                    "data_requirements": ["time", "value"],
-                    "confidence": "high",
-                }
-
-        # 2. CORRELATION/RELATIONSHIP ANALYSIS - Scatter/Heatmap (HIGH PRIORITY)
-        elif any(
-            word in query_lower
-            for word in [
-                "relationship between",
-                " vs ",
-                " against ",
-                "correlation between",
-                "plot",
-            ]
-        ):
-            return {
-                "recommended_chart": "scatter_plot",
-                "reasoning": "Query asks for relationship between two specific variables - scatter plot shows individual data point correlations",
-                "data_requirements": ["variable_x", "variable_y"],
-                "confidence": "high",
-            }
-        elif any(
-            word in query_lower
-            for word in ["correlation", "pattern", "matrix", "spectral pattern"]
-        ):
-            return {
-                "recommended_chart": "heatmap",
-                "reasoning": "Query asks for correlations or patterns - heatmap shows complex multi-dimensional relationships",
-                "data_requirements": ["dimension_x", "dimension_y", "intensity"],
-                "confidence": "high",
-            }
-
-        # 3. STATISTICAL ANALYSIS - Box Plots (HIGH PRIORITY)
-        elif any(
-            word in query_lower
-            for word in [
-                "outlier",
-                "quartile",
-                "statistical",
-                "range",
-                "spread",
-                "median",
-            ]
-        ):
-            return {
-                "recommended_chart": "box_plot",
-                "reasoning": "Statistical analysis query - box plot shows distribution, quartiles, and outliers",
-                "data_requirements": ["category", "value_distribution"],
-                "confidence": "high",
-            }
-
-        # 4. CUMULATIVE ANALYSIS - Area Charts (HIGH PRIORITY)
-        elif any(
-            word in query_lower
-            for word in [
-                "cumulative",
-                "total over",
-                "area under",
-                "spectrum analysis",
-                "energy over",
-            ]
-        ):
-            return {
-                "recommended_chart": "area_chart",
-                "reasoning": "Cumulative analysis query - area chart shows accumulation and total values",
-                "data_requirements": ["sequence", "cumulative_value"],
-                "confidence": "high",
-            }
-
-        # 5. STRICT PROPORTION ANALYSIS - Pie Charts (VERY STRICT CRITERIA)
-        elif (
-            any(
-                word in query_lower
-                for word in ["percentage", "proportion", "share", "part of"]
-            )
-            and any(word in query_lower for word in ["of", "by", "across"])
-            and not any(
-                word in query_lower
-                for word in ["compare", "vs", "against", "higher", "lower"]
-            )
-        ):
-            return {
-                "recommended_chart": "pie_chart",
-                "reasoning": "Query specifically asks for proportions or percentages of a whole - pie chart shows parts-to-whole relationships",
-                "data_requirements": ["category", "percentage"],
-                "confidence": "high",
-            }
-
-        # 6. COMPARISON ANALYSIS - Bar Charts (DEFAULT FOR MOST QUERIES)
-        elif any(
-            word in query_lower
-            for word in [
-                "compare",
-                "comparison",
-                "which",
-                "higher",
-                "lower",
-                "across",
-                "between",
-                "levels",
-            ]
-        ):
-            return {
-                "recommended_chart": "bar_chart",
-                "reasoning": "Comparison query - bar chart clearly shows differences between categories",
-                "data_requirements": ["category", "value"],
-                "confidence": "high",
-            }
-
-        # 7. DISTRIBUTION BY COUNT (NOT PERCENTAGE) - Bar Charts
-        elif any(word in query_lower for word in ["distribution", "breakdown"]):
-            return {
-                "recommended_chart": "bar_chart",
-                "reasoning": "Distribution query by count - bar chart shows quantities across categories (not percentages)",
-                "data_requirements": ["category", "count"],
-                "confidence": "medium",
-            }
-
-        # 8. DEFAULT - Bar Chart (NEVER default to pie!)
-        else:
-            return {
-                "recommended_chart": "bar_chart",
-                "reasoning": "General audio data query - bar chart provides clear comparison of values across categories",
-                "data_requirements": ["category", "value"],
-                "confidence": "medium",
-            }
-
-    def _generate_chart_template(self, chart_type: str) -> Dict[str, Any]:
-        """Generate chart template based on chart type"""
-        chart_type = self._normalize_chart_type(chart_type)
-        templates = {
-            "pie_chart": {
-                "type": "pie",
-                "config": {
-                    "data": {
-                        "labels": [],
-                        "datasets": [
-                            {
-                                "data": [],
-                                "backgroundColor": [
-                                    "#FF6384",
-                                    "#36A2EB",
-                                    "#FFCE56",
-                                    "#4BC0C0",
-                                    "#9966FF",
-                                    "#FF9F40",
-                                    "#FF6384",
-                                    "#C9CBCF",
-                                ],
-                            }
-                        ],
-                    },
-                    "options": {
-                        "responsive": True,
-                        "plugins": {
-                            "legend": {"position": "bottom"},
-                            "title": {"display": True, "text": "Data Distribution"},
-                        },
-                    },
-                },
-            },
-            "bar_chart": {
-                "type": "bar",
-                "config": {
-                    "data": {
-                        "labels": [],
-                        "datasets": [
-                            {
-                                "label": "Values",
-                                "data": [],
-                                "backgroundColor": "#36A2EB",
-                                "borderColor": "#36A2EB",
-                                "borderWidth": 1,
-                            }
-                        ],
-                    },
-                    "options": {
-                        "responsive": True,
-                        "scales": {"y": {"beginAtZero": True}},
-                        "plugins": {
-                            "title": {"display": True, "text": "Data Comparison"}
-                        },
-                    },
-                },
-            },
-            "line_chart": {
-                "type": "line",
-                "config": {
-                    "data": {
-                        "labels": [],
-                        "datasets": [
-                            {
-                                "label": "Trend",
-                                "data": [],
-                                "borderColor": "#36A2EB",
-                                "backgroundColor": "rgba(54, 162, 235, 0.1)",
-                                "tension": 0.1,
-                            }
-                        ],
-                    },
-                    "options": {
-                        "responsive": True,
-                        "scales": {"y": {"beginAtZero": True}},
-                        "plugins": {
-                            "title": {"display": True, "text": "Trend Analysis"}
-                        },
-                    },
-                },
-            },
-            "heatmap": {
-                "type": "heatmap",
-                "config": {
-                    "data": {
-                        "datasets": [
-                            {
-                                "label": "Heatmap",
-                                "data": [],
-                                "backgroundColor": "rgba(54, 162, 235, 0.8)",
-                            }
-                        ]
-                    },
-                    "options": {
-                        "responsive": True,
-                        "plugins": {
-                            "title": {"display": True, "text": "Data Patterns"}
-                        },
-                        "scales": {
-                            "x": {"type": "category"},
-                            "y": {"type": "category"},
-                        },
-                    },
-                },
-            },
-            "scatter_plot": {
-                "type": "scatter",
-                "config": {
-                    "data": {
-                        "datasets": [
-                            {
-                                "label": "Data Points",
-                                "data": [],
-                                "backgroundColor": "#36A2EB",
-                                "borderColor": "#36A2EB",
-                            }
-                        ]
-                    },
-                    "options": {
-                        "responsive": True,
-                        "scales": {
-                            "x": {"type": "linear", "position": "bottom"},
-                            "y": {"type": "linear"},
-                        },
-                        "plugins": {
-                            "title": {"display": True, "text": "Relationship Analysis"}
-                        },
-                    },
-                },
-            },
-            "box_plot": {
-                "type": "boxplot",
-                "config": {
-                    "data": {
-                        "labels": [],
-                        "datasets": [
-                            {
-                                "label": "Distribution",
-                                "data": [],
-                                "backgroundColor": "rgba(54, 162, 235, 0.5)",
-                                "borderColor": "#36A2EB",
-                            }
-                        ],
-                    },
-                    "options": {
-                        "responsive": True,
-                        "plugins": {
-                            "title": {"display": True, "text": "Data Distribution"}
-                        },
-                    },
-                },
-            },
-            "area_chart": {
-                "type": "line",
-                "config": {
-                    "data": {
-                        "labels": [],
-                        "datasets": [
-                            {
-                                "label": "Cumulative",
-                                "data": [],
-                                "borderColor": "#36A2EB",
-                                "backgroundColor": "rgba(54, 162, 235, 0.3)",
-                                "fill": True,
-                                "tension": 0.1,
-                            }
-                        ],
-                    },
-                    "options": {
-                        "responsive": True,
-                        "scales": {"y": {"beginAtZero": True}},
-                        "plugins": {
-                            "title": {"display": True, "text": "Cumulative Analysis"}
-                        },
-                    },
-                },
-            },
-        }
-
-        return templates.get(chart_type, templates["bar_chart"])
-
-    def _get_visualization_name(self, chart_type: str) -> str:
-        """Get human-readable name for chart type"""
-        chart_type = self._normalize_chart_type(chart_type)
-        names = {
-            "pie_chart": "Pie Chart",
-            "bar_chart": "Bar Chart",
-            "line_chart": "Line Chart",
-            "heatmap": "Heatmap",
-            "scatter_plot": "Scatter Plot",
-            "box_plot": "Box Plot",
-            "area_chart": "Area Chart",
-        }
-        return names.get(chart_type, "Bar Chart")
-
-    def _get_data_structure(self, chart_type: str) -> Dict[str, Any]:
-        """Get expected data structure for each chart type"""
-        chart_type = self._normalize_chart_type(chart_type)
-        structures = {
-            "pie_chart": {
-                "labels": "Array of category names",
-                "data": "Array of values corresponding to labels",
-                "description": "For showing proportions/percentages of audio categories",
-            },
-            "bar_chart": {
-                "labels": "Array of category names",
-                "data": "Array of values for each category",
-                "description": "For comparing audio metrics across categories",
-            },
-            "line_chart": {
-                "labels": "Array of time points or frequency values",
-                "data": "Array of values over time/frequency",
-                "description": "For showing audio trends over time or frequency analysis",
-            },
-            "heatmap": {
-                "x_labels": "Array of x-axis categories",
-                "y_labels": "Array of y-axis categories",
-                "data": "2D array of intensity values",
-                "description": "For showing audio correlations and patterns",
-            },
-            "scatter_plot": {
-                "x_data": "Array of x-axis values",
-                "y_data": "Array of y-axis values",
-                "description": "For showing relationships between audio variables",
-            },
-            "box_plot": {
-                "labels": "Array of category names",
-                "data": "Array of arrays containing numerical values for each category",
-                "description": "For showing distribution of audio metrics",
-            },
-            "area_chart": {
-                "labels": "Array of time points or frequency values",
-                "data": "Array of cumulative values",
-                "description": "For showing cumulative audio energy or spectrum analysis",
-            },
-        }
-        return structures.get(chart_type, structures["bar_chart"])
 
 
 # Lazy initialization to avoid database connection at import time
-_agent_tools = None
-_ml_agent_tools = None
+_all_tools_cache: Optional[List[BaseTool]] = None
 
 
 class MLProfileInput(BaseModel):
@@ -3009,51 +2343,1143 @@ class MLFeatureStatsTool(BaseTool):
             }
 
 
-def get_agent_tools(mode: str = "analysis"):
-    """Get agent tools with lazy initialization"""
-    global _agent_tools
-    global _ml_agent_tools
+class MLClassBalanceInput(BaseModel):
+    """Input for ML class balance analysis."""
 
-    if mode == "ml":
-        if _ml_agent_tools is None:
-            try:
-                _ml_agent_tools = [
-                    MLDatasetProfileTool(),
-                    MLFeatureStatsTool(),
-                    DataAnalysisTool(),
-                    VisualizationAnalysisTool(),
-                    NoiseDatasetSearchTool(),
-                    AudioFeatureSearchTool(),
-                ]
-            except Exception as e:
-                logger.warning(f"Failed to initialize ML tools: {e}")
-                _ml_agent_tools = [
-                    MLDatasetProfileTool(),
-                    DataAnalysisTool(),
-                    VisualizationAnalysisTool(),
-                ]
-        return _ml_agent_tools
+    label_column: Literal["category", "region", "class", "subclass"] = Field(
+        default="category", description="Label column to analyze class balance for"
+    )
 
-    if _agent_tools is None:
+
+class MLClassBalanceTool(BaseTool):
+    name: str = "ml_class_balance"
+    description: str = (
+        "Analyze class balance for a label column. Returns per-class counts, "
+        "percentages, minority/majority ratio, imbalance severity, Shannon entropy, "
+        "and stratified split recommendations. Use when the user asks about class "
+        "distribution, balance, or dataset readiness for classification."
+    )
+    args_schema: Optional[type[BaseModel]] = MLClassBalanceInput
+
+    def _run(self, label_column: str = "category", **kwargs) -> Dict[str, Any]:
+        import math
+
         try:
-            _agent_tools = [
+            field_map = {
+                "category": "category__name",
+                "region": "region__name",
+                "class": "class_name__name",
+                "subclass": "subclass__name",
+            }
+            field = field_map.get(label_column, "category__name")
+
+            distribution = list(
+                NoiseDataset.objects.values(field)
+                .annotate(count=models.Count("id"))
+                .order_by("-count")
+            )
+
+            if not distribution:
+                return {
+                    "error": "insufficient_data",
+                    "reason": "No rows found.",
+                    "rows_available": 0,
+                    "skip_visualization": True,
+                }
+
+            total = sum(r["count"] for r in distribution)
+            if total < 10:
+                return {
+                    "error": "insufficient_data",
+                    "reason": f"Only {total} rows found. Minimum is 10.",
+                    "rows_available": total,
+                    "skip_visualization": True,
+                }
+
+            n_classes = len(distribution)
+            if n_classes < 2:
+                return {
+                    "error": "insufficient_data",
+                    "reason": f"Only {n_classes} class present. Need at least 2 classes.",
+                    "rows_available": total,
+                    "skip_visualization": True,
+                }
+
+            # Per-class stats
+            per_class = []
+            for r in distribution:
+                name = r.get(field) or "Unknown"
+                count = r["count"]
+                pct = (count / total * 100) if total else 0
+                per_class.append(
+                    {
+                        "label": str(name),
+                        "count": count,
+                        "percentage": round(pct, 1),
+                    }
+                )
+
+            # Minority / majority
+            max_count = max(r["count"] for r in per_class)
+            min_count = min(r["count"] for r in per_class)
+            minority_ratio = min_count / max_count if max_count > 0 else 0
+            minority_pct = (min_count / total * 100) if total > 0 else 0
+
+            # Imbalance severity
+            if minority_pct < 5:
+                severity = "severe"
+            elif minority_pct < 15:
+                severity = "moderate"
+            elif minority_pct < 30:
+                severity = "mild"
+            else:
+                severity = "balanced"
+
+            # Shannon entropy (normalized)
+            entropy = 0.0
+            for r in per_class:
+                p = r["count"] / total if total > 0 else 0
+                if p > 0:
+                    entropy -= p * math.log2(p)
+            max_entropy = math.log2(n_classes) if n_classes > 1 else 1
+            normalized_entropy = entropy / max_entropy if max_entropy > 0 else 0
+
+            # Stratified split recommendation (70/15/15)
+            split_recs = []
+            for r in per_class:
+                c = r["count"]
+                train = max(1, round(c * 0.70))
+                val = max(1, round(c * 0.15))
+                test = max(1, round(c * 0.15))
+                split_recs.append(
+                    {
+                        "label": r["label"],
+                        "train": train,
+                        "val": val,
+                        "test": test,
+                        "total": c,
+                    }
+                )
+
+            # Warn if any class has < 30 in val+test combined
+            low_sample_classes = [
+                r["label"] for r in split_recs if (r["val"] + r["test"]) < 30
+            ]
+
+            return {
+                "analysis_type": "ml_class_balance",
+                "label_column": label_column,
+                "total_rows": total,
+                "n_classes": n_classes,
+                "minority_ratio": round(minority_ratio, 4),
+                "minority_pct": round(minority_pct, 1),
+                "imbalance_severity": severity,
+                "shannon_entropy": round(entropy, 3),
+                "normalized_entropy": round(normalized_entropy, 3),
+                "per_class": per_class,
+                "split_recommendation": split_recs,
+                "low_sample_classes": low_sample_classes,
+                "warnings": (
+                    [
+                        f"Classes with <30 samples in val+test combined: {', '.join(low_sample_classes)}"
+                    ]
+                    if low_sample_classes
+                    else []
+                ),
+            }
+        except Exception as e:
+            logger.error(f"Error in ml_class_balance: {e}")
+            return {"error": get_user_friendly_error(str(e), "analyzing class balance")}
+
+
+class MLTrainTestSplitInput(BaseModel):
+    """Input for ML train/test split calculation."""
+
+    label_column: Literal["category", "region", "class", "subclass"] = Field(
+        default="category", description="Label column to stratify by"
+    )
+    train_pct: float = Field(
+        default=0.70,
+        ge=0.1,
+        le=0.9,
+        description="Fraction of data for training (0.1-0.9)",
+    )
+    val_pct: float = Field(
+        default=0.15,
+        ge=0.05,
+        le=0.5,
+        description="Fraction of data for validation (0.05-0.5)",
+    )
+    test_pct: float = Field(
+        default=0.15,
+        ge=0.05,
+        le=0.5,
+        description="Fraction of data for testing (0.05-0.5)",
+    )
+    split_strategy: Literal["stratified", "random", "time_based"] = Field(
+        default="stratified",
+        description="Split strategy: stratified preserves class proportions, "
+        "random shuffles uniformly, time_based splits by recording date",
+    )
+    seed: int = Field(default=42, description="Random seed for reproducibility")
+
+
+class MLTrainTestSplitTool(BaseTool):
+    name: str = "ml_train_test_split"
+    description: str = (
+        "Compute exact row counts for train/val/test splits. Supports stratified "
+        "(preserves class proportions), random (uniform shuffle), and time-based "
+        "(split by recording date) strategies. Returns per-class breakdown per split. "
+        "Uses a fixed seed for reproducibility."
+    )
+    args_schema: Optional[type[BaseModel]] = MLTrainTestSplitInput
+
+    def _run(
+        self,
+        label_column: str = "category",
+        train_pct: float = 0.70,
+        val_pct: float = 0.15,
+        test_pct: float = 0.15,
+        split_strategy: str = "stratified",
+        seed: int = 42,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        import random as _random
+
+        try:
+            field_map = {
+                "category": "category__name",
+                "region": "region__name",
+                "class": "class_name__name",
+                "subclass": "subclass__name",
+            }
+            field = field_map.get(label_column, "category__name")
+
+            total = NoiseDataset.objects.count()
+            if total < 10:
+                return {
+                    "error": "insufficient_data",
+                    "reason": f"Only {total} rows found. Minimum is 10.",
+                    "rows_available": total,
+                    "skip_visualization": True,
+                }
+
+            # Verify splits sum to ~1
+            total_pct = train_pct + val_pct + test_pct
+            if abs(total_pct - 1.0) > 0.01:
+                return {
+                    "error": "invalid_splits",
+                    "reason": f"Split percentages sum to {total_pct}, should be 1.0",
+                    "skip_visualization": True,
+                }
+
+            if split_strategy == "stratified":
+                distribution = list(
+                    NoiseDataset.objects.values(field)
+                    .annotate(count=models.Count("id"))
+                    .order_by("-count")
+                )
+
+                splits_per_class = []
+                for r in distribution:
+                    c = r["count"]
+                    train = max(1, round(c * train_pct))
+                    test = max(1, round(c * test_pct))
+                    val = max(1, c - train - test)
+                    if val < 1:
+                        val = 1
+                        train = max(1, c - test - val)
+                    splits_per_class.append(
+                        {
+                            "label": str(r.get(field) or "Unknown"),
+                            "total": c,
+                            "train": train,
+                            "val": val,
+                            "test": test,
+                        }
+                    )
+
+                train_total = sum(s["train"] for s in splits_per_class)
+                val_total = sum(s["val"] for s in splits_per_class)
+                test_total = sum(s["test"] for s in splits_per_class)
+
+            elif split_strategy == "random":
+                _random.seed(seed)
+                train_total = max(1, round(total * train_pct))
+                test_total = max(1, round(total * test_pct))
+                val_total = max(1, total - train_total - test_total)
+                splits_per_class = []
+
+            elif split_strategy == "time_based":
+                # Sort by recording date, earliest → train, middle → val, latest → test
+                all_ids = list(
+                    NoiseDataset.objects.order_by("recording_date").values_list(
+                        "id", flat=True
+                    )
+                )
+                n = len(all_ids)
+                train_end = max(1, round(n * train_pct))
+                val_end = max(train_end + 1, round(n * (train_pct + val_pct)))
+                train_total = train_end
+                val_total = val_end - train_end
+                test_total = n - val_end
+                splits_per_class = []
+
+            else:
+                return {
+                    "error": "invalid_strategy",
+                    "reason": f"Unknown split strategy: {split_strategy}",
+                    "skip_visualization": True,
+                }
+
+            # Unstratifiable class check
+            unstratifiable = []
+            if splits_per_class:
+                for s in splits_per_class:
+                    if s["total"] < 3:
+                        unstratifiable.append(s["label"])
+
+            return {
+                "analysis_type": "ml_train_test_split",
+                "split_strategy": split_strategy,
+                "seed": seed,
+                "total_rows": total,
+                "label_column": label_column,
+                "train_count": train_total,
+                "val_count": val_total,
+                "test_count": test_total,
+                "train_pct": round(train_total / total * 100, 1) if total else 0,
+                "val_pct": round(val_total / total * 100, 1) if total else 0,
+                "test_pct": round(test_total / total * 100, 1) if total else 0,
+                "splits_per_class": splits_per_class if splits_per_class else None,
+                "unstratifiable_classes": unstratifiable,
+                "warnings": (
+                    [
+                        f"Classes with <3 samples — stratification impossible: {', '.join(unstratifiable)}"
+                    ]
+                    if unstratifiable
+                    else []
+                ),
+            }
+        except Exception as e:
+            logger.error(f"Error in ml_train_test_split: {e}")
+            return {
+                "error": get_user_friendly_error(str(e), "computing train/test split")
+            }
+
+
+class MLCorrelationMatrixInput(BaseModel):
+    """Input for ML correlation matrix."""
+
+    method: Literal["spearman", "pearson", "both"] = Field(
+        default="both", description="Correlation method: spearman, pearson, or both"
+    )
+    label_column: Optional[Literal["category", "region", "class", "subclass"]] = Field(
+        default=None, description="Label column for stratified sampling"
+    )
+    sample_size: int = Field(
+        default=5000,
+        ge=100,
+        le=50000,
+        description="Max rows to sample (capped for performance)",
+    )
+    seed: int = Field(default=42, description="Random seed for sampling")
+
+
+class MLCorrelationMatrixTool(BaseTool):
+    name: str = "ml_correlation_matrix"
+    description: str = (
+        "Compute pairwise Spearman ρ and/or Pearson r between all numeric audio "
+        "feature columns. Returns N×N matrix, top-10 strongest pairs, and p-values. "
+        "Samples up to 5,000 rows (stratified by label if provided) for performance."
+    )
+    args_schema: Optional[type[BaseModel]] = MLCorrelationMatrixInput
+
+    def _run(
+        self,
+        method: str = "both",
+        label_column: Optional[str] = None,
+        sample_size: int = 5000,
+        seed: int = 42,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        try:
+            import numpy as np
+            from scipy import stats as sp_stats
+        except ImportError:
+            return {
+                "error": "Correlation computation requires scipy. Please install scipy.",
+                "skip_visualization": True,
+            }
+
+        try:
+            feature_cols = [
+                "rms_energy",
+                "zero_crossing_rate",
+                "spectral_centroid",
+                "spectral_bandwidth",
+                "spectral_rolloff",
+                "spectral_flatness",
+                "duration",
+                "harmonic_ratio",
+                "percussive_ratio",
+            ]
+
+            # Fetch data
+            qs = AudioFeature.objects.filter(
+                rms_energy__isnull=False,
+                spectral_centroid__isnull=False,
+            ).select_related("noise_dataset")
+
+            total = qs.count()
+            if total < 5:
+                return {
+                    "error": "insufficient_data",
+                    "reason": f"Only {total} rows with features found. Minimum is 5.",
+                    "rows_available": total,
+                    "skip_visualization": True,
+                }
+
+            # Sample
+            actual_sample = min(sample_size, total)
+            import random as _random
+
+            _random.seed(seed)
+            rng = np.random.RandomState(seed)
+
+            if label_column and total > actual_sample:
+                # Stratified sampling
+                field_map = {
+                    "category": "noise_dataset__category__name",
+                    "region": "noise_dataset__region__name",
+                    "class": "noise_dataset__class_name__name",
+                    "subclass": "noise_dataset__subclass__name",
+                }
+                field = field_map.get(label_column, "noise_dataset__category__name")
+                ids = list(
+                    qs.values_list("id", "noise_dataset_id").order_by("?")[
+                        :actual_sample
+                    ]
+                )
+            else:
+                ids = list(
+                    qs.values_list("id", flat=True).order_by("?")[:actual_sample]
+                )
+
+            if not ids:
+                return {
+                    "error": "insufficient_data",
+                    "reason": "No rows found after sampling.",
+                    "rows_available": 0,
+                    "skip_visualization": True,
+                }
+
+            # Build data matrix
+            if isinstance(ids[0], (tuple, list)):
+                id_list = [i[0] for i in ids]
+            else:
+                id_list = list(ids)
+
+            features_qs = AudioFeature.objects.filter(id__in=id_list).values(
+                *feature_cols
+            )
+            rows = list(features_qs)
+
+            data_matrix = {}
+            for col in feature_cols:
+                col_data = [r.get(col) for r in rows if r.get(col) is not None]
+                data_matrix[col] = np.array(col_data, dtype=float)
+
+            # Filter to features with data
+            valid_features = [k for k, v in data_matrix.items() if len(v) >= 5]
+            if len(valid_features) < 2:
+                return {
+                    "error": "insufficient_data",
+                    "reason": f"Only {len(valid_features)} features with sufficient data.",
+                    "rows_available": len(rows),
+                    "skip_visualization": True,
+                }
+
+            # Compute correlations
+            n_features = len(valid_features)
+            spearman_matrix = None
+            pearson_matrix = None
+            spearman_pvals = None
+            pearson_pvals = None
+
+            # Min length across all features
+            min_len = min(len(data_matrix[f]) for f in valid_features)
+            aligned_data = np.column_stack(
+                [data_matrix[f][:min_len] for f in valid_features]
+            )
+
+            if method in ("spearman", "both"):
+                spearman_matrix = np.zeros((n_features, n_features))
+                spearman_pvals = np.zeros((n_features, n_features))
+                for i in range(n_features):
+                    for j in range(i, n_features):
+                        if i == j:
+                            spearman_matrix[i][j] = 1.0
+                            spearman_pvals[i][j] = 0.0
+                        else:
+                            rho, p = sp_stats.spearmanr(
+                                aligned_data[:, i], aligned_data[:, j]
+                            )
+                            spearman_matrix[i][j] = spearman_matrix[j][i] = float(rho)
+                            spearman_pvals[i][j] = spearman_pvals[j][i] = float(p)
+
+            if method in ("pearson", "both"):
+                pearson_matrix = np.zeros((n_features, n_features))
+                pearson_pvals = np.zeros((n_features, n_features))
+                for i in range(n_features):
+                    for j in range(i, n_features):
+                        if i == j:
+                            pearson_matrix[i][j] = 1.0
+                            pearson_pvals[i][j] = 0.0
+                        else:
+                            r, p = sp_stats.pearsonr(
+                                aligned_data[:, i], aligned_data[:, j]
+                            )
+                            pearson_matrix[i][j] = pearson_matrix[j][i] = float(r)
+                            pearson_pvals[i][j] = pearson_pvals[j][i] = float(p)
+
+            # Top-10 strongest pairs (by absolute Spearman if available, else Pearson)
+            primary_matrix = (
+                spearman_matrix if spearman_matrix is not None else pearson_matrix
+            )
+            top_pairs = []
+            for i in range(n_features):
+                for j in range(i + 1, n_features):
+                    top_pairs.append(
+                        {
+                            "feature_a": valid_features[i],
+                            "feature_b": valid_features[j],
+                            "spearman_rho": (
+                                round(float(spearman_matrix[i][j]), 4)
+                                if spearman_matrix is not None
+                                else None
+                            ),
+                            "spearman_p": (
+                                round(float(spearman_pvals[i][j]), 6)
+                                if spearman_pvals is not None
+                                else None
+                            ),
+                            "pearson_r": (
+                                round(float(pearson_matrix[i][j]), 4)
+                                if pearson_matrix is not None
+                                else None
+                            ),
+                            "pearson_p": (
+                                round(float(pearson_pvals[i][j]), 6)
+                                if pearson_pvals is not None
+                                else None
+                            ),
+                        }
+                    )
+            top_pairs.sort(
+                key=lambda x: abs(x.get("spearman_rho") or x.get("pearson_r") or 0),
+                reverse=True,
+            )
+            top_pairs = top_pairs[:10]
+
+            return {
+                "analysis_type": "ml_correlation_matrix",
+                "method": method,
+                "features": valid_features,
+                "n_features": n_features,
+                "sample_size": min_len,
+                "total_available": total,
+                "sampling_method": "stratified" if label_column else "random",
+                "seed": seed,
+                "spearman_matrix": (
+                    spearman_matrix.tolist() if spearman_matrix is not None else None
+                ),
+                "spearman_pvals": (
+                    spearman_pvals.tolist() if spearman_pvals is not None else None
+                ),
+                "pearson_matrix": (
+                    pearson_matrix.tolist() if pearson_matrix is not None else None
+                ),
+                "pearson_pvals": (
+                    pearson_pvals.tolist() if pearson_pvals is not None else None
+                ),
+                "top_pairs": top_pairs,
+            }
+        except Exception as e:
+            logger.error(f"Error in ml_correlation_matrix: {e}")
+            return {
+                "error": get_user_friendly_error(str(e), "computing correlation matrix")
+            }
+
+
+class MLStatisticalTestInput(BaseModel):
+    """Input for ML statistical tests comparing two groups."""
+
+    group_a_value: str = Field(description="Name of group A (e.g. 'Greater Accra')")
+    group_b_value: str = Field(description="Name of group B (e.g. 'Ashanti')")
+    group_by: Literal["region", "category", "class", "community"] = Field(
+        default="region", description="Dimension to split groups by"
+    )
+    feature: str = Field(
+        default="mean_db",
+        description="Numeric feature to compare (mean_db, rms_energy, spectral_centroid, zero_crossing_rate, duration)",
+    )
+
+
+class MLStatisticalTestTool(BaseTool):
+    name: str = "ml_statistical_test"
+    description: str = (
+        "Compare two groups on a numeric feature. Returns Welch's t-test "
+        "(t, p, df), Mann-Whitney U (U, p), Cohen's d effect size, and "
+        "a plain-English interpretation. E.g. 'Is region A louder than region B?'"
+    )
+    args_schema: Optional[type[BaseModel]] = MLStatisticalTestInput
+
+    def _run(
+        self,
+        group_a_value: str,
+        group_b_value: str,
+        group_by: str = "region",
+        feature: str = "mean_db",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        try:
+            import numpy as np
+            from scipy import stats as sp_stats
+        except ImportError:
+            return {
+                "error": "Statistical test requires scipy. Please install scipy.",
+                "skip_visualization": True,
+            }
+
+        try:
+            field_map = {
+                "region": "region__name",
+                "category": "category__name",
+                "class": "class_name__name",
+                "community": "community__name",
+            }
+            group_field = field_map.get(group_by, "region__name")
+
+            # Map feature name to ORM path
+            if feature in (
+                "mean_db",
+                "max_db",
+                "min_db",
+                "std_db",
+                "dominant_frequency",
+            ):
+                feature_path = f"noise_analysis__{feature}"
+                feature_filter = {f"{feature_path}__isnull": False}
+            elif feature == "duration":
+                feature_path = f"audio_features__{feature}"
+                feature_filter = {"audio_features__duration__isnull": False}
+            else:
+                feature_path = f"audio_features__{feature}"
+                feature_filter = {f"{feature_path}__isnull": False}
+
+            # Fetch group data
+            filter_a = {f"{group_field}__iexact": group_a_value, **feature_filter}
+            filter_b = {f"{group_field}__iexact": group_b_value, **feature_filter}
+
+            values_a_raw = list(
+                NoiseDataset.objects.filter(**filter_a).values_list(
+                    feature_path, flat=True
+                )[:10000]
+            )
+            values_b_raw = list(
+                NoiseDataset.objects.filter(**filter_b).values_list(
+                    feature_path, flat=True
+                )[:10000]
+            )
+
+            values_a = np.array(
+                [float(v) for v in values_a_raw if v is not None], dtype=float
+            )
+            values_b = np.array(
+                [float(v) for v in values_b_raw if v is not None], dtype=float
+            )
+
+            n_a = len(values_a)
+            n_b = len(values_b)
+
+            if n_a < 3 or n_b < 3:
+                return {
+                    "error": "insufficient_data",
+                    "reason": f"Group A has {n_a} samples, Group B has {n_b}. Both need at least 3.",
+                    "rows_available": {"group_a": n_a, "group_b": n_b},
+                    "skip_visualization": True,
+                }
+
+            # Welch's t-test
+            t_stat, t_p = sp_stats.ttest_ind(values_a, values_b, equal_var=False)
+
+            # Mann-Whitney U
+            u_stat, u_p = sp_stats.mannwhitneyu(
+                values_a, values_b, alternative="two-sided"
+            )
+
+            # Cohen's d
+            mean_a = float(np.mean(values_a))
+            mean_b = float(np.mean(values_b))
+            std_a = float(np.std(values_a, ddof=1))
+            std_b = float(np.std(values_b, ddof=1))
+            pooled_std = np.sqrt((std_a**2 + std_b**2) / 2)
+            cohens_d = float((mean_a - mean_b) / pooled_std) if pooled_std > 0 else 0.0
+
+            # Effect size interpretation
+            abs_d = abs(cohens_d)
+            if abs_d < 0.2:
+                effect_label = "negligible"
+            elif abs_d < 0.5:
+                effect_label = "small"
+            elif abs_d < 0.8:
+                effect_label = "medium"
+            else:
+                effect_label = "large"
+
+            # Plain-English summary
+            significance = "significantly" if t_p < 0.05 else "not significantly"
+            direction = "higher" if mean_a > mean_b else "lower"
+            summary = (
+                f"{group_a_value} has {direction} {feature} than {group_b_value} "
+                f"({significance} different: p={t_p:.4f}, d={cohens_d:.2f} {effect_label} effect)"
+            )
+
+            small_sample = n_a < 10 or n_b < 10
+
+            return {
+                "analysis_type": "ml_statistical_test",
+                "group_by": group_by,
+                "feature": feature,
+                "group_a": {
+                    "name": group_a_value,
+                    "n": n_a,
+                    "mean": round(mean_a, 4),
+                    "std": round(std_a, 4),
+                },
+                "group_b": {
+                    "name": group_b_value,
+                    "n": n_b,
+                    "mean": round(mean_b, 4),
+                    "std": round(std_b, 4),
+                },
+                "welch_t_test": {
+                    "t_statistic": round(float(t_stat), 4),
+                    "p_value": round(float(t_p), 6),
+                    "degrees_of_freedom": None,  # Welch's doesn't give a clean integer df
+                },
+                "mann_whitney_u": {
+                    "u_statistic": round(float(u_stat), 4),
+                    "p_value": round(float(u_p), 6),
+                },
+                "cohens_d": round(cohens_d, 4),
+                "effect_size": effect_label,
+                "plain_english": summary,
+                "small_sample_warning": small_sample,
+                "warnings": (
+                    [
+                        f"Small sample sizes (A: {n_a}, B: {n_b}) — results are underpowered"
+                    ]
+                    if small_sample
+                    else []
+                ),
+            }
+        except Exception as e:
+            logger.error(f"Error in ml_statistical_test: {e}")
+            return {
+                "error": get_user_friendly_error(str(e), "running statistical test")
+            }
+
+
+class MLExportFeaturesInput(BaseModel):
+    """Input for ML feature export."""
+
+    label_column: Literal["category", "region", "class", "subclass"] = Field(
+        default="category", description="Label column for y vector"
+    )
+    features: Optional[List[str]] = Field(
+        default=None, description="Feature columns to include (defaults to all)"
+    )
+    format: Literal["flat", "split"] = Field(
+        default="flat",
+        description="'flat' = X+y in one table, 'split' = separate X and y",
+    )
+    max_rows: int = Field(
+        default=10000, ge=100, le=100000, description="Max rows to export"
+    )
+
+
+class MLExportFeaturesTool(BaseTool):
+    name: str = "ml_export_features"
+    description: str = (
+        "Export a feature matrix (X) and label vector (y) from the database. "
+        "Returns CSV-formatted data for use in notebooks. Bridge from chatbot "
+        "to ML training."
+    )
+    args_schema: Optional[type[BaseModel]] = MLExportFeaturesInput
+
+    def _run(
+        self,
+        label_column: str = "category",
+        features: Optional[List[str]] = None,
+        format: str = "flat",
+        max_rows: int = 10000,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        try:
+            field_map = {
+                "category": "category__name",
+                "region": "region__name",
+                "class": "class_name__name",
+                "subclass": "subclass__name",
+            }
+            label_field = field_map.get(label_column, "category__name")
+
+            if features is None:
+                features = [
+                    "rms_energy",
+                    "zero_crossing_rate",
+                    "spectral_centroid",
+                    "spectral_bandwidth",
+                    "spectral_rolloff",
+                    "spectral_flatness",
+                    "duration",
+                ]
+
+            # Build queryset with all joins
+            qs = NoiseDataset.objects.select_related(
+                "audio_features",
+                "noise_analysis",
+                "region",
+                "category",
+                "class_name",
+                "subclass",
+            ).filter(audio_features__isnull=False)
+
+            total = qs.count()
+            actual_rows = min(max_rows, total)
+
+            rows_data = []
+            for ds in qs[:actual_rows]:
+                row = {}
+                af = ds.audio_features
+                if af:
+                    for f in features:
+                        row[f] = getattr(af, f, None)
+                # Label
+                if label_column == "region":
+                    row["label"] = ds.region.name if ds.region else None
+                elif label_column == "category":
+                    row["label"] = ds.category.name if ds.category else None
+                elif label_column == "class":
+                    row["label"] = ds.class_name.name if ds.class_name else None
+                elif label_column == "subclass":
+                    row["label"] = ds.subclass.name if ds.subclass else None
+                else:
+                    row["label"] = ds.category.name if ds.category else None
+                rows_data.append(row)
+
+            # Build CSV
+            all_columns = features + ["label"]
+            csv_lines = [",".join(all_columns)]
+            for row in rows_data:
+                csv_lines.append(
+                    ",".join(
+                        str(row.get(c, "")) if row.get(c) is not None else ""
+                        for c in all_columns
+                    )
+                )
+            csv_content = "\n".join(csv_lines)
+
+            # Count rows with non-null labels
+            labeled_rows = sum(1 for r in rows_data if r.get("label") is not None)
+
+            return {
+                "analysis_type": "ml_export_features",
+                "format": format,
+                "columns": all_columns,
+                "feature_count": len(features),
+                "total_rows": total,
+                "exported_rows": actual_rows,
+                "labeled_rows": labeled_rows,
+                "csv_data": csv_content,
+                "rows": rows_data,
+                "columns_meta": all_columns,
+                "total_count": actual_rows,
+            }
+        except Exception as e:
+            logger.error(f"Error in ml_export_features: {e}")
+            return {"error": get_user_friendly_error(str(e), "exporting features")}
+
+
+class MLFeatureImportanceInput(BaseModel):
+    """Input for ML feature importance ranking."""
+
+    label_column: Literal["category", "region", "class", "subclass"] = Field(
+        default="category", description="Label column to measure importance against"
+    )
+    sample_size: int = Field(
+        default=5000,
+        ge=100,
+        le=50000,
+        description="Max rows to sample (capped for performance)",
+    )
+    seed: int = Field(default=42, description="Random seed for sampling")
+
+
+class MLFeatureImportanceTool(BaseTool):
+    name: str = "ml_feature_importance"
+    description: str = (
+        "Rank audio features by how well they predict a label. Uses sklearn's "
+        "mutual_info_classif (k-NN estimator, n_neighbors=3) as primary score "
+        "and ANOVA F-value as secondary cross-check. Returns ranked features "
+        "with caveats about estimator behavior on small samples."
+    )
+    args_schema: Optional[type[BaseModel]] = MLFeatureImportanceInput
+
+    def _run(
+        self,
+        label_column: str = "category",
+        sample_size: int = 5000,
+        seed: int = 42,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        try:
+            import numpy as np
+            from sklearn.feature_selection import mutual_info_classif, f_classif
+        except ImportError:
+            return {
+                "error": "Feature importance requires scikit-learn. Please install scikit-learn.",
+                "skip_visualization": True,
+            }
+
+        try:
+            field_map = {
+                "category": "category__name",
+                "region": "region__name",
+                "class": "class_name__name",
+                "subclass": "subclass__name",
+            }
+            label_field = field_map.get(label_column, "category__name")
+
+            feature_cols = [
+                "rms_energy",
+                "zero_crossing_rate",
+                "spectral_centroid",
+                "spectral_bandwidth",
+                "spectral_rolloff",
+                "spectral_flatness",
+                "duration",
+            ]
+
+            qs = (
+                NoiseDataset.objects.select_related(
+                    "audio_features", "category", "region", "class_name", "subclass"
+                )
+                .filter(audio_features__isnull=False)
+                .exclude(**{f"{label_field}__isnull": True})
+            )
+
+            total = qs.count()
+            if total < 10:
+                return {
+                    "error": "insufficient_data",
+                    "reason": f"Only {total} labeled rows found. Minimum is 10.",
+                    "rows_available": total,
+                    "skip_visualization": True,
+                }
+
+            # Stratified sample
+            actual_sample = min(sample_size, total)
+            rows = []
+            labels = []
+            for ds in qs[:actual_sample]:
+                af = ds.audio_features
+                if af:
+                    row = [getattr(af, c, None) for c in feature_cols]
+                    if all(v is not None for v in row):
+                        rows.append(row)
+                        if label_column == "region":
+                            labels.append(ds.region.name if ds.region else None)
+                        elif label_column == "class":
+                            labels.append(ds.class_name.name if ds.class_name else None)
+                        elif label_column == "subclass":
+                            labels.append(ds.subclass.name if ds.subclass else None)
+                        else:
+                            labels.append(ds.category.name if ds.category else None)
+
+            X = np.array(rows, dtype=float)
+            y = np.array(labels)
+
+            if len(X) < 10 or len(np.unique(y)) < 2:
+                return {
+                    "error": "insufficient_data",
+                    "reason": f"Only {len(X)} valid rows with {len(np.unique(y))} unique labels.",
+                    "rows_available": len(X),
+                    "skip_visualization": True,
+                }
+
+            # Mutual information (k-NN estimator, n_neighbors=3)
+            mi_scores = mutual_info_classif(X, y, n_neighbors=3, random_state=seed)
+
+            # ANOVA F-value
+            f_scores, f_pvalues = f_classif(X, y)
+
+            # Check per-class sample sizes for caveats
+            unique_labels, counts = np.unique(y, return_counts=True)
+            small_classes = [
+                str(label) for label, count in zip(unique_labels, counts) if count < 500
+            ]
+
+            # Rank features
+            ranked = []
+            for i, col in enumerate(feature_cols):
+                ranked.append(
+                    {
+                        "feature": col,
+                        "mi_score": round(float(mi_scores[i]), 4),
+                        "f_score": round(float(f_scores[i]), 4),
+                        "f_pvalue": round(float(f_pvalues[i]), 6),
+                        "rank_by_mi": 0,  # filled below
+                    }
+                )
+
+            ranked.sort(key=lambda x: x["mi_score"], reverse=True)
+            for idx, item in enumerate(ranked):
+                item["rank_by_mi"] = idx + 1
+
+            return {
+                "analysis_type": "ml_feature_importance",
+                "label_column": label_column,
+                "n_features": len(feature_cols),
+                "n_samples": len(X),
+                "total_available": total,
+                "n_classes": len(unique_labels),
+                "estimator": "mutual_info_classif (k-NN, n_neighbors=3)",
+                "small_sample_classes": small_classes,
+                "features": ranked,
+                "warnings": (
+                    [
+                        f"Classes with <500 samples (MI estimates may be biased upward): {', '.join(small_classes)}"
+                    ]
+                    if small_classes
+                    else []
+                ),
+            }
+        except Exception as e:
+            logger.error(f"Error in ml_feature_importance: {e}")
+            return {
+                "error": get_user_friendly_error(str(e), "computing feature importance")
+            }
+
+
+class ListMLSchemaInput(BaseModel):
+    """Input for listing ML schema columns (no parameters needed)."""
+
+    pass
+
+
+class ListMLSchemaTool(BaseTool):
+    name: str = "list_ml_schema"
+    description: str = (
+        "Returns available label columns, feature columns, metadata columns, "
+        "and current row counts for ML analysis. Call this before any ML tool "
+        "that references columns by name to verify which columns exist."
+    )
+    args_schema: Optional[type[BaseModel]] = ListMLSchemaInput
+
+    def _run(self, **kwargs) -> Dict[str, Any]:
+        try:
+            return {
+                "analysis_type": "ml_schema",
+                "label_columns": ["category", "class", "subclass", "region"],
+                "feature_columns": [
+                    "rms_energy",
+                    "zero_crossing_rate",
+                    "spectral_centroid",
+                    "spectral_bandwidth",
+                    "spectral_rolloff",
+                    "spectral_flatness",
+                    "duration",
+                    "harmonic_ratio",
+                    "percussive_ratio",
+                ],
+                "noise_analysis_columns": [
+                    "mean_db",
+                    "max_db",
+                    "min_db",
+                    "std_db",
+                    "dominant_frequency",
+                    "frequency_range",
+                    "event_count",
+                    "peak_count",
+                ],
+                "metadata_columns": [
+                    "name",
+                    "collector",
+                    "recording_date",
+                    "recording_device",
+                    "microphone_type",
+                    "time_of_day",
+                    "community",
+                ],
+                "row_counts": {
+                    "noise_dataset": NoiseDataset.objects.count(),
+                    "audio_feature": AudioFeature.objects.count(),
+                    "noise_analysis": NoiseAnalysis.objects.count(),
+                },
+                "skip_visualization": True,
+            }
+        except Exception as e:
+            logger.error(f"Error in list_ml_schema: {e}")
+            return {"error": str(e), "skip_visualization": True}
+
+
+def get_agent_tools(mode: str = "analysis"):
+    """Get agent tools with lazy initialization.
+
+    Both modes receive ALL tools. Mode only controls the system prompt
+    and dashboard finalizer — the tool list is unified to avoid drift.
+    The mode parameter is kept for backward compatibility but ignored.
+    """
+    global _all_tools_cache
+
+    if _all_tools_cache is None:
+        try:
+            from chatbot.services.web_fetch_tool import WebFetchTool
+
+            _all_tools_cache = [
+                # Data tools (both modes)
                 NoiseDatasetSearchTool(),
                 DataAnalysisTool(),
-                VisualizationAnalysisTool(),
-                AudioFeatureSearchTool(),
                 AudioAnalysisTool(),
+                AudioFeatureSearchTool(),
                 NoiseDetailTool(),
+                WebFetchTool(),
+                # ML tools
+                MLDatasetProfileTool(),
+                MLFeatureStatsTool(),
+                ListMLSchemaTool(),
             ]
         except Exception as e:
             logger.warning(f"Failed to initialize some tools: {e}")
-            # Fallback to tools that don't require database connection
-            _agent_tools = [
+            _all_tools_cache = [
                 NoiseDatasetSearchTool(),
-                VisualizationAnalysisTool(),
                 AudioFeatureSearchTool(),
                 NoiseDetailTool(),
+                AudioAnalysisTool(),
+                MLDatasetProfileTool(),
+                MLFeatureStatsTool(),
+                ListMLSchemaTool(),
+                MLClassBalanceTool(),
+                MLTrainTestSplitTool(),
+                MLCorrelationMatrixTool(),
+                MLStatisticalTestTool(),
+                MLExportFeaturesTool(),
+                MLFeatureImportanceTool(),
             ]
-    return _agent_tools
+    return _all_tools_cache
 
 
 # For backward compatibility - use property to make it truly lazy
@@ -3072,11 +3498,8 @@ AGENT_TOOLS = LazyAgentTools()
 
 
 def get_tool_by_name(tool_name: str) -> Optional[BaseTool]:
-    """Get a tool by its name"""
+    """Get a tool by its name from the unified tool list."""
     for tool in get_agent_tools():
-        if tool.name == tool_name:
-            return tool
-    for tool in get_agent_tools(mode="ml"):
         if tool.name == tool_name:
             return tool
     return None

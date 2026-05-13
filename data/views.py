@@ -132,7 +132,9 @@ class DashboardView(APIView):
             total_recordings = noise_recordings
 
             if request.user.is_authenticated:
-                user_noise_recordings = noise_datasets.filter(collector=request.user).count()
+                user_noise_recordings = noise_datasets.filter(
+                    collector=request.user
+                ).count()
                 user_clean_speech_recordings = (
                     clean_speech_datasets.filter(collector=request.user).count()
                     if clean_speech_ok
@@ -160,7 +162,9 @@ class DashboardView(APIView):
             noise_duration_hours = round(noise_duration_seconds / 3600, 2)
 
             # Noise average duration per recording
-            noise_duration_count = AudioFeature.objects.exclude(duration__isnull=True).count()
+            noise_duration_count = AudioFeature.objects.exclude(
+                duration__isnull=True
+            ).count()
             noise_avg_duration_seconds = (
                 round(noise_duration_seconds / noise_duration_count, 2)
                 if noise_duration_count
@@ -168,7 +172,9 @@ class DashboardView(APIView):
             )
 
             # Clean speech contribution duration stats (approved only; optional)
-            clean_speech_recordings = clean_speech_datasets.count() if clean_speech_ok else 0
+            clean_speech_recordings = (
+                clean_speech_datasets.count() if clean_speech_ok else 0
+            )
             clean_speech_duration_seconds = 0
             clean_speech_duration_count = 0
             if clean_speech_ok:
@@ -179,9 +185,11 @@ class DashboardView(APIView):
                         ).get("total_duration")
                         or 0
                     )
-                    clean_speech_duration_count = CleanSpeechAudioFeature.objects.exclude(
-                        duration__isnull=True
-                    ).count()
+                    clean_speech_duration_count = (
+                        CleanSpeechAudioFeature.objects.exclude(
+                            duration__isnull=True
+                        ).count()
+                    )
                 except DatabaseError:
                     clean_speech_duration_seconds = 0
                     clean_speech_duration_count = 0
@@ -196,9 +204,13 @@ class DashboardView(APIView):
             # Totals (noise + approved clean speech)
             total_all_data = noise_recordings + clean_speech_recordings
             user_all_data = user_noise_recordings + user_clean_speech_recordings
-            total_all_duration_seconds = noise_duration_seconds + clean_speech_duration_seconds
+            total_all_duration_seconds = (
+                noise_duration_seconds + clean_speech_duration_seconds
+            )
             total_all_duration_hours = round(total_all_duration_seconds / 3600, 2)
-            total_all_duration_count = noise_duration_count + clean_speech_duration_count
+            total_all_duration_count = (
+                noise_duration_count + clean_speech_duration_count
+            )
             avg_all_duration_seconds = (
                 round(total_all_duration_seconds / total_all_duration_count, 2)
                 if total_all_duration_count
@@ -232,7 +244,9 @@ class DashboardView(APIView):
 
             # Data for category pie chart (combined)
             category_counts_map: dict[str, int] = {}
-            for item in noise_datasets.values("category__name").annotate(count=Count("id")):
+            for item in noise_datasets.values("category__name").annotate(
+                count=Count("id")
+            ):
                 name = item.get("category__name") or "Unknown"
                 category_counts_map[name] = category_counts_map.get(name, 0) + int(
                     item.get("count", 0) or 0
@@ -243,9 +257,9 @@ class DashboardView(APIView):
                         count=Count("id")
                     ):
                         name = item.get("category__name") or "Unknown"
-                        category_counts_map[name] = category_counts_map.get(name, 0) + int(
-                            item.get("count", 0) or 0
-                        )
+                        category_counts_map[name] = category_counts_map.get(
+                            name, 0
+                        ) + int(item.get("count", 0) or 0)
                 except DatabaseError:
                     pass
 
@@ -257,7 +271,9 @@ class DashboardView(APIView):
 
             # Data for region bar chart (combined)
             region_counts_map: dict[str, int] = {}
-            for item in noise_datasets.values("region__name").annotate(count=Count("id")):
+            for item in noise_datasets.values("region__name").annotate(
+                count=Count("id")
+            ):
                 name = item.get("region__name") or "Unknown"
                 region_counts_map[name] = region_counts_map.get(name, 0) + int(
                     item.get("count", 0) or 0
@@ -288,9 +304,9 @@ class DashboardView(APIView):
                 .annotate(total_duration=Sum("duration"))
             ):
                 label = item.get("noise_dataset__region__name") or "Unknown"
-                duration_region_seconds[label] = duration_region_seconds.get(label, 0.0) + float(
-                    item.get("total_duration") or 0
-                )
+                duration_region_seconds[label] = duration_region_seconds.get(
+                    label, 0.0
+                ) + float(item.get("total_duration") or 0)
             if clean_speech_ok:
                 try:
                     for item in (
@@ -300,7 +316,9 @@ class DashboardView(APIView):
                         .values("clean_speech_dataset__region__name")
                         .annotate(total_duration=Sum("duration"))
                     ):
-                        label = item.get("clean_speech_dataset__region__name") or "Unknown"
+                        label = (
+                            item.get("clean_speech_dataset__region__name") or "Unknown"
+                        )
                         duration_region_seconds[label] = duration_region_seconds.get(
                             label, 0.0
                         ) + float(item.get("total_duration") or 0)
@@ -477,7 +495,9 @@ class DashboardView(APIView):
                 for name, agg in items:
                     duration_count = int(agg.get("duration_count") or 0)
                     total_duration = float(agg.get("total_duration") or 0)
-                    avg_duration = (total_duration / duration_count) if duration_count else 0
+                    avg_duration = (
+                        (total_duration / duration_count) if duration_count else 0
+                    )
 
                     out.append(
                         {
@@ -585,14 +605,23 @@ class CleanSpeechDatasetDeleteView(LoginRequiredMixin, DeleteView):
 
 @login_required
 def view_datasetlist(request):
-    datasets = NoiseDataset.objects.filter().order_by("-updated_at")
+    datasets = NoiseDataset.objects.select_related(
+        "collector",
+        "region",
+        "category",
+        "class_name",
+        "subclass",
+        "community",
+        "microphone_type",
+        "time_of_day",
+    ).order_by("-updated_at")
     context = {
         "datasets": datasets,
     }
     return render(request, "data/datasetlist.html", context)
 
 
-class NoiseDatasetListView(ListView, LoginRequiredMixin):
+class NoiseDatasetListView(LoginRequiredMixin, ListView):
     model = NoiseDataset
     template_name = "data/datasetlist.html"
     context_object_name = "datasets"
@@ -608,7 +637,20 @@ class NoiseDatasetListView(ListView, LoginRequiredMixin):
         return page_size if page_size in allowed else self.paginate_by
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        queryset = (
+            super()
+            .get_queryset()
+            .select_related(
+                "collector",
+                "region",
+                "category",
+                "class_name",
+                "subclass",
+                "community",
+                "microphone_type",
+                "time_of_day",
+            )
+        )
 
         # Search functionality
         search = self.request.GET.get("search")
@@ -694,7 +736,16 @@ class NoiseDatasetListView(ListView, LoginRequiredMixin):
 
 
 def _filtered_noise_queryset(request):
-    queryset = NoiseDataset.objects.all().order_by("-created_at")
+    queryset = NoiseDataset.objects.select_related(
+        "collector",
+        "region",
+        "category",
+        "class_name",
+        "subclass",
+        "community",
+        "microphone_type",
+        "time_of_day",
+    ).order_by("-created_at")
 
     # Search
     search = request.GET.get("search")
@@ -1019,7 +1070,9 @@ def contribute_audio(request):
                 clean_speech_dataset.clean_speech_id = generate_clean_speech_id()
 
                 # Generate dataset name
-                clean_speech_dataset.name = generate_clean_speech_dataset_name(clean_speech_dataset)
+                clean_speech_dataset.name = generate_clean_speech_dataset_name(
+                    clean_speech_dataset
+                )
 
                 clean_speech_dataset.save()
                 form.save_m2m()
@@ -1030,35 +1083,41 @@ def contribute_audio(request):
 
                     # Calculate duration from audio file
                     duration = None
-                    if hasattr(audio_file, 'temporary_file_path'):
+                    if hasattr(audio_file, "temporary_file_path"):
                         # File is saved to temporary location
                         temp_path = audio_file.temporary_file_path()
                         duration = get_audio_duration(temp_path)
-                    elif hasattr(audio_file, 'file'):
+                    elif hasattr(audio_file, "file"):
                         # Try to get duration from the file object
                         try:
                             # Save temporarily to get duration
                             import tempfile
-                            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(audio_file.name)[1]) as temp_file:
+
+                            with tempfile.NamedTemporaryFile(
+                                delete=False,
+                                suffix=os.path.splitext(audio_file.name)[1],
+                            ) as temp_file:
                                 for chunk in audio_file.chunks():
                                     temp_file.write(chunk)
                                 temp_file.flush()
                                 duration = get_audio_duration(temp_file.name)
                                 os.unlink(temp_file.name)
                         except Exception as e:
-                            logger.warning(f"Could not calculate duration from audio file: {e}")
+                            logger.warning(
+                                f"Could not calculate duration from audio file: {e}"
+                            )
 
                     recording = Recording.objects.create(
-                        recording_type='clean_speech',  # Clean speech type
+                        recording_type="clean_speech",  # Clean speech type
                         contributor=request.user,
                         audio=audio_file,
                         duration=duration,
-                        status='pending',  # Ready for later processing, not processed yet
+                        status="pending",  # Ready for later processing, not processed yet
                         device_info={
-                            'user_agent': request.META.get('HTTP_USER_AGENT', ''),
-                            'ip_address': request.META.get('REMOTE_ADDR', ''),
-                            'timestamp': str(timezone.now()),
-                        }
+                            "user_agent": request.META.get("HTTP_USER_AGENT", ""),
+                            "ip_address": request.META.get("REMOTE_ADDR", ""),
+                            "timestamp": str(timezone.now()),
+                        },
                     )
 
                     # Link the recording to the dataset
@@ -1079,7 +1138,7 @@ def contribute_audio(request):
 
     context = {
         "form": form,
-        "current_step": "metadata"  # Start with metadata collection
+        "current_step": "metadata",  # Start with metadata collection
     }
     return render(request, "contribute/contribute.html", context)
 
@@ -1101,16 +1160,19 @@ def save_recording(request):
 
             # Calculate duration from audio file
             duration = None
-            if hasattr(audio_file, 'temporary_file_path'):
+            if hasattr(audio_file, "temporary_file_path"):
                 # File is saved to temporary location
                 temp_path = audio_file.temporary_file_path()
                 duration = get_audio_duration(temp_path)
-            elif hasattr(audio_file, 'file'):
+            elif hasattr(audio_file, "file"):
                 # Try to get duration from the file object
                 try:
                     # Save temporarily to get duration
                     import tempfile
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(audio_file.name)[1]) as temp_file:
+
+                    with tempfile.NamedTemporaryFile(
+                        delete=False, suffix=os.path.splitext(audio_file.name)[1]
+                    ) as temp_file:
                         for chunk in audio_file.chunks():
                             temp_file.write(chunk)
                         temp_file.flush()
@@ -1119,26 +1181,25 @@ def save_recording(request):
                 except Exception as e:
                     logger.warning(f"Could not calculate duration from audio file: {e}")
                     # Fallback to POST data if calculation fails
-                    duration_post = request.POST.get('duration')
+                    duration_post = request.POST.get("duration")
                     duration = float(duration_post) if duration_post else None
 
             # Create Recording instance
             recording = Recording.objects.create(
-                recording_type='noise',  # Default to noise, can be changed later
+                recording_type="noise",  # Default to noise, can be changed later
                 contributor=request.user,
                 audio=audio_file,
                 duration=duration,
-                status='pending',  # Ready for later processing
+                status="pending",  # Ready for later processing
                 device_info={
-                    'user_agent': request.META.get('HTTP_USER_AGENT', ''),
-                    'ip_address': request.META.get('REMOTE_ADDR', ''),
-                    'timestamp': str(timezone.now()),
-                }
+                    "user_agent": request.META.get("HTTP_USER_AGENT", ""),
+                    "ip_address": request.META.get("REMOTE_ADDR", ""),
+                    "timestamp": str(timezone.now()),
+                },
             )
 
             messages.success(
-                request,
-                f'Recording saved successfully! Recording ID: {recording.id}'
+                request, f"Recording saved successfully! Recording ID: {recording.id}"
             )
 
             # Redirect back to contribution page
@@ -1340,7 +1401,7 @@ def cancel_upload(request, bulk_upload_id):
 @login_required
 def noise_dataset_edit(request, pk):
 
-    noise_dataset = NoiseDataset.objects.get(pk=pk, collector=request.user)
+    noise_dataset = get_object_or_404(NoiseDataset, pk=pk, collector=request.user)
 
     if request.method == "POST":
         form = NoiseDatasetForm(request.POST, request.FILES, instance=noise_dataset)
@@ -1409,18 +1470,21 @@ def noise_dataset_edit(request, pk):
     return render(request, "data/AddNewData.html", context)
 
 
+@login_required
 def load_classes(request):
     category_id = request.GET.get("category_id")
     classes = Class.objects.filter(category_id=category_id).order_by("name")
     return JsonResponse(list(classes.values("id", "name")), safe=False)
 
 
+@login_required
 def load_subclasses(request):
     class_id = request.GET.get("class_id")
     subclasses = SubClass.objects.filter(parent_class_id=class_id).order_by("name")
     return JsonResponse(list(subclasses.values("id", "name")), safe=False)
 
 
+@login_required
 def load_communities(request):
     region_id = request.GET.get("region_id")
     communities = Community.objects.filter(region_id=region_id).order_by("name")
@@ -1428,22 +1492,23 @@ def load_communities(request):
     return JsonResponse(data, safe=False)
 
 
+@login_required
 def load_categories(request):
-    """Load regular categories for dropdown"""
     from core.models import Category
+
     categories = Category.objects.all().order_by("name")
     data = [{"id": c.id, "name": c.name} for c in categories]
     return JsonResponse(data, safe=False)
 
 
+@login_required
 def load_clean_speech_categories(request):
-    """Load clean speech categories for dropdown"""
-
     categories = CleanSpeechCategory.objects.all().order_by("name")
     data = [{"id": c.id, "name": c.name} for c in categories]
     return JsonResponse(data, safe=False)
 
 
+@login_required
 def load_clean_speech_classes(request):
     category_id = request.GET.get("category_id")
     classes = CleanSpeechClass.objects.filter(category_id=category_id).order_by("name")
@@ -1455,22 +1520,24 @@ def load_clean_speech_classes(request):
 def clean_speech_dataset_list(request):
     """List all approved clean speech datasets"""
     # Get all approved clean speech datasets
-    datasets = CleanSpeechDataset.objects.filter(
-        collector=request.user
-    ).select_related('category', 'class_name', 'region', 'community').order_by('-created_at')
+    datasets = (
+        CleanSpeechDataset.objects.filter(collector=request.user)
+        .select_related("category", "class_name", "region", "community")
+        .order_by("-created_at")
+    )
 
     # Apply filters
-    search_query = request.GET.get('search', '')
-    category_filter = request.GET.get('category', '')
-    class_filter = request.GET.get('class_name', '')
-    date_range = request.GET.get('date_range', '')
-    page_size = request.GET.get('page_size', '50')
+    search_query = request.GET.get("search", "")
+    category_filter = request.GET.get("category", "")
+    class_filter = request.GET.get("class_name", "")
+    date_range = request.GET.get("date_range", "")
+    page_size = request.GET.get("page_size", "50")
 
     if search_query:
         datasets = datasets.filter(
-            Q(name__icontains=search_query) |
-            Q(clean_speech_id__icontains=search_query) |
-            Q(description__icontains=search_query)
+            Q(name__icontains=search_query)
+            | Q(clean_speech_id__icontains=search_query)
+            | Q(description__icontains=search_query)
         )
 
     if category_filter:
@@ -1482,46 +1549,46 @@ def clean_speech_dataset_list(request):
     # Date range filtering
     if date_range:
         now = timezone.now()
-        if date_range == 'today':
+        if date_range == "today":
             start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
             datasets = datasets.filter(created_at__gte=start_date)
-        elif date_range == 'week':
+        elif date_range == "week":
             start_date = now - timedelta(days=7)
             datasets = datasets.filter(created_at__gte=start_date)
-        elif date_range == 'month':
+        elif date_range == "month":
             start_date = now - timedelta(days=30)
             datasets = datasets.filter(created_at__gte=start_date)
-        elif date_range == 'year':
+        elif date_range == "year":
             start_date = now - timedelta(days=365)
             datasets = datasets.filter(created_at__gte=start_date)
 
     # Pagination
     paginator = Paginator(datasets, int(page_size))
-    page_number = request.GET.get('page')
+    page_number = request.GET.get("page")
     page_obj = paginator.get_page(page_number)
 
     # Get filter options
-    categories = CleanSpeechCategory.objects.all().order_by('name')
-    classes = CleanSpeechClass.objects.all().order_by('name')
+    categories = CleanSpeechCategory.objects.all().order_by("name")
+    classes = CleanSpeechClass.objects.all().order_by("name")
 
     context = {
-        'page_obj': page_obj,
-        'paginator': paginator,
-        'datasets': page_obj,
-        'categories': categories,
-        'classes': classes,
-        'current_filters': {
-            'search': search_query,
-            'category': category_filter,
-            'class_name': class_filter,
-            'date_range': date_range,
-            'page_size': page_size,
+        "page_obj": page_obj,
+        "paginator": paginator,
+        "datasets": page_obj,
+        "categories": categories,
+        "classes": classes,
+        "current_filters": {
+            "search": search_query,
+            "category": category_filter,
+            "class_name": class_filter,
+            "date_range": date_range,
+            "page_size": page_size,
         },
-        'is_paginated': page_obj.has_other_pages(),
-        'dataset_type': 'clean_speech',
+        "is_paginated": page_obj.has_other_pages(),
+        "dataset_type": "clean_speech",
     }
 
-    return render(request, 'data/clean_speech_list.html', context)
+    return render(request, "data/clean_speech_list.html", context)
 
 
 def show_pages(request):
@@ -1590,7 +1657,11 @@ def clean_speech_detail(request, dataset_id):
         audio_exists = False
 
     # Prepare visualization data
-    visualization_presets = dataset.visualization_presets.all() if hasattr(dataset, 'visualization_presets') else []
+    visualization_presets = (
+        dataset.visualization_presets.all()
+        if hasattr(dataset, "visualization_presets")
+        else []
+    )
 
     context = {
         "clean_speech_dataset": dataset,

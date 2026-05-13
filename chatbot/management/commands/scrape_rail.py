@@ -1,97 +1,74 @@
-import requests
-import re
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
-from django.core.management.base import BaseCommand
+"""
+Management command to scrape a website into markdown for RAG ingestion.
+
+Run: python manage.py scrape_rail
+
+Uses the shared web_fetcher module for text extraction and link discovery.
+"""
+
 from pathlib import Path
-import logging
-import urllib3
+from urllib.parse import urlparse
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+from django.core.management.base import BaseCommand
 
-logger = logging.getLogger(__name__)
+from chatbot.services.web_fetcher import (
+    fetch_page_html,
+    clean_text,
+    extract_links,
+    is_internal_url,
+)
 
 BASE_URL = "https://rail.knust.edu.gh"
 MAX_PAGES = 50
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; RAILScraper/1.0)"
-}
-
-
-def is_internal(url: str) -> bool:
-    return urlparse(url).netloc == urlparse(BASE_URL).netloc
-
-
-def clean_text(html: str) -> str:
-    soup = BeautifulSoup(html, "html.parser")
-
-    for tag in soup(["script", "style", "nav", "footer", "header"]):
-        tag.decompose()
-
-    text = soup.get_text(separator="\n")
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
-
-
-def extract_links(html: str, current_url: str) -> set[str]:
-    soup = BeautifulSoup(html, "html.parser")
-    links = set()
-
-    for a in soup.find_all("a", href=True):
-        href = a["href"].strip()
-        if href.startswith("#") or href.startswith("mailto"):
-            continue
-
-        full_url = urljoin(current_url, href)
-        full_url = full_url.split("#")[0]
-
-        if is_internal(full_url):
-            links.add(full_url)
-
-    return links
-
-
-def fetch_page(url: str) -> str | None:
-    try:
-        r = requests.get(
-            url,
-            headers=HEADERS,
-            timeout=15,
-            verify=False
-        )
-        r.raise_for_status()
-        return r.text
-    except Exception as e:
-        logger.warning("Failed to fetch %s: %s", url, e)
-        return None
-
 
 class Command(BaseCommand):
-    help = "Scrape RAIL website into markdown"
+    help = "Scrape RAIL website into markdown for chatbot RAG ingestion"
 
-    def handle(self, *args, **kwargs):
-        self.stdout.write("Scraping RAIL website…")
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--base-url",
+            default=BASE_URL,
+            help=f"Base URL to start crawling from (default: {BASE_URL})",
+        )
+        parser.add_argument(
+            "--max-pages",
+            type=int,
+            default=MAX_PAGES,
+            help=f"Maximum pages to scrape (default: {MAX_PAGES})",
+        )
+        parser.add_argument(
+            "--output",
+            default="docs/rail.md",
+            help="Output file path (default: docs/rail.md)",
+        )
+
+    def handle(self, *args, **options):
+        base_url = options["base_url"]
+        max_pages = options["max_pages"]
+        output_path = Path(options["output"])
+
+        self.stdout.write(f"Scraping {base_url} (max {max_pages} pages)...")
 
         visited = set()
-        to_visit = [BASE_URL]
+        to_visit = [base_url]
         pages = []
 
-        while to_visit and len(pages) < MAX_PAGES:
+        while to_visit and len(pages) < max_pages:
             url = to_visit.pop(0)
             if url in visited:
                 continue
 
-            self.stdout.write(f"[{len(visited)+1}/{MAX_PAGES}] {url}")
+            self.stdout.write(f"[{len(visited) + 1}/{max_pages}] {url}")
             visited.add(url)
 
-            html = fetch_page(url)
+            html = fetch_page_html(url)
             if not html:
                 continue
 
             text = clean_text(html)
             if len(text) < 100:
-                continue  # still skip *empty* pages
+                continue
 
             pages.append(f"## {url}\n\n{text}\n\n---\n")
 
@@ -100,9 +77,7 @@ class Command(BaseCommand):
                 if link not in visited and link not in to_visit:
                     to_visit.append(link)
 
-        output_path = Path("docs/rail.md")
         output_path.parent.mkdir(exist_ok=True)
-
         output_path.write_text("\n".join(pages), encoding="utf-8")
 
         self.stdout.write(

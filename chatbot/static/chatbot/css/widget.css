@@ -750,3 +750,109 @@ textarea {
         opacity: 1;
     }
 }
+
+/* --- Attention/Glow animations --- */
+
+.chat-toggle-wrapper {
+    position: relative;
+    width: 60px;
+    height: 60px;
+}
+
+.chat-widget-ring {
+    position: absolute;
+    top: -5px;
+    left: -5px;
+    width: calc(100% + 10px);
+    height: calc(100% + 10px);
+    border-radius: 50%;
+    border: 3px solid #00d553;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.6s ease;
+    box-sizing: content-box;
+}
+
+.chat-widget-ring.active {
+    opacity: 1;
+    animation: ringPulse 2.5s ease-in-out infinite;
+}
+
+@keyframes ringPulse {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(0, 213, 83, 0.5);
+    }
+    50% {
+        box-shadow: 0 0 0 14px rgba(0, 213, 83, 0);
+    }
+}
+
+.chat-widget-tooltip {
+    position: absolute;
+    right: calc(100% + 14px);
+    top: 50%;
+    transform: translateY(-50%) translateX(12px);
+    background: white;
+    color: #111827;
+    padding: 10px 18px;
+    border-radius: 14px;
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.45s ease, transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+    z-index: 1;
+    line-height: 1.4;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.chat-widget-tooltip::after {
+    content: '';
+    position: absolute;
+    right: -7px;
+    top: 50%;
+    transform: translateY(-50%);
+    border-left: 7px solid white;
+    border-top: 7px solid transparent;
+    border-bottom: 7px solid transparent;
+}
+
+.chat-widget-tooltip.visible {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+}
+
+.chat-widget-tooltip.hiding {
+    opacity: 0;
+    transform: translateY(-50%) translateX(12px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.chat-widget-tooltip .tooltip-icon {
+    font-size: 16px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+/* Tooltip text gentle sway */
+.chat-widget-tooltip.visible .tooltip-text {
+    display: inline-block;
+    animation: textSway 3.5s ease-in-out infinite;
+}
+
+@keyframes textSway {
+    0%, 100% { transform: translateX(0); }
+    33% { transform: translateX(3px); }
+    66% { transform: translateX(-3px); }
+}
+
+/* Hide tooltip on very small screens where it might overflow */
+@media (max-width: 420px) {
+    .chat-widget-tooltip {
+        display: none;
+    }
+}

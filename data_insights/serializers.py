@@ -14,7 +14,7 @@ class ChatMessageListSerializer(serializers.ModelSerializer):
             "assistant_response",
             "created_at",
             "status",
-            "visulization",
+            "visualization",
         ]
 
 
@@ -27,7 +27,7 @@ class ChatMessageDetailSerializer(serializers.ModelSerializer):
             "assistant_response",
             "created_at",
             "status",
-            "visulization",
+            "visualization",
             "tool_called",
             "updated_at",
         ]
@@ -158,40 +158,6 @@ class ChatSessionCreateSerializer(serializers.ModelSerializer):
                     "Title must be at least 3 characters long"
                 )
         return value
-
-
-class ChatSessionUpdateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ChatSession
-        fields = [
-            "title",
-            "status",
-        ]
-
-    def validate_status(self, value):
-        if self.instance:
-            current_status = self.instance.status
-
-            allowed_transitions = {
-                ChatSession.Status.ACTIVE: [ChatSession.Status.ARCHIVED],
-                ChatSession.Status.ARCHIVED: [ChatSession.Status.ACTIVE],
-                ChatSession.Status.DELETED: [],
-            }
-
-            if value not in allowed_transitions.get(current_status, []):
-                raise serializers.ValidationError(
-                    f"Cannot transition from {current_status} to {value}"
-                )
-
-        return value
-
-    def update(self, instance, validated_data):
-        if validated_data.get("status") == ChatSession.Status.ARCHIVED:
-            validated_data["archived_at"] = timezone.now()
-        elif validated_data.get("status") == ChatSession.Status.ACTIVE:
-            validated_data["archived_at"] = None
-
-        return super().update(instance, validated_data)
 
 
 class ChatSessionArchiveSerializer(serializers.ModelSerializer):

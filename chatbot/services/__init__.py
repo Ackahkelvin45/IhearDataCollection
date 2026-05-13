@@ -9,6 +9,8 @@ from .intent_classifier import (
 from .dataset_service import DatasetService
 from .chatbot_service import ChatbotService, process_chatbot_question
 from .chat_message_service import ChatMessageService, get_chat_history
+from .web_fetch_tool import WebFetchTool
+from .web_fetcher import fetch_page_text, fetch_page_html, clean_text, extract_links
 
 __all__ = [
     "RAGService",
@@ -22,4 +24,9 @@ __all__ = [
     "process_chatbot_question",
     "ChatMessageService",
     "get_chat_history",
+    "WebFetchTool",
+    "fetch_page_text",
+    "fetch_page_html",
+    "clean_text",
+    "extract_links",
 ]

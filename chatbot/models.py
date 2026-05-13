@@ -218,3 +218,62 @@ class QueryCache(models.Model):
 
     def __str__(self):
         return f"Cache: {self.query_text[:50]}"
+
+
+class KnowledgeBaseURL(models.Model):
+    """URLs that are part of the chatbot's knowledge base.
+
+    When a URL is added here, its content is fetched, chunked, embedded,
+    and stored in the FAISS vector store alongside uploaded documents.
+    Periodic refresh keeps the content up-to-date.
+
+    Example: adding https://rail.knust.edu.gh means the chatbot can answer
+    RAIL-related questions from both the cached content AND live fetches.
+    """
+
+    REFRESH_CHOICES = [
+        ("manual", "Manual only"),
+        ("hourly", "Every hour"),
+        ("daily", "Every day"),
+        ("weekly", "Every week"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    url = models.URLField(max_length=2048, unique=True)
+    title = models.CharField(
+        max_length=255, help_text="Human-readable label for this URL"
+    )
+    description = models.TextField(
+        blank=True,
+        help_text="What kind of questions this URL helps answer (e.g. 'RAIL lab info, admissions, research')",
+    )
+    refresh_frequency = models.CharField(
+        max_length=10, choices=REFRESH_CHOICES, default="manual"
+    )
+    is_active = models.BooleanField(default=True)
+    max_chars_per_fetch = models.IntegerField(default=8000)
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="kb_urls",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_fetched_at = models.DateTimeField(null=True, blank=True)
+    last_fetch_success = models.BooleanField(default=False)
+    last_fetch_error = models.TextField(blank=True)
+    total_chunks = models.IntegerField(default=0)
+    total_chars = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["is_active", "-last_fetched_at"]),
+            models.Index(fields=["refresh_frequency"]),
+        ]
+        verbose_name = "Knowledge Base URL"
+        verbose_name_plural = "Knowledge Base URLs"
+
+    def __str__(self):
+        return f"{self.title} ({self.url[:60]}...)"

@@ -66,6 +66,7 @@ class ChatMessage(models.Model):
         COMPLETED = "completed"
         FAILED = "failed"
         CANCELLED = "cancelled"
+        CLARIFICATION_PENDING = "clarification_pending"
 
     id = models.BigAutoField(primary_key=True)
     session = models.ForeignKey(
@@ -75,9 +76,9 @@ class ChatMessage(models.Model):
     assistant_response = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    visulization = models.JSONField(null=True)
+    visualization = models.JSONField(null=True)
     status = models.CharField(
-        max_length=20, choices=MessageStatus.choices, default=MessageStatus.PENDING
+        max_length=25, choices=MessageStatus.choices, default=MessageStatus.PENDING
     )
     tool_called = models.JSONField(null=True)
 
@@ -134,3 +135,43 @@ class QueryCacheModel(models.Model):
     @property
     def is_expired(self):
         return timezone.now() > self.expires_at
+
+
+class Dashboard(models.Model):
+    """Saved multi-widget dashboard from a chat message."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="dashboards"
+    )
+    session = models.ForeignKey(
+        ChatSession,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="dashboards",
+    )
+    message = models.ForeignKey(
+        ChatMessage,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="dashboards",
+    )
+    title = models.CharField(max_length=255)
+    slug = models.SlugField(max_length=255, unique=True)
+    artifact_spec = models.JSONField()
+    thumbnail = models.TextField(blank=True, null=True)
+    is_public = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        indexes = [
+            models.Index(fields=["user", "-updated_at"]),
+            models.Index(fields=["slug"]),
+        ]
+
+    def __str__(self):
+        return self.title

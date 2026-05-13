@@ -13,14 +13,10 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 from pathlib import Path
 from dotenv import load_dotenv
 
-# import sys
 import os
 import logging
 
-# from django.templatetags.static import static
 
-
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv()
@@ -28,18 +24,18 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
-def as_bool(value: str):
-    return value.lower() in ["true", "yes"]
+def as_bool(value):
+    if not value:
+        return False
+    return str(value).lower() in ["true", "yes"]
 
-
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-*_^$!#mp28jhe25iq6dok5suz(_!529k-c2hj#wnd!7@6@p%ri"
+SECRET_KEY = os.getenv("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = as_bool(os.getenv("DEBUG", "False"))
+
 ALLOWED_HOSTS = [
     "localhost",
     "206.189.238.225",
@@ -122,9 +118,6 @@ WSGI_APPLICATION = "datacollection.wsgi.application"
 
 
 # Database
-# https://docs.djangoproject.com/en/4.2/ref/settings/#databases
-
-# settings.py
 USE_SQLITE = as_bool(os.getenv("USE_SQLITE", "False"))
 
 if USE_SQLITE:
@@ -153,50 +146,8 @@ else:
         }
     }
 
-# Celery Configuration
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = "UTC"
-
-# Celery Beat Settings (optional, for periodic tasks)
-CELERY_BEAT_SCHEDULE = {
-    "cleanup-old-sessions": {
-        "task": "chatbot.tasks.cleanup_old_sessions_task",
-        "schedule": 3600.0,  # Run every hour
-    },
-    "clear-expired-cache": {
-        "task": "chatbot.tasks.clear_cache_task",
-        "schedule": 1800.0,  # Run every 30 minutes
-    },
-}
-
-
-# Celery Configuration
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = "UTC"
-
-# Celery Beat Settings (optional, for periodic tasks)
-CELERY_BEAT_SCHEDULE = {
-    "cleanup-old-sessions": {
-        "task": "chatbot.tasks.cleanup_old_sessions_task",
-        "schedule": 3600.0,  # Run every hour
-    },
-    "clear-expired-cache": {
-        "task": "chatbot.tasks.clear_cache_task",
-        "schedule": 1800.0,  # Run every 30 minutes
-    },
-}
 
 # Password validation
-# https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
-
 AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
@@ -214,8 +165,6 @@ AUTH_PASSWORD_VALIDATORS = [
 
 
 # Internationalization
-# https://docs.djangoproject.com/en/4.2/topics/i18n/
-
 LANGUAGE_CODE = "en-us"
 
 TIME_ZONE = "UTC"
@@ -232,7 +181,7 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 26214400
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
-    "PAGE_SIZE": 100,  # default page size
+    "PAGE_SIZE": 100,
 }
 
 
@@ -242,12 +191,6 @@ SPECTACTULAR_SETTINGS = {
     "VERSION": "1.0.0",
 }
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/4.2/howto/static-files/
-
-
-# Default primary key field type
-# https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -255,7 +198,7 @@ AUTH_USER_MODEL = "authentication.CustomUser"
 
 
 # Email Configuration
-if bool(os.getenv("USE_SMTP_EMAIL", True)):
+if as_bool(os.getenv("USE_SMTP_EMAIL", "True")):
     EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 else:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
@@ -268,12 +211,11 @@ DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL")
 
 
 # Authentication settings
-LOGIN_URL = "/auth/login/"  # URL to redirect to for login
-LOGIN_REDIRECT_URL = "/"  # Where to redirect after login
+LOGIN_URL = "/auth/login/"
+LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/auth/login/"
 
 
-# Alternative approach without lambda (simpler):
 UNFOLD = {
     "SITE_TITLE": "I hear Dataset Admin Portal",
     "SITE_HEADER": "I hear Dataset",
@@ -290,20 +232,19 @@ UNFOLD = {
 }
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost",  # Your frontend URL
+    "http://localhost",
     "http://127.0.0.10",
     "http://0.0.0.0",
     "http://206.189.238.225",
-    "www.ihearandsee-at-rail.com",
-    "ihearandsee-at-rail.com",
     "https://ihearandsee-at-rail.com",
     "http://ihearandsee-at-rail.com",
     "https://www.ihearandsee-at-rail.com",
-    "nyc1-88878471021e.zeddy-dev.onstagingocean.app",
+    "http://www.ihearandsee-at-rail.com",
+    "https://nyc1-88878471021e.zeddy-dev.onstagingocean.app",
 ]
 
 
-CORS_ALLOW_CREDENTIALS = True  # To allow cookies
+CORS_ALLOW_CREDENTIALS = True
 
 
 CSRF_TRUSTED_ORIGINS = [
@@ -357,26 +298,6 @@ if USE_S3:
         },
     }
 
-# Celery Configuration
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = "UTC"
-
-# Celery Beat Settings (optional, for periodic tasks)
-CELERY_BEAT_SCHEDULE = {
-    "cleanup-old-sessions": {
-        "task": "chatbot.tasks.cleanup_old_sessions_task",
-        "schedule": 3600.0,  # Run every hour
-    },
-    "clear-expired-cache": {
-        "task": "chatbot.tasks.clear_cache_task",
-        "schedule": 1800.0,  # Run every 30 minutes
-    },
-}
-
 if USE_S3:
     STATIC_URL = f"{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/static/"
     MEDIA_URL = f"{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/media/"
@@ -396,34 +317,16 @@ else:
         },
     }
 
-# Celery Configuration
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = "UTC"
-
-# Celery Beat Settings (optional, for periodic tasks)
-CELERY_BEAT_SCHEDULE = {
-    "cleanup-old-sessions": {
-        "task": "chatbot.tasks.cleanup_old_sessions_task",
-        "schedule": 3600.0,  # Run every hour
-    },
-    "clear-expired-cache": {
-        "task": "chatbot.tasks.clear_cache_task",
-        "schedule": 1800.0,  # Run every 30 minutes
-    },
-}
-
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, "static"),
 ]
 
 
-# READ HTTPS CONFIG FROM PROXY
+# Read HTTPS config from proxy
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
+
+# Redis
 REDIS_USERNAME = os.getenv("REDIS_USERNAME", default="default")
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", default="default")
 REDIS_USE_TLS = as_bool(os.getenv("REDIS_USE_TLS", default="False"))
@@ -434,10 +337,9 @@ if REDIS_USE_TLS:
 else:
     REDIS_URL = f"redis://{REDIS_USERNAME}:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}"
 CACHE_TIMEOUT = int(os.getenv("CACHE_TIMEOUT", default=3600))
-# DJANGO CACHE
 CACHE_DB_ID = int(os.getenv("CACHE_DB_ID", default="1"))
 
-# CHANNELS FOR WEBSOCKET
+# Channels (WebSocket)
 CHANNEL_LAYER_DB_ID = int(os.getenv("CHANNEL_LAYER_DB_ID", default="0"))
 CHANNEL_LAYERS = {
     "default": {
@@ -449,7 +351,10 @@ CHANNEL_LAYERS = {
 }
 THROTTLE_RATE = os.getenv("THROTTLE_RATE", "100/s")
 
-# CELERY
+
+# ---------------------------------------------------------------------------
+# Celery
+# ---------------------------------------------------------------------------
 CELERY_ACCEPT_CONTENT = ["application/json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
@@ -461,24 +366,20 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 6 * 60 * 60  # 6 hours
 CELERY_TASK_SOFT_TIME_LIMIT = 5 * 60 * 60  # 5 hours
 
-# Redis broker/backend
 CELERY_BROKER_DB_ID = int(os.getenv("CELERY_BROKER_DB_ID", default="2"))
 CELERY_RESULT_BACKEND_DB_ID = int(os.getenv("CELERY_RESULT_BACKEND_DB_ID", default="3"))
 CELERY_BROKER_URL = f"{REDIS_URL}/{CELERY_BROKER_DB_ID}"
-# Use database backend for results instead of Redis to prevent Redis from filling up
-# django_celery_results is installed, so we can use database backend
+
+# Store results in the database by default to prevent Redis from filling up
 USE_DB_RESULT_BACKEND = as_bool(os.getenv("USE_DB_RESULT_BACKEND", default="True"))
 if USE_DB_RESULT_BACKEND:
-    # Store results in database instead of Redis
     CELERY_RESULT_BACKEND = "django-db"
     CELERY_RESULT_EXTENDED = True
 else:
-    # Fallback to Redis if needed
     CELERY_RESULT_BACKEND = f"{REDIS_URL}/{CELERY_RESULT_BACKEND_DB_ID}"
     if REDIS_USE_TLS:
         CELERY_RESULT_BACKEND += "?ssl_cert_reqs=required"
-    # Result expiration to prevent Redis from filling up
-    CELERY_RESULT_EXPIRES = 300  # Expire results after 5 minutes
+    CELERY_RESULT_EXPIRES = 300
     CELERY_RESULT_BACKEND_ALWAYS_RETRY = True
     CELERY_RESULT_BACKEND_MAX_RETRIES = 10
 
@@ -490,15 +391,25 @@ CELERY_TASK_ALWAYS_EAGER = as_bool(
 )
 
 # Safety + stability settings
-CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # One task at a time
-CELERY_TASK_ACKS_LATE = True  # Ack after completion
-CELERY_TASK_REJECT_ON_WORKER_LOST = True  # Requeue if worker dies
-CELERY_WORKER_MAX_TASKS_PER_CHILD = 200  # Restart after 200 tasks
-CELERY_WORKER_MAX_MEMORY_PER_CHILD = 500000  # Restart if >500MB
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 200
+CELERY_WORKER_MAX_MEMORY_PER_CHILD = 500000
+
+CELERY_BEAT_SCHEDULE = {
+    "cleanup-old-sessions": {
+        "task": "chatbot.tasks.cleanup_old_sessions_task",
+        "schedule": 3600.0,
+    },
+    "clear-expired-cache": {
+        "task": "chatbot.tasks.clear_cache_task",
+        "schedule": 1800.0,
+    },
+}
 
 
 # Directory for assembling large/chunked uploads before background processing
-# Can be overridden via env var SHARED_UPLOADS_DIR
 SHARED_UPLOADS_DIR = os.getenv("SHARED_UPLOADS_DIR", "/shared_uploads")
 
 # CHATBOT configuration - RAG uses FAISS only (fast, no Chroma)
@@ -535,8 +446,6 @@ FAISS_VECTOR_STORE_PATH = os.getenv(
     os.path.join(BASE_DIR, CHATBOT["FAISS_VECTOR_STORE"]["PATH"]),
 )
 
-# open ai
-
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", default="gpt-4o-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -561,6 +470,9 @@ if USE_SQLITE:
             "DEFAULT_TOP_K": int(os.getenv("AI_INSIGHT_DEFAULT_TOP_K", 100)),
             "MAX_TOP_K": int(os.getenv("AI_INSIGHT_MAX_TOP_K", 1000)),
             "ENABLE_CACHING": as_bool(os.getenv("AI_INSIGHT_ENABLE_CACHING", "True")),
+            "CLARIFICATION_V2_ENABLED": as_bool(
+                os.getenv("AI_INSIGHT_CLARIFICATION_V2_ENABLED", "False")
+            ),
         },
         "SECURITY": {
             "DEFAULT_ALLOWED_TABLES": [],
@@ -599,6 +511,9 @@ else:
             "DEFAULT_TOP_K": int(os.getenv("AI_INSIGHT_DEFAULT_TOP_K", 100)),
             "MAX_TOP_K": int(os.getenv("AI_INSIGHT_MAX_TOP_K", 1000)),
             "ENABLE_CACHING": as_bool(os.getenv("AI_INSIGHT_ENABLE_CACHING", "True")),
+            "CLARIFICATION_V2_ENABLED": as_bool(
+                os.getenv("AI_INSIGHT_CLARIFICATION_V2_ENABLED", "False")
+            ),
         },
         "SECURITY": {
             "DEFAULT_ALLOWED_TABLES": [],
@@ -618,101 +533,10 @@ else:
     }
 
 
-# Celery Configuration
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = "UTC"
-
-# Celery Beat Settings (optional, for periodic tasks)
-CELERY_BEAT_SCHEDULE = {
-    "cleanup-old-sessions": {
-        "task": "chatbot.tasks.cleanup_old_sessions_task",
-        "schedule": 3600.0,  # Run every hour
-    },
-    "clear-expired-cache": {
-        "task": "chatbot.tasks.clear_cache_task",
-        "schedule": 1800.0,  # Run every 30 minutes
-    },
-}
-
-
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = "UTC"
-
-# Celery Beat Settings (optional, for periodic tasks)
-CELERY_BEAT_SCHEDULE = {
-    "cleanup-old-sessions": {
-        "task": "chatbot.tasks.cleanup_old_sessions_task",
-        "schedule": 3600.0,  # Run every hour
-    },
-    "clear-expired-cache": {
-        "task": "chatbot.tasks.clear_cache_task",
-        "schedule": 1800.0,  # Run every 30 minutes
-    },
-}
-
-# Celery Configuration
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = "UTC"
-
-# Celery Beat Settings (optional, for periodic tasks)
-CELERY_BEAT_SCHEDULE = {
-    "cleanup-old-sessions": {
-        "task": "chatbot.tasks.cleanup_old_sessions_task",
-        "schedule": 3600.0,  # Run every hour
-    },
-    "clear-expired-cache": {
-        "task": "chatbot.tasks.clear_cache_task",
-        "schedule": 1800.0,  # Run every 30 minutes
-    },
-}
-
-
-CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = "UTC"
-
-# Celery Beat Settings (optional, for periodic tasks)
-CELERY_BEAT_SCHEDULE = {
-    "cleanup-old-sessions": {
-        "task": "chatbot.tasks.cleanup_old_sessions_task",
-        "schedule": 3600.0,  # Run every hour
-    },
-    "clear-expired-cache": {
-        "task": "chatbot.tasks.clear_cache_task",
-        "schedule": 1800.0,  # Run every 30 minutes
-    },
-}
-
-# Celery Configuration
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = "UTC"
-
-# Celery Beat Settings (optional, for periodic tasks)
-CELERY_BEAT_SCHEDULE = {
-    "cleanup-old-sessions": {
-        "task": "chatbot.tasks.cleanup_old_sessions_task",
-        "schedule": 3600.0,  # Run every hour
-    },
-    "clear-expired-cache": {
-        "task": "chatbot.tasks.clear_cache_task",
-        "schedule": 1800.0,  # Run every 30 minutes
-    },
-}
-
-
 # Cache Configuration
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": f"{REDIS_URL}/{CACHE_DB_ID}",
+    }
+}

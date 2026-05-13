@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 from typing import Dict, Any, List
 from .intent_classifier import IntentClassifier, ALLOWED_INTENTS, DEFAULT_INTENT
@@ -7,6 +8,16 @@ from .dataset_service import DatasetService
 from .memory import get_conversation_memory, save_conversation_memory
 
 logger = logging.getLogger(__name__)
+
+_URL_PATTERN = re.compile(r'https?://[^\s<>"\')\]]+', re.IGNORECASE)
+_WEB_QUERY_PATTERNS = [
+    r"\bcheck\s+(?:the\s+)?(?:website|site|webpage|page|url|link)\b",
+    r"\bfetch\s+(?:the\s+)?(?:website|site|webpage|page|url|link|content)\b",
+    r"\blook\s+(?:at|up|on)\s+(?:the\s+)?(?:website|site|webpage|web)\b",
+    r"\bwhat\s+(?:does|is on|is)\s+(?:the\s+)?(?:website|site|webpage)\b",
+    r"\bgo\s+to\s+(?:the\s+)?(?:website|site|webpage|url)\b",
+    r"\blive\s+(?:data|content|information|website|site)\b",
+]
 
 
 def _safe_confidence(value: Any) -> float:
@@ -46,7 +57,9 @@ class ChatbotService:
         self.rag_service = RAGService()
         self.dataset_service = DatasetService()
 
-    def process_question(self, question: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
+    def process_question(
+        self, question: str, context: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
         start_time = time.time()
         context = context or {}
         session_id = str(context.get("session_id", "default"))
@@ -91,21 +104,23 @@ class ChatbotService:
             save_conversation_memory(session_id, conversation_memory)
 
             confidence = _safe_confidence(routing_info.get("confidence", 0.8))
-            result.update({
-                "answer": enhanced_answer,
-                "intent": intent,
-                "confidence": confidence,
-                "processing_time": time.time() - start_time,
-                "method_used": method,
-                "routing_reasoning": routing_info.get("reasoning", ""),
-                "conversation_context": {
-                    "session_id": session_id,
-                    "message_count": conversation_memory.get("message_count", 0),
-                    "topics_discussed": conversation_memory.get("topics", []),
-                    "last_intent": conversation_memory.get("last_intent"),
-                },
-                "follow_up_suggestions": follow_up_suggestions,
-            })
+            result.update(
+                {
+                    "answer": enhanced_answer,
+                    "intent": intent,
+                    "confidence": confidence,
+                    "processing_time": time.time() - start_time,
+                    "method_used": method,
+                    "routing_reasoning": routing_info.get("reasoning", ""),
+                    "conversation_context": {
+                        "session_id": session_id,
+                        "message_count": conversation_memory.get("message_count", 0),
+                        "topics_discussed": conversation_memory.get("topics", []),
+                        "last_intent": conversation_memory.get("last_intent"),
+                    },
+                    "follow_up_suggestions": follow_up_suggestions,
+                }
+            )
             return result
 
         except Exception as e:
@@ -136,17 +151,36 @@ class ChatbotService:
             "session_id": context.get("session_id"),
         }
 
-    def _handle_numeric_question(self, question: str, enriched_context: Dict[str, Any]) -> Dict[str, Any]:
+    def _handle_numeric_question(
+        self, question: str, enriched_context: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Route to dataset/database queries."""
         ctx = {"chat_history": enriched_context.get("chat_history")}
         return self.dataset_service.query_dataset(question, ctx)
 
-    def _handle_explanatory_question(self, question: str, enriched_context: Dict[str, Any]) -> Dict[str, Any]:
-        """Route to RAG over uploaded documents."""
+    def _handle_explanatory_question(
+        self, question: str, enriched_context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Route to RAG over uploaded documents. Uses live-data path if URLs or web queries detected."""
         chat_history = enriched_context.get("chat_history") or []
+        if self._is_web_query(question):
+            logger.info(f"Routing to live-data RAG for web query: {question[:80]}...")
+            return self.rag_service.query_with_live_data(
+                question, chat_history=chat_history
+            )
         return self.rag_service.query(question, chat_history=chat_history)
 
-    def _handle_mixed_question(self, question: str, enriched_context: Dict[str, Any]) -> Dict[str, Any]:
+    @staticmethod
+    def _is_web_query(question: str) -> bool:
+        """Detect if a question mentions URLs or explicitly asks about a website."""
+        if _URL_PATTERN.search(question or ""):
+            return True
+        question_lower = (question or "").lower()
+        return any(re.search(p, question_lower) for p in _WEB_QUERY_PATTERNS)
+
+    def _handle_mixed_question(
+        self, question: str, enriched_context: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Try numeric first; if answer is short or suggests docs, also consider RAG. Default: explanatory."""
         numeric_result = self._handle_numeric_question(question, enriched_context)
         answer = numeric_result.get("answer", "")
@@ -155,18 +189,26 @@ class ChatbotService:
             return numeric_result
         rag_result = self._handle_explanatory_question(question, enriched_context)
         rag_answer = rag_result.get("answer", "")
-        combined = f"{answer.strip()}\n\n{rag_answer.strip()}".strip() if answer.strip() else rag_answer
+        combined = (
+            f"{answer.strip()}\n\n{rag_answer.strip()}".strip()
+            if answer.strip()
+            else rag_answer
+        )
         numeric_sources = numeric_result.get("sources", []) or []
         rag_sources = rag_result.get("sources", []) or []
         sources = _dedupe_sources(numeric_sources + rag_sources)
         return {
             "answer": combined or answer or rag_answer,
             "sources": sources,
-            "tokens_used": numeric_result.get("tokens_used", 0) + rag_result.get("tokens_used", 0),
+            "tokens_used": numeric_result.get("tokens_used", 0)
+            + rag_result.get("tokens_used", 0),
         }
 
     def _enhance_with_context(
-        self, answer: str, enriched_context: Dict[str, Any], conversation_memory: Dict[str, Any]
+        self,
+        answer: str,
+        enriched_context: Dict[str, Any],
+        conversation_memory: Dict[str, Any],
     ) -> str:
         """Optionally add context to the answer; for now return as-is."""
         return answer or ""
@@ -208,7 +250,9 @@ class ChatbotService:
         memory["topics"] = topics
 
 
-def process_chatbot_question(question: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
+def process_chatbot_question(
+    question: str, context: Dict[str, Any] = None
+) -> Dict[str, Any]:
     """Convenience: one-off process without keeping a service instance."""
     service = ChatbotService()
     return service.process_question(question, context)
