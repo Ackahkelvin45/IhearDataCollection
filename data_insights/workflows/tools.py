@@ -109,9 +109,10 @@ VALID_RELATED_FIELDS = {
     "time_of_day__name": True,
     "class_name__name": True,
     "subclass__name": True,
+    # PII minimization: only the collector username (a display handle) is a
+    # valid reference. Direct PII (first_name/last_name/email/phone) must never
+    # be surfaced to the chat/LLM, so they are intentionally excluded here.
     "collector__username": True,
-    "collector__first_name": True,
-    "collector__last_name": True,
 }
 
 
@@ -244,6 +245,26 @@ from data.models import (
     BulkReprocessingTask,
 )
 from core.models import Region, Community, Category, Class, SubClass
+
+
+# -----------------------------------------------------------------------------
+# Security decision: org-wide (cross-collector) AGGREGATE analytics is INTENTIONAL
+# -----------------------------------------------------------------------------
+# The data-insights tools below deliberately analyze data across ALL collectors
+# and contributors (counts, averages, breakdowns by region/category/device, and
+# the username-only top_collectors leaderboard). This is a product requirement:
+# researchers need org-wide views of the data bank. Rows are NOT scoped per-user
+# and must not be — do not "re-fix" this as per-user row scoping.
+#
+# The two safeguards that make this safe are:
+#   1. Read-only SQL execution (Phase 2): the SQL engine only runs SELECTs
+#      against an allow-listed set of data/core tables; no writes, no PII tables.
+#   2. PII + raw-storage-path minimization in tool output (Phase 3): tools return
+#      collector id / username only — never email, phone, full legal name,
+#      physical address, or precise GPS — and never the raw `audio` storage
+#      path / object-storage key / signed URL (only a `has_audio` presence
+#      signal where presence matters).
+# -----------------------------------------------------------------------------
 
 
 class NoiseDatasetSearchInput(BaseModel):
@@ -1464,6 +1485,11 @@ class NoiseDetailTool(BaseTool):
                 ),
                 "recording_date": dataset.recording_date,
                 "recording_device": dataset.recording_device,
+                # Raw-storage minimization: expose only a presence signal, never
+                # the raw `audio` filesystem path / object-storage key / signed
+                # URL (e.g. DO Spaces). The path itself is sensitive and is not
+                # useful to the chat/LLM.
+                "has_audio": bool(getattr(dataset, "audio", None)),
             }
 
             # Include metadata
@@ -1549,7 +1575,26 @@ allowed_tables = SECURITY_CONFIG.get("DEFAULT_ALLOWED_TABLES", [])
 
 
 def _get_default_allowed_tables() -> List[str]:
-    """Discover data/core tables for SQL tools when not explicitly configured."""
+    """Discover data/core tables for SQL tools when not explicitly configured.
+
+    PII reachability (Phase 3): only the ``data`` and ``core`` apps are
+    discovered here. The ``authentication`` app — which owns the only direct
+    PII columns (CustomUser.email / phone_number / first_name / last_name on
+    ``authentication_customuser``, plus ``authentication_userotp``) — is NOT in
+    scope, so the read-only SQL agent cannot reach contact PII. Dataset FKs
+    (collector_id / contributor_id) are opaque integers, not PII.
+
+    Audio storage paths: the allowed ``data_noisedataset`` / ``data_recording``
+    / ``data_cleanspeechdataset`` tables carry an ``audio`` column holding the
+    raw storage path / object-storage key. These tables are kept (excluding them
+    would break org-wide aggregate analytics, the product's core feature). The
+    ``audio`` column is masked at the schema layer: SQLDatabaseWrapper strips it
+    (see ``SENSITIVE_COLUMN_NAMES`` in sql_agent.py) from BOTH the CREATE TABLE
+    schema and the sample-row preview injected into {table_info}, so its raw
+    values never reach the LLM even before the agent generates SQL. The
+    SQL_SYSTEM_TEMPLATE prompt rule (never SELECT ``audio``) is a secondary,
+    defense-in-depth layer on top of that schema-level masking.
+    """
     # Tables that should never be exposed to the SQL agent — admin/internal
     # tables whose FKs point outside the allowed schema or that aren't useful
     # for data insights queries.
@@ -1865,6 +1910,9 @@ class DataAnalysisTool(BaseTool):
 
     def _top_collectors_monthly(self) -> Dict[str, Any]:
         now = timezone.now()
+        # PII minimization: select only id + username for the leaderboard.
+        # first_name/last_name (full legal name) are direct PII and must not be
+        # surfaced to the chat/LLM. username is an acceptable display handle.
         collector_rows = list(
             NoiseDataset.objects.filter(
                 collector__isnull=False,
@@ -1874,21 +1922,17 @@ class DataAnalysisTool(BaseTool):
             .values(
                 "collector__id",
                 "collector__username",
-                "collector__first_name",
-                "collector__last_name",
             )
             .annotate(dataset_count=models.Count("id"))
             .order_by("-dataset_count")[:10]
         )
         rows = []
         for row in collector_rows:
-            first = (row.get("collector__first_name") or "").strip()
-            last = (row.get("collector__last_name") or "").strip()
             username = row.get("collector__username") or "Unknown"
             rows.append(
                 {
                     "collector_id": row.get("collector__id"),
-                    "collector": f"{first} {last}".strip() or username,
+                    "collector": username,
                     "username": username,
                     "dataset_count": row.get("dataset_count", 0),
                 }

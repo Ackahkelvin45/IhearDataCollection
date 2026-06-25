@@ -61,6 +61,15 @@ logger = logging.getLogger(__name__)
 # are unavailable. Overridden by AI_INSIGHT["DATABASE"]["STATEMENT_TIMEOUT_SECONDS"].
 DEFAULT_SQL_STATEMENT_TIMEOUT_SECONDS = 15
 
+# Columns whose raw values must never reach the LLM (Phase 3). These hold raw
+# filesystem paths / object-storage keys (e.g. DO Spaces) for the audio files in
+# the allowed data tables (data_noisedataset / data_recording /
+# data_cleanspeechdataset). They are stripped from BOTH the CREATE TABLE schema
+# and the sample-row preview injected into {table_info}, so the agent never sees
+# the storage location. Org-wide aggregate analytics is unaffected — only this
+# storage-path column is masked, not which rows are aggregated.
+SENSITIVE_COLUMN_NAMES = frozenset({"audio"})
+
 
 def _resolve_readonly_db_credentials(db_user: str, db_password: str) -> tuple[str, str]:
     """Return dedicated read-only credentials for the NL->SQL agent engine.
@@ -320,8 +329,11 @@ class SQLDatabaseWrapper(SQLDatabase):
                 tables.append(self._custom_table_info[table.name])
                 continue
 
-            for k, v in table.columns.items():
-                if type(v.type) is NullType:
+            for k, v in list(table.columns.items()):
+                # Drop NullType columns (LangChain default) and any sensitive
+                # column (e.g. `audio`, which holds a raw storage path / object
+                # key) so it never reaches the schema OR the sample rows below.
+                if type(v.type) is NullType or k in SENSITIVE_COLUMN_NAMES:
                     table._columns.remove(v)
 
             create_table = str(CreateTable(table).compile(self._engine))
@@ -350,8 +362,16 @@ class SQLDatabaseWrapper(SQLDatabase):
         ):
             return self._cached_sample_rows.get(table.name, "")
 
+        # Select explicit columns (not `*`) so sensitive columns already
+        # removed from the table metadata in get_table_info() — e.g. `audio`,
+        # the raw storage path — are NOT pulled back by the sample-row preview.
+        sample_columns = [
+            col for col in table.columns if col.name not in SENSITIVE_COLUMN_NAMES
+        ]
+        if not sample_columns:
+            return ""
         query = (
-            select(sa.literal_column("*"))
+            select(*sample_columns)
             .select_from(table)
             .limit(self._sample_rows_in_table_info)
         )
