@@ -52,8 +52,11 @@ from data_insights.workflows.tools import (
     allowed_tables,
     _current_user_id,
 )
-from data_insights.workflows.sql_agent import SQLDatabaseWrapper, TextToSQLAgent
-from sqlalchemy import create_engine
+from data_insights.workflows.sql_agent import (
+    SQLDatabaseWrapper,
+    TextToSQLAgent,
+    create_readonly_engine,
+)
 from data_insights.workflows.prompt import SYSTEM_TEMPLATE
 from rest_framework.response import Response
 
@@ -1078,7 +1081,16 @@ class ChatSessionView(ModelViewSet):
         if query_kind == "sql" and tool_data.get("query_sql"):
             query_sql = tool_data.get("query_sql")
             try:
-                engine = create_engine(DB_URI)
+                # Re-executes agent-generated SQL, so it must use the same
+                # strictly read-only engine as the NL->SQL agent (P2-1):
+                # writes/DDL rejected, statement_timeout enforced.
+                engine = create_readonly_engine(
+                    DB_CONFIG.get("USER", "postgres"),
+                    DB_CONFIG.get("PASSWORD", ""),
+                    DB_CONFIG.get("HOST", "localhost"),
+                    int(DB_CONFIG.get("PORT", 5432)),
+                    DB_CONFIG.get("NAME", "iheardatadb"),
+                )
                 db = SQLDatabaseWrapper(
                     engine,
                     include_tables=allowed_tables,

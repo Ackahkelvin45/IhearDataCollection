@@ -486,9 +486,21 @@ if USE_SQLITE:
             "HOST": os.getenv("LOCAL_POSTGRES_HOST", "localhost"),
             "PORT": int(os.getenv("LOCAL_POSTGRES_PORT", 5432)),
             "NAME": os.getenv("LOCAL_POSTGRES_DB", "datacollection"),
+            # Optional dedicated least-privilege read-only credentials for the
+            # NL->SQL agent engine. If unset, the agent falls back to the creds
+            # above with a loud logger.warning (see sql_agent.py). See the SQL in
+            # sql_agent.py for creating a least-privilege read-only role.
+            "READONLY_USER": os.getenv("AI_INSIGHT_DB_READONLY_USER", ""),
+            "READONLY_PASSWORD": os.getenv("AI_INSIGHT_DB_READONLY_PASSWORD", ""),
             "MAX_CONNECTIONS": int(os.getenv("AI_INSIGHT_DB_MAX_CONNECTIONS", 20)),
             "CONNECTION_TIMEOUT": int(
                 os.getenv("AI_INSIGHT_DB_CONNECTION_TIMEOUT", 30)
+            ),
+            # Postgres statement_timeout (seconds) applied to every NL->SQL agent
+            # connection. Kills runaway/cartesian queries even if the regex guard
+            # is bypassed. Generous enough for legitimate aggregations.
+            "STATEMENT_TIMEOUT_SECONDS": int(
+                os.getenv("AI_INSIGHT_SQL_TIMEOUT_SECONDS", 15)
             ),
         },
         "AGENT": {
@@ -531,9 +543,21 @@ else:
             "HOST": os.getenv("POSTGRES_HOST", "db"),
             "PORT": int(os.getenv("POSTGRES_PORT", 5432)),
             "NAME": os.getenv("POSTGRES_DB", "iheardatadb"),
+            # Optional dedicated least-privilege read-only credentials for the
+            # NL->SQL agent engine. If unset, the agent falls back to the creds
+            # above with a loud logger.warning (see sql_agent.py). See the SQL in
+            # sql_agent.py for creating a least-privilege read-only role.
+            "READONLY_USER": os.getenv("AI_INSIGHT_DB_READONLY_USER", ""),
+            "READONLY_PASSWORD": os.getenv("AI_INSIGHT_DB_READONLY_PASSWORD", ""),
             "MAX_CONNECTIONS": int(os.getenv("AI_INSIGHT_DB_MAX_CONNECTIONS", 20)),
             "CONNECTION_TIMEOUT": int(
                 os.getenv("AI_INSIGHT_DB_CONNECTION_TIMEOUT", 30)
+            ),
+            # Postgres statement_timeout (seconds) applied to every NL->SQL agent
+            # connection. Kills runaway/cartesian queries even if the regex guard
+            # is bypassed. Generous enough for legitimate aggregations.
+            "STATEMENT_TIMEOUT_SECONDS": int(
+                os.getenv("AI_INSIGHT_SQL_TIMEOUT_SECONDS", 15)
             ),
         },
         "AGENT": {

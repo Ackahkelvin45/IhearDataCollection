@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import logging
 from functools import lru_cache
 from operator import add
 from typing import (
@@ -36,6 +37,7 @@ from sqlalchemy import (
     MetaData,
     Table,
     create_engine,
+    event,
     inspect,
     select,
     text,
@@ -52,6 +54,125 @@ from sqlparse.tokens import Keyword
 from .schema import PostgresSQLInput
 
 from . import UNSAFE_KEYWORDS
+
+logger = logging.getLogger(__name__)
+
+# Default statement_timeout (seconds) for the NL->SQL agent engine when settings
+# are unavailable. Overridden by AI_INSIGHT["DATABASE"]["STATEMENT_TIMEOUT_SECONDS"].
+DEFAULT_SQL_STATEMENT_TIMEOUT_SECONDS = 15
+
+
+def _resolve_readonly_db_credentials(db_user: str, db_password: str) -> tuple[str, str]:
+    """Return dedicated read-only credentials for the NL->SQL agent engine.
+
+    Prefers AI_INSIGHT["DATABASE"]["READONLY_USER"/"READONLY_PASSWORD"] (env:
+    AI_INSIGHT_DB_READONLY_USER / AI_INSIGHT_DB_READONLY_PASSWORD). If unset,
+    falls back to the read-WRITE app credentials with a loud warning — the
+    engine is still forced read-only at the session/transaction level below, but
+    a dedicated least-privilege role is defense-in-depth and strongly preferred.
+
+    To create a least-privilege read-only role in Postgres, run (as superuser):
+
+        CREATE ROLE ai_insight_ro LOGIN PASSWORD '<strong-password>';
+        GRANT CONNECT ON DATABASE iheardatadb TO ai_insight_ro;
+        GRANT USAGE ON SCHEMA public TO ai_insight_ro;
+        GRANT SELECT ON ALL TABLES IN SCHEMA public TO ai_insight_ro;
+        -- Auto-grant SELECT on future tables created by the app owner:
+        ALTER DEFAULT PRIVILEGES IN SCHEMA public
+            GRANT SELECT ON TABLES TO ai_insight_ro;
+        -- Optionally make the role itself read-only at the role level:
+        ALTER ROLE ai_insight_ro SET default_transaction_read_only = on;
+
+    Then set AI_INSIGHT_DB_READONLY_USER / AI_INSIGHT_DB_READONLY_PASSWORD.
+    """
+    ro_user = ro_password = ""
+    try:
+        from django.conf import settings
+
+        db_cfg = getattr(settings, "AI_INSIGHT", {}).get("DATABASE", {})
+        ro_user = db_cfg.get("READONLY_USER") or ""
+        ro_password = db_cfg.get("READONLY_PASSWORD") or ""
+    except Exception:
+        pass
+
+    # Allow env fallback even if settings are unavailable.
+    ro_user = ro_user or os.getenv("AI_INSIGHT_DB_READONLY_USER", "")
+    ro_password = ro_password or os.getenv("AI_INSIGHT_DB_READONLY_PASSWORD", "")
+
+    if ro_user and ro_password:
+        return ro_user, ro_password
+
+    logger.warning(
+        "NL->SQL agent: no dedicated read-only DB credentials configured "
+        "(AI_INSIGHT_DB_READONLY_USER/AI_INSIGHT_DB_READONLY_PASSWORD); falling "
+        "back to read-WRITE app credentials. The engine is still forced "
+        "read-only (default_transaction_read_only=on) at the session level, but "
+        "a dedicated least-privilege role is strongly recommended."
+    )
+    return db_user, db_password
+
+
+def _get_statement_timeout_seconds() -> int:
+    """Statement timeout (seconds) for the NL->SQL agent engine, from settings."""
+    try:
+        from django.conf import settings
+
+        db_cfg = getattr(settings, "AI_INSIGHT", {}).get("DATABASE", {})
+        return int(
+            db_cfg.get(
+                "STATEMENT_TIMEOUT_SECONDS", DEFAULT_SQL_STATEMENT_TIMEOUT_SECONDS
+            )
+        )
+    except Exception:
+        return int(
+            os.getenv(
+                "AI_INSIGHT_SQL_TIMEOUT_SECONDS",
+                DEFAULT_SQL_STATEMENT_TIMEOUT_SECONDS,
+            )
+        )
+
+
+def create_readonly_engine(
+    db_user: str,
+    db_password: str,
+    db_host: str,
+    db_port: int,
+    db_name: str,
+) -> Engine:
+    """Build a SQLAlchemy engine for the NL->SQL agent that is strictly read-only.
+
+    On EVERY pooled connection (a "connect" event, so it also covers schema
+    reflection and sample-row reads), this runs:
+        SET default_transaction_read_only = on   -> Postgres rejects any
+            INSERT/UPDATE/DELETE/DDL, even if the regex/SELECT-only guard is
+            bypassed.
+        SET statement_timeout = <ms>             -> runaway / cartesian queries
+            are killed server-side.
+    Org-wide READ analytics is intentional, so this engine may SELECT across all
+    collectors — it is only writes that are blocked. The Django ORM connection
+    and the LangGraph PostgresSaver checkpointer use SEPARATE connections and
+    remain writable; this only affects the SQL-agent engine.
+    """
+    ro_user, ro_password = _resolve_readonly_db_credentials(db_user, db_password)
+    timeout_ms = max(1, _get_statement_timeout_seconds()) * 1000
+
+    engine = create_engine(
+        f"postgresql://{ro_user}:{ro_password}@{db_host}:{db_port}/{db_name}"
+    )
+
+    @event.listens_for(engine, "connect")
+    def _set_readonly_session(dbapi_connection, connection_record):
+        # Enforce read-only + statement timeout at the session level for every
+        # physical connection in the pool.
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("SET default_transaction_read_only = on")
+            cursor.execute(f"SET statement_timeout = {timeout_ms}")
+        finally:
+            cursor.close()
+
+    return engine
+
 
 # Use Docker DB ('db') when available, otherwise localhost for local dev
 postgres_host = os.getenv("POSTGRES_HOST")
@@ -463,9 +584,12 @@ class TextToSQLAgent:
             db_user and db_password and db_host and db_port and db_name
         ), "Missing database credentials"
 
-        engine = create_engine(
-            f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-        )
+        # Strictly read-only engine: writes/DDL are rejected by Postgres and
+        # runaway queries are killed by statement_timeout, independent of the
+        # regex/SELECT-only guard (P2-1). Uses dedicated read-only credentials
+        # when configured. Does NOT affect the Django ORM or the LangGraph
+        # checkpointer, which use separate (writable) connections.
+        engine = create_readonly_engine(db_user, db_password, db_host, db_port, db_name)
 
         self.llm = llm.bind_tools([PostgresSQLInput])
         self.system_prompt = system_prompt
@@ -504,17 +628,36 @@ class TextToSQLAgent:
             "jsonb_extract_path_text",
         }
 
+        # NOTE: This regex/keyword guard is defense-in-depth ONLY. Regex cannot
+        # reliably parse SQL (comments, string literals, nesting, dialect quirks
+        # all create bypasses), so the PRIMARY defenses are the read-only engine
+        # (default_transaction_read_only=on), the SELECT/WITH-only statement
+        # check below, and statement_timeout (see P2-1/P2-2). This layer just
+        # catches obvious abuse early and bounds result size.
         patterns = [
             r";\s*\w+\s*=",
             r"\bor\s+1\s*=\s*1\b",
-            # r"--",
             r"/\*.*?\*/",
+            # Time-based / DoS functions (across dialects).
+            r"\b(pg_sleep|pg_sleep_for|pg_sleep_until)\b",
+            r"\b(pg_terminate_backend|pg_cancel_backend)\b",
             r"\b(exec|execute|xp_cmdshell)\b",
             r"\b(waitfor|delay)\b",
             r"\b(benchmark|sleep)\b.*?\(",
             r"\b(load_file|outfile|dumpfile)\b",
+            # Postgres COPY (statement-initial only, to avoid flagging a column
+            # named "copy") and large object / file access.
+            r"^\s*copy\b",
+            r"\b(lo_import|lo_export)\b",
         ]
 
+        if not query:
+            raise ValueError("Operation not allowed: Empty query")
+
+        # Strip SQL comments BEFORE any validation so comment-based payloads
+        # (e.g. "-- ..." or "/* ... */") cannot hide writes/DoS from the checks
+        # below. Replaces the previously commented-out "--" regex rule.
+        query = sqlparse.format(query, strip_comments=True).strip()
         if not query:
             raise ValueError("Operation not allowed: Empty query")
 
@@ -528,6 +671,12 @@ class TextToSQLAgent:
         parsed = sqlparse.parse(query)
         if not parsed:
             raise ValueError("Operation not allowed: Invalid SQL syntax")
+
+        # Reject multi-statement input (e.g. "SELECT ...; DROP ...") — only a
+        # single SELECT/WITH statement is allowed.
+        meaningful = [st for st in parsed if st.token_first(skip_cm=True) is not None]
+        if len(meaningful) > 1:
+            raise ValueError("Operation not allowed: Multiple statements")
 
         def _enforce_limit(query: str, max_limit) -> str:
             limit_pattern = r"LIMIT\s+(\d+)(?:\s*(?:OFFSET\s+\d+)?)"
@@ -568,10 +717,22 @@ class TextToSQLAgent:
                     q = f"{q} OFFSET {default_offset}"
             return q
 
-        def validate_statement(statement: sqlparse.sql.Statement):
-            # first_token = statement.token_first(skip_cm=True)
-            # if not first_token or first_token.value.upper() not in ("SELECT", "WITH"):
-            #     raise ValueError("Only SELECT operations are allowed")
+        def validate_statement(
+            statement: sqlparse.sql.Statement, top_level: bool = False
+        ):
+            # SELECT-only enforcement: the top-level statement must be a SELECT
+            # or a WITH (CTE) — reject INSERT/UPDATE/DELETE/DDL etc. This is NOT
+            # applied to recursively-validated parenthesis contents, since those
+            # may legitimately be value lists (e.g. "IN (1, 2, 3)") or scalar
+            # subqueries; writes hidden inside parentheses are still caught by
+            # the UNSAFE_KEYWORDS scan below.
+            if top_level:
+                first_token = statement.token_first(skip_cm=True)
+                if not first_token or first_token.value.upper() not in (
+                    "SELECT",
+                    "WITH",
+                ):
+                    raise ValueError("Only SELECT operations are allowed")
 
             parser = Parser(statement.value)
             actual_tables = set()
@@ -603,9 +764,14 @@ class TextToSQLAgent:
                         if subparsed:
                             validate_statement(subparsed[0])
 
+        # Validate every top-level statement, including "UNKNOWN" ones: an
+        # unclassifiable statement is not a SELECT/WITH and must be rejected
+        # rather than silently skipped (which was a bypass).
         for st in parsed:
-            if st.get_type() != "UNKNOWN":
-                validate_statement(st)
+            if st.token_first(skip_cm=True) is None:
+                # Whitespace-only fragment (e.g. trailing tokens) — nothing to do.
+                continue
+            validate_statement(st, top_level=True)
 
         query = _apply_limit_offset(query, max_limit, default_offset)
         return " ".join(query.split())
@@ -703,7 +869,11 @@ class TextToSQLAgent:
                 tool_id = tool_call["id"]
                 if isinstance(res, list):
                     rows = res
-                    columns = list(rows[0].keys()) if rows and isinstance(rows[0], dict) else []
+                    columns = (
+                        list(rows[0].keys())
+                        if rows and isinstance(rows[0], dict)
+                        else []
+                    )
                     payload = {
                         "rows": rows,
                         "columns": columns,
@@ -746,13 +916,10 @@ class TextToSQLAgent:
             }
 
     def extract_sql(self, llm_response: str) -> str | None:
-        sqls = re.findall(
-            r"\bCREATE\s+TABLE\b.*?\bAS\b.*?;", llm_response, re.DOTALL | re.IGNORECASE
-        )
-        if sqls:
-            sql = sqls[-1]
-            return sql
-
+        # NOTE: the CREATE TABLE AS extraction path was removed — the agent
+        # engine is now strictly read-only and only SELECT/WITH statements pass
+        # validation, so extracting DDL would only produce a guaranteed failure.
+        # Normal analytics use plain SELECT / CTEs, which are handled below.
         sqls = re.findall(r"\bWITH\b .*?;", llm_response, re.DOTALL | re.IGNORECASE)
         if sqls:
             sql = sqls[-1]
