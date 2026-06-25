@@ -107,9 +107,13 @@ class ChatSessionUpdateSerializer(serializers.ModelSerializer):
 
 
 class MessageStatusSerializer(serializers.ModelSerializer):
+    # NOTE: processing_time_ms was previously listed here but is neither a model
+    # field nor a declared field, which raises ImproperlyConfigured on use.
+    # Processing time is computed transiently in the streaming response
+    # (see ChatSessionView) and never persisted, so it is not serializable here.
     class Meta:
         model = ChatMessage
-        fields = ["id", "status", "processing_time_ms"]
+        fields = ["id", "status"]
         read_only_fields = fields
 
 

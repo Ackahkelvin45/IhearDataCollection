@@ -1535,7 +1535,12 @@ def _get_llm() -> ChatOpenAI:
         if not api_key:
             raise ValueError("OPENAI_API_KEY environment variable is not set")
         _llm = ChatOpenAI(
-            model=AGENT_CONFIG.get("MODEL", "gpt-4"), api_key=api_key, streaming=True
+            model=AGENT_CONFIG.get("MODEL", "gpt-4"),
+            api_key=api_key,
+            # Cap output per call to bound worst-case SQL-agent spend. Mirrors
+            # the agent/dashboard LLMs in views.py (AI_INSIGHT MAX_TOKENS).
+            max_tokens=AGENT_CONFIG.get("MAX_TOKENS", 2000),
+            streaming=True,
         )
     return _llm
 
@@ -2129,7 +2134,12 @@ class DataAnalysisTool(BaseTool):
         }
 
     def _invoke_sql_agent(self, query: str) -> Dict[str, Any]:
-        response = self.agent.invoke({"messages": [HumanMessage(content=query)]})
+        # Bound the SQL agent's llm<->tool loop depth so a runaway loop cannot
+        # rack up unbounded LLM spend. Mirrors RECURSION_LIMIT in agent_workflow.
+        config = {"recursion_limit": AGENT_CONFIG.get("RECURSION_LIMIT", 15)}
+        response = self.agent.invoke(
+            {"messages": [HumanMessage(content=query)]}, config=config
+        )
         if response and "messages" in response and response["messages"]:
             last_message = response["messages"][-1]
             msg = (

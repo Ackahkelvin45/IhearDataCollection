@@ -30,11 +30,25 @@ def as_bool(value):
     return str(value).lower() in ["true", "yes"]
 
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("SECRET_KEY")
-
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = as_bool(os.getenv("DEBUG", "False"))
+
+# SECURITY WARNING: keep the secret key used in production secret!
+# SECRET_KEY must come from the environment (.env, which is gitignored). Fail
+# fast in non-DEBUG environments so the app never boots with SECRET_KEY=None.
+# In DEBUG we fall back to a clearly-labeled insecure dev key so local
+# development works without a .env. Never log or print the secret.
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = "django-insecure-DEV-ONLY-do-not-use-in-production"
+    else:
+        from django.core.exceptions import ImproperlyConfigured
+
+        raise ImproperlyConfigured(
+            "SECRET_KEY environment variable is not set. Set it in your .env "
+            "(gitignored) or environment before running with DEBUG=False."
+        )
 
 ALLOWED_HOSTS = [
     "localhost",
@@ -182,6 +196,14 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 100,
+    # Throttle rates. The "ai_insight" scope backs AIInsightRateThrottle on the
+    # AI chat/message endpoints (data_insights). The rate is sourced from
+    # AI_INSIGHT["SECURITY"]["RATE_LIMIT_PER_MINUTE"] (env:
+    # AI_INSIGHT_RATE_LIMIT_PER_MINUTE), default 30/min per user — generous
+    # enough not to break existing clients while bounding LLM spend.
+    "DEFAULT_THROTTLE_RATES": {
+        "ai_insight": f"{os.getenv('AI_INSIGHT_RATE_LIMIT_PER_MINUTE', 30)}/min",
+    },
 }
 
 
@@ -231,20 +253,15 @@ UNFOLD = {
     },
 }
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost",
-    "http://127.0.0.10",
-    "http://0.0.0.0",
-    "http://206.189.238.225",
-    "https://ihearandsee-at-rail.com",
-    "http://ihearandsee-at-rail.com",
-    "https://www.ihearandsee-at-rail.com",
-    "http://www.ihearandsee-at-rail.com",
-    "https://nyc1-88878471021e.zeddy-dev.onstagingocean.app",
-]
-
-
-CORS_ALLOW_CREDENTIALS = True
+# NOTE: CORS settings were removed because django-cors-headers is NOT installed
+# and CorsMiddleware is NOT in MIDDLEWARE, so CORS_ALLOWED_ORIGINS /
+# CORS_ALLOW_CREDENTIALS were a no-op (dead config). To properly enable CORS for
+# a separate frontend in the future:
+#   1) pip install django-cors-headers
+#   2) add "corsheaders" to INSTALLED_APPS
+#   3) add "corsheaders.middleware.CorsMiddleware" high in MIDDLEWARE
+#      (before CommonMiddleware)
+#   4) then re-add CORS_ALLOWED_ORIGINS / CORS_ALLOW_CREDENTIALS here.
 
 
 CSRF_TRUSTED_ORIGINS = [
@@ -325,6 +342,17 @@ STATICFILES_DIRS = [
 # Read HTTPS config from proxy
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
+
+# Transport / cookie hardening. All gated on `not DEBUG` so local development
+# (typically plain HTTP) is unaffected. In production (DEBUG=False) cookies are
+# marked Secure, HTTP is redirected to HTTPS, and HSTS is advertised.
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
 
 # Redis
 REDIS_USERNAME = os.getenv("REDIS_USERNAME", default="default")
@@ -469,6 +497,10 @@ if USE_SQLITE:
             "TIMEOUT_SECONDS": int(os.getenv("AI_INSIGHT_TIMEOUT_SECONDS", 120)),
             "DEFAULT_TOP_K": int(os.getenv("AI_INSIGHT_DEFAULT_TOP_K", 100)),
             "MAX_TOP_K": int(os.getenv("AI_INSIGHT_MAX_TOP_K", 1000)),
+            # Caps LLM output tokens per call to bound worst-case spend.
+            "MAX_TOKENS": int(os.getenv("AI_INSIGHT_MAX_TOKENS", 2000)),
+            # Bounds LangGraph tool-loop depth per run to bound worst-case spend.
+            "RECURSION_LIMIT": int(os.getenv("AI_INSIGHT_RECURSION_LIMIT", 15)),
             "ENABLE_CACHING": as_bool(os.getenv("AI_INSIGHT_ENABLE_CACHING", "True")),
             "CLARIFICATION_V2_ENABLED": as_bool(
                 os.getenv("AI_INSIGHT_CLARIFICATION_V2_ENABLED", "False")
@@ -510,6 +542,10 @@ else:
             "TIMEOUT_SECONDS": int(os.getenv("AI_INSIGHT_TIMEOUT_SECONDS", 120)),
             "DEFAULT_TOP_K": int(os.getenv("AI_INSIGHT_DEFAULT_TOP_K", 100)),
             "MAX_TOP_K": int(os.getenv("AI_INSIGHT_MAX_TOP_K", 1000)),
+            # Caps LLM output tokens per call to bound worst-case spend.
+            "MAX_TOKENS": int(os.getenv("AI_INSIGHT_MAX_TOKENS", 2000)),
+            # Bounds LangGraph tool-loop depth per run to bound worst-case spend.
+            "RECURSION_LIMIT": int(os.getenv("AI_INSIGHT_RECURSION_LIMIT", 15)),
             "ENABLE_CACHING": as_bool(os.getenv("AI_INSIGHT_ENABLE_CACHING", "True")),
             "CLARIFICATION_V2_ENABLED": as_bool(
                 os.getenv("AI_INSIGHT_CLARIFICATION_V2_ENABLED", "False")

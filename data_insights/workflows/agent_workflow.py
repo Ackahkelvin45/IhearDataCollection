@@ -17,6 +17,7 @@ from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
 
 from loguru import logger
+from django.conf import settings
 from django.utils import timezone
 
 from .tools import AGENT_TOOLS
@@ -28,6 +29,15 @@ from .clarification_gate import (
     should_clarify,
 )
 from data_insights.models import QueryCacheModel
+
+
+# Bounds the worst-case LangGraph tool-loop depth per run so a runaway
+# agent loop cannot rack up unbounded LLM spend. Configurable via
+# AI_INSIGHT["AGENT"]["RECURSION_LIMIT"] (env: AI_INSIGHT_RECURSION_LIMIT),
+# default 15.
+RECURSION_LIMIT = (
+    getattr(settings, "AI_INSIGHT", {}).get("AGENT", {}).get("RECURSION_LIMIT", 15)
+)
 
 
 class AgentState(TypedDict):
@@ -775,7 +785,10 @@ class DataAgent:
 
         workflow = self.compile_workflow(checkpointer)
 
-        config = {"configurable": {"thread_id": str(session_id)}}
+        config = {
+            "configurable": {"thread_id": str(session_id)},
+            "recursion_limit": RECURSION_LIMIT,
+        }
 
         if stream:
             return workflow.stream(initial_state, config=config, stream_mode="messages")
@@ -803,7 +816,10 @@ class DataAgent:
 
         workflow = self.compile_workflow(checkpointer)
 
-        config = {"configurable": {"thread_id": str(session_id)}}
+        config = {
+            "configurable": {"thread_id": str(session_id)},
+            "recursion_limit": RECURSION_LIMIT,
+        }
 
         if stream:
             return workflow.astream(
@@ -845,7 +861,10 @@ class DataAgent:
         }
 
         workflow = self.compile_workflow(checkpointer)
-        config = {"configurable": {"thread_id": str(session_id)}}
+        config = {
+            "configurable": {"thread_id": str(session_id)},
+            "recursion_limit": RECURSION_LIMIT,
+        }
 
         if stream:
             return workflow.stream(state, config=config, stream_mode="messages")
@@ -878,7 +897,10 @@ class DataAgent:
         }
 
         workflow = self.compile_workflow(checkpointer)
-        config = {"configurable": {"thread_id": str(session_id)}}
+        config = {
+            "configurable": {"thread_id": str(session_id)},
+            "recursion_limit": RECURSION_LIMIT,
+        }
 
         if stream:
             return workflow.astream(state, config=config, stream_mode="messages")

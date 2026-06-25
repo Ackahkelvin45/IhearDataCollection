@@ -1,12 +1,15 @@
 from django.shortcuts import render
+from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Min, Max
 from django.db import transaction
+from django.utils import timezone
 import os
 from data.models import NoiseDataset, NoiseAnalysis
 from core.models import Region, Community
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.filters import SearchFilter, OrderingFilter
+from rest_framework.throttling import UserRateThrottle
 from rest_framework import status
 from django_filters.rest_framework import DjangoFilterBackend
 from .serializers import (
@@ -60,6 +63,26 @@ DB_CONFIG = AI_CONFIG.get("DATABASE", {})
 AGENT_CONFIG = AI_CONFIG.get("AGENT", {})
 SECURITY_CONFIG = AI_CONFIG.get("SECURITY", {})
 
+# Per-LLM-call output cap. Bounds worst-case output cost per request without
+# truncating normal answers. Configurable via AI_INSIGHT["AGENT"]["MAX_TOKENS"]
+# (env: AI_INSIGHT_MAX_TOKENS), default 2000.
+AGENT_MAX_TOKENS = AGENT_CONFIG.get("MAX_TOKENS", 2000)
+
+
+class AIInsightRateThrottle(UserRateThrottle):
+    """Per-user throttle for the AI insight chat/message endpoints.
+
+    Wires the previously-dead AI_INSIGHT["SECURITY"]["RATE_LIMIT_PER_MINUTE"]
+    setting (env: AI_INSIGHT_RATE_LIMIT_PER_MINUTE) into DRF so LLM-backed
+    endpoints have a real ceiling. The "ai_insight" scope resolves its rate
+    from REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] in settings (default
+    30 requests/minute per user — generous enough not to break existing
+    clients while bounding LLM spend).
+    """
+
+    scope = "ai_insight"
+
+
 # Built from AI_INSIGHT["DATABASE"] in settings: local DB when USE_SQLITE=true, Docker DB when false
 DB_URI = (
     f"postgresql://{DB_CONFIG.get('USER', 'postgres')}:"
@@ -100,6 +123,7 @@ _compiled_graphs: dict = {}
 _cached_tools: dict = {}
 
 
+@login_required
 def unified_chat(request):
     """Unified chat interface with sessions, suggestions, and chat in one page."""
     suggestions = [
@@ -123,6 +147,7 @@ def unified_chat(request):
 
 class ChatSessionView(ModelViewSet):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [AIInsightRateThrottle]
     filter_backends = [SearchFilter, OrderingFilter, DjangoFilterBackend]
     filterset_fields = ["title"]
     search_fields = ["title"]
@@ -1229,6 +1254,7 @@ class ChatSessionView(ModelViewSet):
         llm = ChatOpenAI(
             model=AGENT_CONFIG.get("MODEL", "o4-mini"),
             api_key=os.getenv("OPENAI_API_KEY"),
+            max_tokens=AGENT_MAX_TOKENS,
             streaming=True,
         )
         # Dashboard summary LLM — non-streaming, same model, used for one
@@ -1236,6 +1262,7 @@ class ChatSessionView(ModelViewSet):
         dashboard_llm = ChatOpenAI(
             model=AGENT_CONFIG.get("MODEL", "o4-mini"),
             api_key=os.getenv("OPENAI_API_KEY"),
+            max_tokens=AGENT_MAX_TOKENS,
             streaming=False,
         )
         agent = create_data_insights_agent(
