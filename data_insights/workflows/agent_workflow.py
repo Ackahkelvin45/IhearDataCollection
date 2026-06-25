@@ -31,13 +31,13 @@ from .clarification_gate import (
 from data_insights.models import QueryCacheModel
 
 
+AGENT_CONFIG = getattr(settings, "AI_INSIGHT", {}).get("AGENT", {})
+
 # Bounds the worst-case LangGraph tool-loop depth per run so a runaway
 # agent loop cannot rack up unbounded LLM spend. Configurable via
 # AI_INSIGHT["AGENT"]["RECURSION_LIMIT"] (env: AI_INSIGHT_RECURSION_LIMIT),
 # default 15.
-RECURSION_LIMIT = (
-    getattr(settings, "AI_INSIGHT", {}).get("AGENT", {}).get("RECURSION_LIMIT", 15)
-)
+RECURSION_LIMIT = AGENT_CONFIG.get("RECURSION_LIMIT", 15)
 
 
 class AgentState(TypedDict):

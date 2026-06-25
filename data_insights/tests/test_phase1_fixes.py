@@ -80,6 +80,24 @@ class CostControlSettingsTests(SimpleTestCase):
         self.assertIsInstance(agent_workflow.RECURSION_LIMIT, int)
         self.assertGreater(agent_workflow.RECURSION_LIMIT, 0)
 
+    def test_workflow_agent_config_matches_settings(self):
+        """The refactored module-level AGENT_CONFIG constant must resolve to
+        the same AI_INSIGHT["AGENT"] mapping it is derived from."""
+        from data_insights.workflows import agent_workflow
+
+        self.assertIsInstance(agent_workflow.AGENT_CONFIG, dict)
+        self.assertEqual(agent_workflow.AGENT_CONFIG, settings.AI_INSIGHT["AGENT"])
+
+    def test_workflow_recursion_limit_derived_from_agent_config(self):
+        """RECURSION_LIMIT must be sourced from AGENT_CONFIG (the refactor must
+        not silently fall back to the literal default when config is present)."""
+        from data_insights.workflows import agent_workflow
+
+        self.assertEqual(
+            agent_workflow.RECURSION_LIMIT,
+            agent_workflow.AGENT_CONFIG.get("RECURSION_LIMIT", 15),
+        )
+
 
 class ThrottlingWiringTests(SimpleTestCase):
     """Phase 1 cost control / auth: the AI throttle is actually wired in."""
