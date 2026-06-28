@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 from typing import Dict, List, Any, Literal, Optional
 from typing import Optional, Dict, Any
 from pydantic import BaseModel
@@ -193,6 +193,88 @@ def validate_query_fields(queryset_operations: list) -> list:
         validated_operations.append(operation)
 
     return validated_operations
+
+
+# ---------------------------------------------------------------------------
+# Pure-math helpers (no DB / ORM) so analytics correctness can be unit tested
+# without Postgres. Each is statistically self-contained and documented with
+# the correct formula it implements.
+# ---------------------------------------------------------------------------
+
+
+def running_cumulative(values: List[float]) -> List[float]:
+    """Return the running (prefix-sum) cumulative total over ordered values.
+
+    Correct "cumulative" semantics: out[i] = sum(values[0..i]). The final
+    element equals the grand total. ``None`` per-period values are treated as
+    0 so the running total never resets or breaks on a gap.
+
+    Example: [3, 1, 4] -> [3, 4, 8].
+    """
+    total = 0.0
+    out: List[float] = []
+    for v in values:
+        total += float(v) if v is not None else 0.0
+        out.append(total)
+    return out
+
+
+def complete_case_matrix(rows, feature_cols):
+    """Complete-case alignment for a correlation matrix.
+
+    Keeps only rows where EVERY selected feature is non-null, so that row i of
+    feature A and row i of feature B come from the SAME observation. This is the
+    statistically correct precondition for Pearson/Spearman: correlating
+    independently null-dropped, then position-truncated, columns fabricates
+    coefficients because the paired observations no longer correspond.
+
+    Args:
+        rows: iterable of dict-like records (one per dataset).
+        feature_cols: ordered list of feature names to align on.
+
+    Returns:
+        (columns, n) where ``columns`` is a dict {feature: list_of_values} with
+        every list the same length ``n`` (the number of complete-case rows) and
+        the i-th entry of every column belonging to the same source row.
+    """
+    columns = {col: [] for col in feature_cols}
+    n = 0
+    for r in rows:
+        vals = [r.get(col) for col in feature_cols]
+        if any(v is None for v in vals):
+            continue
+        for col, v in zip(feature_cols, vals):
+            columns[col].append(float(v))
+        n += 1
+    return columns, n
+
+
+def stratified_split_counts(class_count, train_pct, val_pct, test_pct):
+    """Allocate train/val/test counts for a single class that sum EXACTLY to
+    the class size while respecting the requested ratios.
+
+    Uses the largest-remainder (Hamilton) method: floor each ideal allocation,
+    then hand the leftover units one at a time to the splits with the largest
+    fractional remainders. This guarantees:
+        train + val + test == class_count   (no over/under allocation)
+        every split is >= 0 and <= class_count.
+
+    The previous implementation rounded each split independently and then added
+    a floor of 1, which over-allocated small classes (e.g. count=2 produced
+    1/1/1 == 3 > 2).
+    """
+    c = int(class_count)
+    if c <= 0:
+        return 0, 0, 0
+    ratios = [train_pct, val_pct, test_pct]
+    ideal = [c * r for r in ratios]
+    floors = [int(x) for x in ideal]
+    remainder = c - sum(floors)
+    # Distribute the remaining units to the largest fractional parts.
+    frac_order = sorted(range(3), key=lambda i: (ideal[i] - floors[i]), reverse=True)
+    for k in range(remainder):
+        floors[frac_order[k % 3]] += 1
+    return floors[0], floors[1], floors[2]
 
 
 AI_CONFIG = getattr(settings, "AI_INSIGHT", {})
@@ -1372,7 +1454,13 @@ class AudioAnalysisTool(BaseTool):
     def _temporal_analysis(self, queryset, query):
         """Analyze trends over time"""
         try:
-            # Monthly trends
+            # Monthly trends.
+            # NOTE (P4-3): Sum(...) over a TruncMonth group is the PER-PERIOD
+            # energy total, not a cumulative one. "cumulative" must be a running
+            # total across ordered periods: cumulative_energy[i] = sum of every
+            # period_energy up to and including period i. We keep the per-period
+            # value as ``period_energy`` (for charts that plot it) and overwrite
+            # ``cumulative_energy`` with the true running prefix sum.
             monthly_trends = list(
                 queryset.annotate(month=TruncMonth("recording_date"))
                 .values("month")
@@ -1380,10 +1468,15 @@ class AudioAnalysisTool(BaseTool):
                     dataset_count=Count("id"),
                     avg_decibel=Avg("noise_analysis__mean_db"),
                     avg_energy=Avg("audio_features__rms_energy"),
-                    cumulative_energy=Sum("audio_features__rms_energy"),
+                    period_energy=Sum("audio_features__rms_energy"),
                 )
                 .order_by("month")
             )
+            monthly_cumulative = running_cumulative(
+                [row["period_energy"] for row in monthly_trends]
+            )
+            for row, cum in zip(monthly_trends, monthly_cumulative):
+                row["cumulative_energy"] = cum
 
             # Daily trends (last 30 days)
             from datetime import datetime, timedelta
@@ -1397,10 +1490,15 @@ class AudioAnalysisTool(BaseTool):
                 .annotate(
                     dataset_count=Count("id"),
                     avg_decibel=Avg("noise_analysis__mean_db"),
-                    cumulative_energy=Sum("audio_features__rms_energy"),
+                    period_energy=Sum("audio_features__rms_energy"),
                 )
                 .order_by("date")
             )
+            daily_cumulative = running_cumulative(
+                [row["period_energy"] for row in daily_trends]
+            )
+            for row, cum in zip(daily_trends, daily_cumulative):
+                row["cumulative_energy"] = cum
 
             return {
                 "analysis_type": "temporal_analysis",
@@ -1706,23 +1804,30 @@ class DataAnalysisTool(BaseTool):
     top_k: int = 10
     args_schema: type[BaseModel] = DataAnalysisInput
 
-    @model_validator(mode="before")
-    def add_agent(cls, data: Dict[str, Any]):
-        """Inject a TextToSQL agent before initialization"""
-        from .prompt import SQL_SYSTEM_TEMPLATE
+    def _get_agent(self):
+        """Lazily build and cache the compiled TextToSQL agent.
 
-        top_k = data.get("top_k", 10)
-        data["agent"] = TextToSQLAgent(
-            llm=_get_llm(),
-            system_prompt=SQL_SYSTEM_TEMPLATE,
-            include_tables=allowed_tables,
-            top_k=top_k,
-            ai_answer=False,
-            sample_rows_in_table_info=3,
-            max_string_length=40,
-            max_retries=2,
-        ).compile_workflow()
-        return data
+        Built on first SQL invocation rather than at construction time: the
+        TextToSQLAgent opens a DB connection (schema reflection) when created, so
+        building it eagerly made merely *constructing* this tool — and therefore
+        loading the whole agent tool set — fail whenever the DB was unreachable.
+        Deferring it keeps tool construction DB-free and avoids paying the
+        engine/reflection cost until an SQL query is actually needed.
+        """
+        if self.agent is None:
+            from .prompt import SQL_SYSTEM_TEMPLATE
+
+            self.agent = TextToSQLAgent(
+                llm=_get_llm(),
+                system_prompt=SQL_SYSTEM_TEMPLATE,
+                include_tables=allowed_tables,
+                top_k=self.top_k,
+                ai_answer=False,
+                sample_rows_in_table_info=3,
+                max_string_length=40,
+                max_retries=2,
+            ).compile_workflow()
+        return self.agent
 
     def _match_entity_name(self, query_lower: str, names: List[str]) -> Optional[str]:
         if not names:
@@ -1913,11 +2018,17 @@ class DataAnalysisTool(BaseTool):
         # PII minimization: select only id + username for the leaderboard.
         # first_name/last_name (full legal name) are direct PII and must not be
         # surfaced to the chat/LLM. username is an acceptable display handle.
+        #
+        # P4-6: a "this month" collector leaderboard measures who CONTRIBUTED
+        # (uploaded/collected) data this month, so it must filter on created_at
+        # (upload/collection timestamp, auto_now_add) — NOT recording_date,
+        # which is when the audio was originally recorded and can be far in the
+        # past (or null) for a dataset uploaded today.
         collector_rows = list(
             NoiseDataset.objects.filter(
                 collector__isnull=False,
-                recording_date__year=now.year,
-                recording_date__month=now.month,
+                created_at__year=now.year,
+                created_at__month=now.month,
             )
             .values(
                 "collector__id",
@@ -2148,7 +2259,13 @@ class DataAnalysisTool(BaseTool):
             .values(field)
             .annotate(
                 avg_db=models.Avg("noise_analysis__mean_db"),
-                sample_count=models.Count("id"),
+                # P4-4: sample_count must equal the denominator of avg_db.
+                # avg_db only averages rows whose noise_analysis.mean_db is
+                # non-null (mean_db is nullable), so counting datasets (Count(id))
+                # overstates how many values backed the average. Count the
+                # non-null mean_db values instead so the count matches the mean's
+                # denominator exactly.
+                sample_count=models.Count("noise_analysis__mean_db"),
             )
             .exclude(avg_db__isnull=True)
             .order_by("-avg_db")
@@ -2181,7 +2298,7 @@ class DataAnalysisTool(BaseTool):
         # Bound the SQL agent's llm<->tool loop depth so a runaway loop cannot
         # rack up unbounded LLM spend. Mirrors RECURSION_LIMIT in agent_workflow.
         config = {"recursion_limit": AGENT_CONFIG.get("RECURSION_LIMIT", 15)}
-        response = self.agent.invoke(
+        response = self._get_agent().invoke(
             {"messages": [HumanMessage(content=query)]}, config=config
         )
         if response and "messages" in response and response["messages"]:
@@ -2498,13 +2615,15 @@ class MLClassBalanceTool(BaseTool):
             max_entropy = math.log2(n_classes) if n_classes > 1 else 1
             normalized_entropy = entropy / max_entropy if max_entropy > 0 else 0
 
-            # Stratified split recommendation (70/15/15)
+            # Stratified split recommendation (70/15/15).
+            # P4-7: use largest-remainder allocation so train + val + test == c
+            # exactly and never exceeds the class size. Independent rounding with
+            # max(1, round(...)) over-allocated small classes (e.g. c=2 produced
+            # 1/1/1 == 3 > 2), recommending more rows than the class contains.
             split_recs = []
             for r in per_class:
                 c = r["count"]
-                train = max(1, round(c * 0.70))
-                val = max(1, round(c * 0.15))
-                test = max(1, round(c * 0.15))
+                train, val, test = stratified_split_counts(c, 0.70, 0.15, 0.15)
                 split_recs.append(
                     {
                         "label": r["label"],
@@ -2637,12 +2756,14 @@ class MLTrainTestSplitTool(BaseTool):
                 splits_per_class = []
                 for r in distribution:
                     c = r["count"]
-                    train = max(1, round(c * train_pct))
-                    test = max(1, round(c * test_pct))
-                    val = max(1, c - train - test)
-                    if val < 1:
-                        val = 1
-                        train = max(1, c - test - val)
+                    # P4-7: largest-remainder allocation guarantees
+                    # train + val + test == c exactly and never exceeds the
+                    # class size. The previous code rounded each split
+                    # independently and floored to >=1, which over-allocated
+                    # small classes (e.g. c=2 -> 1/1/1 == 3 > 2).
+                    train, val, test = stratified_split_counts(
+                        c, train_pct, val_pct, test_pct
+                    )
                     splits_per_class.append(
                         {
                             "label": str(r.get(field) or "Unknown"),
@@ -2729,7 +2850,9 @@ class MLCorrelationMatrixInput(BaseModel):
         default="both", description="Correlation method: spearman, pearson, or both"
     )
     label_column: Optional[Literal["category", "region", "class", "subclass"]] = Field(
-        default=None, description="Label column for stratified sampling"
+        default=None,
+        description="Optional label column (accepted for backward compatibility; "
+        "sampling is uniform random, not stratified)",
     )
     sample_size: int = Field(
         default=5000,
@@ -2745,7 +2868,8 @@ class MLCorrelationMatrixTool(BaseTool):
     description: str = (
         "Compute pairwise Spearman ρ and/or Pearson r between all numeric audio "
         "feature columns. Returns N×N matrix, top-10 strongest pairs, and p-values. "
-        "Samples up to 5,000 rows (stratified by label if provided) for performance."
+        "Correlations use complete-case rows (every selected feature non-null). "
+        "Randomly samples up to 5,000 rows for performance."
     )
     args_schema: Optional[type[BaseModel]] = MLCorrelationMatrixInput
 
@@ -2796,29 +2920,13 @@ class MLCorrelationMatrixTool(BaseTool):
 
             # Sample
             actual_sample = min(sample_size, total)
-            import random as _random
 
-            _random.seed(seed)
-            rng = np.random.RandomState(seed)
-
-            if label_column and total > actual_sample:
-                # Stratified sampling
-                field_map = {
-                    "category": "noise_dataset__category__name",
-                    "region": "noise_dataset__region__name",
-                    "class": "noise_dataset__class_name__name",
-                    "subclass": "noise_dataset__subclass__name",
-                }
-                field = field_map.get(label_column, "noise_dataset__category__name")
-                ids = list(
-                    qs.values_list("id", "noise_dataset_id").order_by("?")[
-                        :actual_sample
-                    ]
-                )
-            else:
-                ids = list(
-                    qs.values_list("id", flat=True).order_by("?")[:actual_sample]
-                )
+            # P4-6: sampling is order_by("?") = uniform RANDOM in every branch
+            # (no per-class quotas), so it must not be reported as "stratified".
+            # The label_column branch only changes which columns are selected; it
+            # does not stratify. We keep it as honest random sampling and label
+            # it accurately as "random" in the output metadata below.
+            ids = list(qs.values_list("id", flat=True).order_by("?")[:actual_sample])
 
             if not ids:
                 return {
@@ -2828,28 +2936,40 @@ class MLCorrelationMatrixTool(BaseTool):
                     "skip_visualization": True,
                 }
 
-            # Build data matrix
-            if isinstance(ids[0], (tuple, list)):
-                id_list = [i[0] for i in ids]
-            else:
-                id_list = list(ids)
-
-            features_qs = AudioFeature.objects.filter(id__in=id_list).values(
-                *feature_cols
-            )
+            # Build data matrix (ids is a flat list of AudioFeature primary keys)
+            features_qs = AudioFeature.objects.filter(id__in=ids).values(*feature_cols)
             rows = list(features_qs)
 
-            data_matrix = {}
-            for col in feature_cols:
-                col_data = [r.get(col) for r in rows if r.get(col) is not None]
-                data_matrix[col] = np.array(col_data, dtype=float)
-
-            # Filter to features with data
-            valid_features = [k for k, v in data_matrix.items() if len(v) >= 5]
+            # P4-1: select which features can participate (each must have enough
+            # non-null observations on its own), then align with COMPLETE-CASE
+            # rows so row i of every feature comes from the SAME dataset.
+            # The previous code dropped nulls per-column independently and then
+            # position-truncated with [:min_len] + column_stack — pairing row i
+            # of feature A with an unrelated row i of feature B and fabricating
+            # every coefficient/p-value. Correct correlation requires the paired
+            # observations to correspond to the same source row.
+            non_null_counts = {
+                col: sum(1 for r in rows if r.get(col) is not None)
+                for col in feature_cols
+            }
+            valid_features = [c for c in feature_cols if non_null_counts[c] >= 5]
             if len(valid_features) < 2:
                 return {
                     "error": "insufficient_data",
                     "reason": f"Only {len(valid_features)} features with sufficient data.",
+                    "rows_available": len(rows),
+                    "skip_visualization": True,
+                }
+
+            # Complete-case alignment over the selected features.
+            aligned_columns, min_len = complete_case_matrix(rows, valid_features)
+            if min_len < 5:
+                return {
+                    "error": "insufficient_data",
+                    "reason": (
+                        f"Only {min_len} complete-case rows (every selected "
+                        "feature non-null) found. Minimum is 5."
+                    ),
                     "rows_available": len(rows),
                     "skip_visualization": True,
                 }
@@ -2861,10 +2981,8 @@ class MLCorrelationMatrixTool(BaseTool):
             spearman_pvals = None
             pearson_pvals = None
 
-            # Min length across all features
-            min_len = min(len(data_matrix[f]) for f in valid_features)
             aligned_data = np.column_stack(
-                [data_matrix[f][:min_len] for f in valid_features]
+                [np.asarray(aligned_columns[f], dtype=float) for f in valid_features]
             )
 
             if method in ("spearman", "both"):
@@ -2897,10 +3015,12 @@ class MLCorrelationMatrixTool(BaseTool):
                             pearson_matrix[i][j] = pearson_matrix[j][i] = float(r)
                             pearson_pvals[i][j] = pearson_pvals[j][i] = float(p)
 
-            # Top-10 strongest pairs (by absolute Spearman if available, else Pearson)
-            primary_matrix = (
-                spearman_matrix if spearman_matrix is not None else pearson_matrix
-            )
+            # Top-10 strongest pairs, ranked by the matrix matching the requested
+            # method. P4-2: a `primary_matrix` was previously assigned here but
+            # never used (dead code / wrong-matrix hazard). Only the matrix(es)
+            # for the requested ``method`` are computed (the others stay None),
+            # so reading spearman first and falling back to pearson below is
+            # already consistent with the request; the dead variable is removed.
             top_pairs = []
             for i in range(n_features):
                 for j in range(i + 1, n_features):
@@ -2941,9 +3061,13 @@ class MLCorrelationMatrixTool(BaseTool):
                 "method": method,
                 "features": valid_features,
                 "n_features": n_features,
+                # sample_size = number of complete-case rows actually correlated
+                # (every selected feature non-null), so users see the real n.
                 "sample_size": min_len,
+                "n": min_len,
                 "total_available": total,
-                "sampling_method": "stratified" if label_column else "random",
+                # P4-6: order_by("?") is uniform random sampling, not stratified.
+                "sampling_method": "random",
                 "seed": seed,
                 "spearman_matrix": (
                     spearman_matrix.tolist() if spearman_matrix is not None else None
@@ -3500,39 +3624,39 @@ def get_agent_tools(mode: str = "analysis"):
     global _all_tools_cache
 
     if _all_tools_cache is None:
+        # P4-5: the full advanced ML toolset must be registered on the HAPPY
+        # path. Previously the success branch registered only a subset and the
+        # complete ML toolset existed only in the except/fallback, so in normal
+        # operation (when WebFetchTool imports fine) those advanced ML tools
+        # were never reachable. The advanced ML tools do not depend on
+        # WebFetchTool, so they belong here unconditionally; only WebFetchTool
+        # (the import that can fail) is added inside the guarded section and is
+        # the sole tool dropped by the fallback.
+        _all_tools_cache = [
+            # Data tools (both modes)
+            NoiseDatasetSearchTool(),
+            DataAnalysisTool(),
+            AudioAnalysisTool(),
+            AudioFeatureSearchTool(),
+            NoiseDetailTool(),
+            # ML tools (full advanced toolset)
+            MLDatasetProfileTool(),
+            MLFeatureStatsTool(),
+            ListMLSchemaTool(),
+            MLClassBalanceTool(),
+            MLTrainTestSplitTool(),
+            MLCorrelationMatrixTool(),
+            MLStatisticalTestTool(),
+            MLExportFeaturesTool(),
+            MLFeatureImportanceTool(),
+        ]
         try:
             from chatbot.services.web_fetch_tool import WebFetchTool
 
-            _all_tools_cache = [
-                # Data tools (both modes)
-                NoiseDatasetSearchTool(),
-                DataAnalysisTool(),
-                AudioAnalysisTool(),
-                AudioFeatureSearchTool(),
-                NoiseDetailTool(),
-                WebFetchTool(),
-                # ML tools
-                MLDatasetProfileTool(),
-                MLFeatureStatsTool(),
-                ListMLSchemaTool(),
-            ]
+            # Insert the web-fetch tool next to the other data tools.
+            _all_tools_cache.insert(5, WebFetchTool())
         except Exception as e:
-            logger.warning(f"Failed to initialize some tools: {e}")
-            _all_tools_cache = [
-                NoiseDatasetSearchTool(),
-                AudioFeatureSearchTool(),
-                NoiseDetailTool(),
-                AudioAnalysisTool(),
-                MLDatasetProfileTool(),
-                MLFeatureStatsTool(),
-                ListMLSchemaTool(),
-                MLClassBalanceTool(),
-                MLTrainTestSplitTool(),
-                MLCorrelationMatrixTool(),
-                MLStatisticalTestTool(),
-                MLExportFeaturesTool(),
-                MLFeatureImportanceTool(),
-            ]
+            logger.warning(f"WebFetchTool unavailable, continuing without it: {e}")
     return _all_tools_cache
 
 
