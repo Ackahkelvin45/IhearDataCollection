@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass
 
 TEMPORAL_KEYWORDS = ["date", "time", "period", "month", "year", "day", "week"]
@@ -12,6 +12,95 @@ MEANINGFUL_NUMERIC_KEYWORDS = [
     "level",
     "score",
 ]
+
+# ── Part-of-whole (composition) classification ─────────────────────────────────
+# Pie/donut charts are only meaningful when slices are non-negative components
+# that sum to a meaningful total. A column name must carry one of these signals
+# before its 0..1 values are treated as composition data (P5-2).
+COMPOSITION_KEYWORDS = [
+    "pct",
+    "percent",
+    "percentage",
+    "proportion",
+    "share",
+    "ratio",
+    "fraction",
+    "composition",
+    "distribution",
+    "breakdown",
+]
+
+# Metrics that frequently live in [0, 1] but are NOT parts of a whole, so they
+# must never be drawn as pie/donut slices (RMS energy, entropy, correlation,
+# mutual information, coefficients, scores, probabilities-as-magnitude). If a
+# column name matches one of these it is forced off the composition path even
+# when it also matches a COMPOSITION_KEYWORD (P5-2).
+NON_COMPOSITIONAL_KEYWORDS = [
+    "rms",
+    "energy",
+    "entropy",
+    "correlation",
+    "corr",
+    "mutual_info",
+    "mutual_information",
+    "mi_score",
+    "spearman",
+    "pearson",
+    "coefficient",
+    "coef",
+    "score",
+    "centroid",
+    "bandwidth",
+    "zcr",
+    "variance",
+    "std",
+    "stddev",
+]
+
+# Known units for unit-bearing metrics, keyed by column-name substring. Used to
+# re-attach units to axis labels and stat-card values/labels (P5-3). Only attach
+# a unit when it is known for that metric — unknown columns get no unit.
+# Order matters: more specific substrings are matched first.
+COLUMN_UNITS: List[Tuple[str, str]] = [
+    ("mean_db", "dB"),
+    ("avg_db", "dB"),
+    ("max_db", "dB"),
+    ("min_db", "dB"),
+    ("std_db", "dB"),
+    ("median_db", "dB"),
+    ("decibel", "dB"),
+    ("_db", "dB"),
+    ("centroid", "Hz"),
+    ("bandwidth", "Hz"),
+    ("rolloff", "Hz"),
+    ("frequency", "Hz"),
+    ("duration", "s"),
+]
+
+
+def unit_for_column(col: Optional[str]) -> Optional[str]:
+    """Return the known unit for a metric column, or None when unknown.
+
+    Matches on column-name substrings (case-insensitive) so e.g. ``avg_db``,
+    ``mean_db`` and ``noise_mean_db`` all resolve to ``"dB"``. Used to re-attach
+    units stripped from chart axes and stat cards (P5-3).
+    """
+    if not col:
+        return None
+    lowered = col.lower()
+    for needle, unit in COLUMN_UNITS:
+        if needle in lowered:
+            return unit
+    return None
+
+
+def label_with_unit(label: str, unit: Optional[str]) -> str:
+    """Append ``(unit)`` to a human label when a unit is known and not already present."""
+    if not unit or not label:
+        return label
+    if f"({unit})" in label:
+        return label
+    return f"{label} ({unit})"
 
 
 @dataclass
@@ -135,7 +224,7 @@ def select_chart_type(rows: list, columns: list, hint: dict) -> Optional[ChartDe
 
     # ── Categorical x-axis ─────────────────────────────────────────────────────
     if is_numeric_y:
-        if _is_ratio_data(rows, y_col):
+        if _is_composition_data(rows, y_col):
             if x_cardinality <= 6:
                 return ChartDecision(chart_type="pie_chart")
             return ChartDecision(chart_type="donut_chart")
@@ -152,24 +241,48 @@ def select_chart_type(rows: list, columns: list, hint: dict) -> Optional[ChartDe
     return None
 
 
-def _is_ratio_data(rows: list, col: str) -> bool:
+def _is_composition_data(rows: list, col: str) -> bool:
+    """Return True only when the column is a *part-of-whole* composition.
+
+    Pie/donut charts are only meaningful when slices are non-negative components
+    that sum to a meaningful total. Bare 0..1 values are NOT enough: metrics like
+    RMS energy, entropy, correlation or mutual information also live in [0, 1] but
+    are not compositions, and drawing them as pie slices misleads users (P5-2).
+
+    Requirements:
+      * the column name carries a composition signal (pct/share/proportion/…),
+      * the column name does NOT match a known non-compositional metric,
+      * all values are non-negative, and
+      * the values plausibly sum to a whole — either fractions summing to ~1.0,
+        or percentages summing to ~100.
     """
-    Returns True if column values look like proportions (0.0–1.0)
-    or percentages (0–100 summing to ~100) AND the column name
-    suggests ratio/percentage semantics.
-    """
+    lowered = (col or "").lower()
+
+    # Block known magnitude metrics that happen to fall in [0, 1].
+    if any(kw in lowered for kw in NON_COMPOSITIONAL_KEYWORDS):
+        return False
+
+    # Require an explicit part-of-whole signal in the column name.
+    if not any(kw in lowered for kw in COMPOSITION_KEYWORDS):
+        return False
+
     values = [r.get(col) for r in rows if isinstance(r.get(col), (int, float))]
     if not values:
         return False
-    # Proportions in 0.0–1.0 range — always treat as ratio data
-    if all(0.0 <= v <= 1.0 for v in values):
-        return True
-    # For 0–100 range, also require column name to suggest percentages
-    ratio_keywords = ["pct", "percent", "percentage", "proportion", "share", "ratio"]
-    if not any(kw in (col or "").lower() for kw in ratio_keywords):
+
+    # Components must be non-negative to form a meaningful whole.
+    if any(v < 0 for v in values):
         return False
+
     total = sum(values)
-    return 85 <= total <= 115  # percentage data summing to ~100
+    # Fractions summing to ~1.0, or percentages summing to ~100.
+    if all(0.0 <= v <= 1.0 for v in values) and 0.85 <= total <= 1.15:
+        return True
+    return 85 <= total <= 115
+
+
+# Backwards-compatible alias — older callers/tests may reference _is_ratio_data.
+_is_ratio_data = _is_composition_data
 
 
 # ── Chart config builder ───────────────────────────────────────────────────────
@@ -180,6 +293,28 @@ def _humanise(col_name: Optional[str]) -> str:
     if not col_name:
         return ""
     return col_name.replace("_", " ").title()
+
+
+def _coerce_numeric(v: Any) -> Optional[float]:
+    """Coerce a y-value to float, or return None when it is not a real number.
+
+    P5-6: the previous behaviour returned 0.0 for None / unparseable values,
+    which drew misleading zero-height bars (a fabricated "0" that looks like a
+    genuine measurement — especially wrong for dB where 0 is meaningful). We now
+    return None so the caller can drop the row instead of plotting a fake zero.
+    Booleans are rejected (``True``/``False`` are ints in Python but are not
+    meaningful chart magnitudes).
+    """
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    if v is None:
+        return None
+    try:
+        return float(str(v).replace(",", "").strip())
+    except (ValueError, TypeError):
+        return None
 
 
 def build_chart_config(
@@ -209,33 +344,77 @@ def build_chart_config(
     max_rows = 12
     display_rows = rows[:max_rows]
 
-    labels = [str(r.get(x_key) or f"Row {i + 1}") for i, r in enumerate(display_rows)]
+    # P5-6: pair each label with a coerced numeric value, then drop rows whose
+    # y-value is missing/non-numeric so we never fabricate a zero-height bar that
+    # looks like a genuine zero. Labels and data stay aligned because we filter
+    # the paired list, not the two arrays independently.
+    labels: List[str] = []
+    data: List[float] = []
+    dropped_non_numeric = 0
+    for i, r in enumerate(display_rows):
+        value = _coerce_numeric(r.get(y_key))
+        if value is None:
+            dropped_non_numeric += 1
+            continue
+        labels.append(str(r.get(x_key) or f"Row {i + 1}"))
+        data.append(value)
 
-    def _to_float(v: Any) -> float:
-        if isinstance(v, (int, float)):
-            return float(v)
-        try:
-            return float(str(v or "0").replace(",", ""))
-        except (ValueError, TypeError):
-            return 0.0
+    unit = unit_for_column(y_key)
+    title = label_with_unit(_humanise(y_key) or "Results", unit)
 
-    data = [_to_float(r.get(y_key)) for r in display_rows]
+    # P5-4: surface truncation so users know data was capped, not exhaustive.
+    # ChartDecision truncation (sorted top-N) and the hard max_rows cap are both
+    # accounted for; the smaller of the two effective limits is what the user
+    # actually sees.
+    truncate_limit = (
+        decision.truncate.limit if (decision and decision.truncate) else None
+    )
+    shown = len(data)
+    is_truncated = total_before_truncate > shown or dropped_non_numeric > 0
+    if truncate_limit is not None and total_before_truncate > truncate_limit:
+        title = (
+            f"{title} (Top {min(truncate_limit, max_rows)} of {total_before_truncate})"
+        )
+    elif total_before_truncate > max_rows:
+        title = f"{title} (Top {shown} of {total_before_truncate})"
 
-    title = _humanise(y_key) or "Results"
-    if decision and decision.truncate:
-        title = f"{title} (Top {decision.truncate.limit} of {total_before_truncate})"
+    caption = None
+    if total_before_truncate > shown + dropped_non_numeric:
+        caption = f"Showing top {shown} of {total_before_truncate}"
+    if dropped_non_numeric:
+        note = f"{dropped_non_numeric} row(s) omitted (non-numeric value)"
+        caption = f"{caption}; {note}" if caption else note
+
+    x_label = label_with_unit(_humanise(x_key), unit_for_column(x_key))
+    y_label = label_with_unit(_humanise(y_key), unit)
+    description = (
+        f"{_CHART_TYPE_LABELS.get(chart_type, 'Chart')} for {y_label} by {x_label}"
+    )
+
+    frontend_data: Dict[str, Any] = {
+        "type": chart_type,
+        "title": title,
+        "labels": labels,
+        "data": data,
+        "colors": None,
+        "description": description,
+        # P5-3: units travel alongside the data so the frontend can label axes.
+        "y_unit": unit,
+        "y_label": y_label,
+        "x_label": x_label,
+        # P5-4: explicit truncation metadata for the frontend to render.
+        "total_count": total_before_truncate,
+        "shown_count": shown,
+        "truncated": is_truncated,
+        "dropped_rows": dropped_non_numeric,
+    }
+    if caption:
+        frontend_data["caption"] = caption
 
     return {
         "visualization_type": chart_type,
         "visualization_name": _CHART_TYPE_LABELS.get(chart_type, "Chart"),
-        "frontend_data": {
-            "type": chart_type,
-            "title": title,
-            "labels": labels,
-            "data": data,
-            "colors": None,
-            "description": f"{_CHART_TYPE_LABELS.get(chart_type, 'Chart')} for {_humanise(y_key)} by {_humanise(x_key)}",
-        },
+        "frontend_data": frontend_data,
     }
 
 
@@ -244,6 +423,7 @@ def _build_table_config(
 ) -> Dict[str, Any]:
     """Build a table visualization config when chart axes cannot be determined."""
     max_rows = 20
+    total_count = len(rows)
     display_rows = rows[:max_rows]
     table_rows = [{c: r.get(c) for c in columns} for r in display_rows]
 
@@ -264,18 +444,27 @@ def _build_table_config(
         else "Results"
     )
 
+    # P5-4: surface truncation so the frontend can show "Showing N of M rows".
+    shown = len(table_rows)
+    table_block: Dict[str, Any] = {
+        "columns": columns,
+        "rows": table_rows,
+        "title": title,
+        "pagination": pagination,
+        "total_count": total_count,
+        "shown_count": shown,
+        "truncated": total_count > shown,
+    }
+    if total_count > shown:
+        table_block["caption"] = f"Showing {shown} of {total_count} rows"
+
     return {
         "visualization_type": "table",
         "visualization_name": "Table",
         "frontend_data": {
             "type": "none",
             "title": title,
-            "table": {
-                "columns": columns,
-                "rows": table_rows,
-                "title": title,
-                "pagination": pagination,
-            },
+            "table": table_block,
             "description": "Table results",
         },
     }

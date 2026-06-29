@@ -1605,11 +1605,21 @@ class UnifiedAudioDataChat {
 
         // Prefer explicit data shipped from backend
         if (visualizationData?.frontend_data?.labels && visualizationData?.frontend_data?.data) {
+            const fd = visualizationData.frontend_data;
             return {
-                labels: visualizationData.frontend_data.labels,
-                data: visualizationData.frontend_data.data,
-                colors: visualizationData.frontend_data.colors || this.generateColors(visualizationData.frontend_data.labels.length),
-                title: visualizationData.frontend_data.title || visualizationData.frontend_data.name || 'Results'
+                labels: fd.labels,
+                data: fd.data,
+                colors: fd.colors || this.generateColors(fd.labels.length),
+                title: fd.title || fd.name || 'Results',
+                // P5-5: precomputed [min,q1,median,q3,max] per group so the
+                // box_plot renderer draws a real box plot instead of silently
+                // degrading to a bar chart and mislabeling it as a distribution.
+                boxPlotData: fd.box_plot_data || undefined,
+                // P5-3 / P5-4: surface unit + truncation metadata to the renderer.
+                yUnit: fd.y_unit || undefined,
+                caption: fd.caption || undefined,
+                truncated: fd.truncated || false,
+                totalCount: fd.total_count
             };
         }
 
@@ -1906,6 +1916,15 @@ class UnifiedAudioDataChat {
             const cells = columns.map(col => `<td style="padding:6px 8px; border-bottom:1px solid #f3f4f6; font-size:12px; color:#111827;">${this.escapeHtml(String(row?.[col] ?? ''))}</td>`).join('');
             return `<tr>${cells}</tr>`;
         }).join('');
+        // P5-4: show a visible "Showing N of M rows" caption when the table was
+        // truncated so users do not assume they are seeing every row.
+        const caption = tableData.caption
+            || (tableData.truncated && tableData.total_count
+                ? `Showing ${rows.length} of ${tableData.total_count} rows`
+                : '');
+        const captionHtml = caption
+            ? `<div style="padding:6px 10px; font-size:11px; color:#6b7280; border-top:1px solid #f3f4f6; font-style:italic;">${this.escapeHtml(String(caption))}</div>`
+            : '';
         return `
             <div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:10px; overflow:hidden; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
                 <div style="padding:8px 10px; font-weight:600; font-size:12px; color:#374151; border-bottom:1px solid #e5e7eb;">${this.escapeHtml(String(tableTitle))}</div>
@@ -1915,6 +1934,7 @@ class UnifiedAudioDataChat {
                         <tbody>${body}</tbody>
                     </table>
                 </div>
+                ${captionHtml}
             </div>
         `;
     }
@@ -1998,6 +2018,7 @@ class UnifiedAudioDataChat {
                     <div style="background:#fff; border-radius:0.5rem; padding:0.75rem;">
                         <canvas id="${chartId}" width="400" height="200"></canvas>
                     </div>
+                    ${widget.data?.caption ? `<p style="font-size:0.75rem; color:rgba(255,255,255,0.7); margin-top:0.4rem; font-style:italic;">${this.escapeHtml(widget.data.caption)}</p>` : ''}
                     ${widget.data?.description ? `<p style="font-size:0.8rem; color:rgba(255,255,255,0.8); margin-top:0.5rem;">${this.escapeHtml(widget.data.description)}</p>` : ''}
                 `;
                 container.appendChild(widgetDiv);
@@ -2609,6 +2630,19 @@ class UnifiedAudioDataChat {
         return div.innerHTML;
     }
 
+    escapeMarkdownSource(text) {
+        // Neutralise raw HTML in the markdown source before formatMarkdown's
+        // regex replacements add their own safe tags. Only the structural HTML
+        // metacharacters are escaped so markdown syntax (* _ # ` | - >) is left
+        // intact for the formatter. Note: '>' is escaped, so blockquote markers
+        // ('> quote') are written as '&gt; quote' here and matched accordingly.
+        if (text == null) return '';
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
     formatMarkdown(text) {
         // Fast markdown formatting optimized for streaming
         if (!text || typeof text !== 'string') {
@@ -2630,6 +2664,17 @@ class UnifiedAudioDataChat {
             formattedText = formattedText.replace(/^\s*Recommended Chart[\s\S]*?(?=\n\s*\n|$)/gmi, '');
             formattedText = formattedText.replace(/^\s*A (bar|line|pie|scatter|box|area|heatmap) chart.*$/gmi, '');
             formattedText = formattedText.replace(/^\s*Bar Chart.*$/gmi, '');
+
+            // SECURITY (F18): Escape the raw source text BEFORE any markdown
+            // replacements add safe tags. The assistant text (and echoed DB values
+            // like dataset names) may contain HTML; escaping here neutralises any
+            // injected <script>/<img onerror=...> so it renders as inert text while
+            // real markdown (**bold**, `code`, lists, tables) still formats below.
+            // The chart-JSON stripping above runs on the raw text first because its
+            // patterns (```json, ###) are unaffected by escaping. The table helpers
+            // (formatTables/formatDataTables/createDataTable) now consume already-
+            // escaped text and therefore no longer call escapeHtml on their cells.
+            formattedText = this.escapeMarkdownSource(formattedText);
 
             // Process tables first (before other formatting)
             formattedText = this.formatTables(formattedText);
@@ -2655,8 +2700,8 @@ class UnifiedAudioDataChat {
                 [/^-\s+(.+)$/gm, '<li class="ml-4 mb-1 list-disc">$1</li>'],
                 [/^\*\s+(.+)$/gm, '<li class="ml-4 mb-1 list-disc">$1</li>'],
                 [/^\d+\.\s+(.+)$/gm, '<li class="ml-4 mb-1 list-decimal">$1</li>'],
-                // Blockquotes
-                [/^>\s+(.+)$/gm, '<blockquote class="border-l-4 border-gray-300 pl-4 py-2 my-4 bg-gray-50 italic text-gray-700">$1</blockquote>'],
+                // Blockquotes ('>' is escaped to '&gt;' by escapeMarkdownSource)
+                [/^&gt;\s+(.+)$/gm, '<blockquote class="border-l-4 border-gray-300 pl-4 py-2 my-4 bg-gray-50 italic text-gray-700">$1</blockquote>'],
                 // Horizontal rules
                 [/^---$/gm, '<hr class="my-6 border-gray-300">'],
                 // Line breaks
@@ -2727,7 +2772,7 @@ class UnifiedAudioDataChat {
 
                     // Add headers
                     headers.forEach(header => {
-                        tableHTML += `<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200">${this.escapeHtml(header)}</th>`;
+                        tableHTML += `<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200">${header}</th>`;
                     });
 
                     tableHTML += `
@@ -2747,7 +2792,7 @@ class UnifiedAudioDataChat {
                                 const isNumeric = /^[\d.,\s%$-]+$/.test(cell.trim());
                                 const alignClass = isNumeric ? 'text-right' : 'text-left';
 
-                                tableHTML += `<td class="px-4 py-3 text-sm text-gray-900 ${alignClass} border-b border-gray-100">${this.escapeHtml(cell)}</td>`;
+                                tableHTML += `<td class="px-4 py-3 text-sm text-gray-900 ${alignClass} border-b border-gray-100">${cell}</td>`;
                             }
                         });
 
@@ -2857,8 +2902,8 @@ class UnifiedAudioDataChat {
 
             tableHTML += `
                 <tr class="${rowClass}">
-                    <td class="px-4 py-3 text-sm font-medium text-gray-700 w-1/2">${this.escapeHtml(item.key)}</td>
-                    <td class="px-4 py-3 text-sm text-gray-900 ${valueClass}">${this.escapeHtml(item.value)}</td>
+                    <td class="px-4 py-3 text-sm font-medium text-gray-700 w-1/2">${item.key}</td>
+                    <td class="px-4 py-3 text-sm text-gray-900 ${valueClass}">${item.value}</td>
                 </tr>
             `;
         });

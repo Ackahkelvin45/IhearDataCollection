@@ -13,6 +13,8 @@ from .chart_builder import (
     auto_detect_axes,
     resolve_chart,
     ChartDecision,
+    unit_for_column,
+    label_with_unit,
 )
 
 
@@ -210,6 +212,43 @@ def _humanise(col_name: Optional[str]) -> str:
     return col_name.replace("_", " ").title()
 
 
+def _quartile(sorted_values: List[float], q: float) -> float:
+    """Linear-interpolation quantile, matching the frontend calculateQuartile."""
+    n = len(sorted_values)
+    if n == 0:
+        return 0.0
+    if n == 1:
+        return float(sorted_values[0])
+    pos = (n - 1) * q
+    base = int(pos)
+    rest = pos - base
+    if base + 1 < n:
+        return float(
+            sorted_values[base] + rest * (sorted_values[base + 1] - sorted_values[base])
+        )
+    return float(sorted_values[base])
+
+
+def _box_stats(values: List[float]) -> Optional[Dict[str, float]]:
+    """Compute box-plot statistics (min/q1/median/q3/max) for a group of values.
+
+    Returns None when there are no values so the caller can omit the group rather
+    than emit a degenerate box (P5-5: never fabricate a box from nothing).
+    """
+    numeric = [float(v) for v in values if isinstance(v, (int, float))]
+    if not numeric:
+        return None
+    s = sorted(numeric)
+    return {
+        "min": s[0],
+        "q1": _quartile(s, 0.25),
+        "median": _quartile(s, 0.5),
+        "q3": _quartile(s, 0.75),
+        "max": s[-1],
+        "count": len(s),
+    }
+
+
 # Shared helpers — small building blocks shared by all decompose functions
 
 
@@ -227,20 +266,33 @@ def _build_stat_widget(
 
 
 def _build_table_widget(
-    widget_id: str, title: str, rows: List[Dict[str, Any]], priority: int
+    widget_id: str,
+    title: str,
+    rows: List[Dict[str, Any]],
+    priority: int,
+    total_count: Optional[int] = None,
 ) -> Dict[str, Any]:
+    # P5-4: when the caller passes a total_count larger than the rows shown, the
+    # table was truncated — surface a visible "Showing N of M" caption and a
+    # machine-readable truncated/total_count flag so users know data was cut.
+    shown = len(rows)
+    total = total_count if total_count is not None else shown
+    table: Dict[str, Any] = {
+        "columns": list(rows[0].keys()) if rows else [],
+        "rows": rows,
+        "title": title,
+        "total_count": total,
+        "shown_count": shown,
+        "truncated": total > shown,
+    }
+    if total > shown:
+        table["caption"] = f"Showing {shown} of {total} rows"
     return {
         "id": widget_id,
         "type": "table",
         "title": title,
         "priority": priority,
-        "data": {
-            "table": {
-                "columns": list(rows[0].keys()) if rows else [],
-                "rows": rows,
-                "title": title,
-            }
-        },
+        "data": {"table": table},
         "config": {},
     }
 
@@ -543,11 +595,15 @@ def _decompose_grouped(result: Dict[str, Any]) -> Dict[str, Any]:
         _min = round(min(values), 2)
     else:
         _avg = _max = _min = 0
+    # P5-3: re-attach the metric's known unit (e.g. dB) to the stat labels so a
+    # bare number like 62 is unambiguous.
+    y_unit = unit_for_column(y_key)
+    y_metric = label_with_unit(_humanise(y_key), y_unit)
     stats = {
         f"Total {group_label}s": n,
-        f"Average {_humanise(y_key)}": _avg,
-        f"Highest {_humanise(y_key)}": _max,
-        f"Lowest {_humanise(y_key)}": _min,
+        f"Average {y_metric}": _avg,
+        f"Highest {y_metric}": _max,
+        f"Lowest {y_metric}": _min,
     }
     widgets = [
         _build_stat_widget(f"stats_{analysis_type}", "Summary Statistics", stats, 0)
@@ -632,8 +688,15 @@ def _decompose_ranked(result: Dict[str, Any]) -> Dict[str, Any]:
     top_row = rows[0] if rows else {}
     top_label = str(top_row.get(x_key, ""))
     top_value = top_row.get(y_key, "")
+    # P5-3: append the metric's known unit (e.g. dB) to the spotlight value.
+    y_unit = unit_for_column(y_key)
+    top_value_str = (
+        f"{top_value} {y_unit}".strip()
+        if y_unit and top_value != ""
+        else f"{top_value}"
+    )
     stats = {
-        "#1": f"{top_label}: {top_value}",
+        "#1": f"{top_label}: {top_value_str}",
         "Total items": n,
     }
     widgets = [_build_stat_widget(f"stats_{analysis_type}", "Top Result", stats, 0)]
@@ -697,23 +760,38 @@ def _decompose_statistical(result: Dict[str, Any]) -> Dict[str, Any]:
             )
         )
 
-    # Box plot chart if distribution data available
+    # Box plot chart if distribution data available.
+    # P5-5: emit a COMPLETE box-plot spec (precomputed min/q1/median/q3/max per
+    # group as box_plot_data) so the frontend renders a true box plot instead of
+    # silently degrading to a mislabeled bar chart. Groups without raw values are
+    # omitted (never fabricated). If NO group has raw values we fall back to a bar
+    # chart of group means but label it honestly as a mean comparison — not a box
+    # plot — and keep the per-group stats available.
     if distribution_data:
         chart_data = []
         chart_labels = []
+        box_plot_data: List[List[float]] = []
         for name, data in distribution_data.items():
             if isinstance(data, dict) and data.get("decibel_values"):
                 vals = data["decibel_values"]
+                box = _box_stats(vals)
+                if box is None:
+                    continue
                 chart_labels.append(name)
+                box_plot_data.append(
+                    [box["min"], box["q1"], box["median"], box["q3"], box["max"]]
+                )
                 chart_data.append(
                     {
                         "label": name,
                         "data": vals,
+                        "box_stats": box,
                         "avg": data.get("avg", 0),
                         "max": data.get("max", 0),
                         "min": data.get("min", 0),
                     }
                 )
+
         if chart_data:
             widgets.append(
                 {
@@ -726,11 +804,46 @@ def _decompose_statistical(result: Dict[str, Any]) -> Dict[str, Any]:
                         "title": f"Decibel Distribution by {group_by.title()}",
                         "labels": chart_labels,
                         "data": [d["data"] for d in chart_data],
+                        # Precomputed [min, q1, median, q3, max] per group — what
+                        # the frontend boxplot renderer consumes directly.
+                        "box_plot_data": box_plot_data,
+                        "box_stats": [d["box_stats"] for d in chart_data],
+                        "y_unit": "dB",
                         "description": f"Distribution of decibel levels across {len(chart_labels)} groups",
                     },
                     "config": {},
                 }
             )
+        else:
+            # No raw distributions available — show an honest mean comparison bar
+            # chart rather than a box plot we cannot actually draw.
+            mean_labels = []
+            mean_values = []
+            for name, data in distribution_data.items():
+                if isinstance(data, dict) and data.get("avg") is not None:
+                    mean_labels.append(name)
+                    mean_values.append(data.get("avg"))
+            if mean_labels:
+                widgets.append(
+                    {
+                        "id": f"chart_{analysis_type}",
+                        "type": "bar_chart",
+                        "title": f"Mean Decibel by {group_by.title()}",
+                        "priority": 1,
+                        "data": {
+                            "type": "bar_chart",
+                            "title": f"Mean Decibel by {group_by.title()}",
+                            "labels": mean_labels,
+                            "data": mean_values,
+                            "y_unit": "dB",
+                            "description": (
+                                "Mean decibel level per group (raw distributions "
+                                "unavailable, so a box plot cannot be drawn)"
+                            ),
+                        },
+                        "config": {},
+                    }
+                )
 
     # Table from rows if available
     if rows:
@@ -1106,7 +1219,11 @@ def _decompose_export_features(result: Dict[str, Any]) -> Dict[str, Any]:
     if rows and columns:
         widgets.append(
             _build_table_widget(
-                "export_table", "Exported Data (Preview)", rows[:20], priority
+                "export_table",
+                "Exported Data (Preview)",
+                rows[:20],
+                priority,
+                total_count=len(rows),
             )
         )
 
