@@ -502,7 +502,17 @@ class NoiseAnalysis(models.Model):
     )
 
     # Statistical features
-    mean_db = models.FloatField(help_text="Mean decibel level", null=True)
+    # P6-5: mean_db is the hot analytics column — the data-insights tools sort
+    # ("-avg_decibel"), aggregate (Avg/Max/Min), filter (mean_db__isnull) and
+    # order by it for the percentile_cont box-plot distribution. Index it so the
+    # decibel ranking / grouping / distribution paths don't full-scan
+    # data_noiseanalysis. (recording_date on NoiseDataset and the grouping FKs —
+    # region/category/community/microphone_type/time_of_day/collector — are
+    # already indexed: FKs get an index automatically and recording_date got one
+    # in migration 0030.)
+    mean_db = models.FloatField(
+        help_text="Mean decibel level", null=True, db_index=True
+    )
     max_db = models.FloatField(help_text="Maximum decibel level", null=True)
     min_db = models.FloatField(help_text="Minimum decibel level", null=True)
     std_db = models.FloatField(

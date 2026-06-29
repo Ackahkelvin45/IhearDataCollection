@@ -48,6 +48,14 @@ QUERY_TIMEOUT = 30  # seconds
 MAX_RESULTS_LIMIT = 1000
 DEFAULT_RESULTS_LIMIT = 100
 
+# P6-4: cap on how many raw per-row decibel values the distribution branch
+# materializes into Python per group. The box-plot five-number summary is now
+# computed server-side (exact, via percentile_cont), so this bounded sample is
+# only a representative point cloud for any chart that overlays raw points —
+# it does NOT affect the rendered box statistics. Bounds memory/transfer
+# regardless of dataset size.
+DISTRIBUTION_SAMPLE_LIMIT = 500
+
 # Valid field mappings to prevent field reference errors
 VALID_AUDIO_FEATURE_FIELDS = {
     "rms_energy",
@@ -327,6 +335,27 @@ from data.models import (
     BulkReprocessingTask,
 )
 from core.models import Region, Community, Category, Class, SubClass
+
+
+class PercentileCont(models.Aggregate):
+    """Postgres ``percentile_cont`` ordered-set aggregate (continuous percentile).
+
+    Renders ``percentile_cont(<fraction>) WITHIN GROUP (ORDER BY <expression>)``.
+    Modeled as a Django ``Aggregate`` (rather than RawSQL) so the ORM treats it
+    as an aggregate and does NOT add it to the GROUP BY clause. ``percentile_cont``
+    interpolates linearly between adjacent ordered values, which is exactly the
+    method used by the frontend / widget_composer ``_quartile``, so server-side
+    quartiles/median match the previous "materialize every row then quartile in
+    Python" result. Used by P6-4 to bound distribution-analysis memory.
+    """
+
+    function = "PERCENTILE_CONT"
+    name = "PercentileCont"
+    template = "%(function)s(%(percentile)s) WITHIN GROUP (ORDER BY %(expressions)s)"
+    output_field = models.FloatField()
+
+    def __init__(self, expression, percentile, **extra):
+        super().__init__(expression, percentile=percentile, **extra)
 
 
 # -----------------------------------------------------------------------------
@@ -1322,37 +1351,117 @@ class AudioAnalysisTool(BaseTool):
         except Exception as e:
             return {"error": f"Correlation analysis failed: {str(e)}"}
 
+    def _decibel_distribution_by_group(self, queryset, group_field):
+        """Compute the per-group decibel distribution entirely in the database.
+
+        Returns ``{group_name: {decibel_values, count, avg, max, min, box_stats}}``
+        — the exact dict shape the charts (widget_composer ``_decompose_statistical``)
+        and the table builder (views) consume.
+
+        P6-4: the previous implementation pulled EVERY ``mean_db`` row for the
+        filtered dataset into Python and grouped/aggregated it there, so memory
+        scaled with the row count. Here, ``count``/``avg``/``max``/``min`` come
+        from ``GROUP BY`` aggregates and ``q1``/``median``/``q3`` come from
+        ``percentile_cont`` (continuous percentile = linear interpolation), which
+        matches the frontend / ``_box_stats`` quartile method exactly — so the
+        rendered box plot is numerically unchanged. ``decibel_values`` is kept
+        for backward compatibility but is now a BOUNDED representative sample
+        (capped at ``DISTRIBUTION_SAMPLE_LIMIT`` per group); the rendered box
+        statistics come from the exact precomputed ``box_stats``, not from this
+        sample, so capping it changes no statistical result.
+        """
+        from django.db.models import Avg, Count, Max, Min
+
+        # percentile_cont(<q>) WITHIN GROUP (ORDER BY mean_db) is an ordered-set
+        # aggregate. It MUST be modeled as a Django Aggregate (not RawSQL) so the
+        # ORM recognizes it as an aggregate and keeps it OUT of the GROUP BY
+        # clause — RawSQL is opaque to Django and gets grouped on, producing
+        # invalid SQL. PercentileCont (defined at module scope) renders the
+        # WITHIN GROUP ordered-set form correctly for Postgres.
+        def _pct(q):
+            return PercentileCont("noise_analysis__mean_db", q)
+
+        agg_qs = (
+            queryset.filter(
+                **{
+                    f"{group_field}__isnull": False,
+                    "noise_analysis__mean_db__isnull": False,
+                }
+            )
+            .values(group_field)
+            .annotate(
+                count=Count("id"),
+                avg=Avg("noise_analysis__mean_db"),
+                max=Max("noise_analysis__mean_db"),
+                min=Min("noise_analysis__mean_db"),
+                q1=_pct(0.25),
+                median=_pct(0.5),
+                q3=_pct(0.75),
+            )
+        )
+
+        distribution_data = {}
+        for grp in agg_qs:
+            name = grp[group_field]
+            count = grp["count"]
+            min_v = float(grp["min"]) if grp["min"] is not None else 0.0
+            max_v = float(grp["max"]) if grp["max"] is not None else 0.0
+            box_stats = {
+                "min": min_v,
+                "q1": float(grp["q1"]) if grp["q1"] is not None else min_v,
+                "median": (
+                    float(grp["median"]) if grp["median"] is not None else min_v
+                ),
+                "q3": float(grp["q3"]) if grp["q3"] is not None else max_v,
+                "max": max_v,
+                "count": count,
+            }
+            # Bounded representative sample of raw values (not used for the box
+            # statistics, which are exact above). Capped so memory/transfer do
+            # not scale with the group's true row count.
+            sample = list(
+                queryset.filter(
+                    **{
+                        group_field: name,
+                        "noise_analysis__mean_db__isnull": False,
+                    }
+                ).values_list("noise_analysis__mean_db", flat=True)[
+                    :DISTRIBUTION_SAMPLE_LIMIT
+                ]
+            )
+            decibel_values = [float(v) for v in sample if v is not None]
+            distribution_data[name] = {
+                "decibel_values": decibel_values,
+                "count": count,
+                "avg": float(grp["avg"]) if grp["avg"] is not None else 0.0,
+                "max": max_v,
+                "min": min_v,
+                # Exact server-computed five-number summary; consumed directly by
+                # the box-plot renderer so the bounded sample above never affects
+                # the drawn box.
+                "box_stats": box_stats,
+            }
+        return distribution_data
+
     def _statistical_analysis(self, queryset, group_by, query):
         """Statistical distribution analysis with actual data for box plots"""
         try:
             query_lower = query.lower()
 
-            # For distribution queries, provide actual data values for box plots
+            # For distribution queries, provide box-plot statistics for charts.
+            # P6-4: compute the per-group distribution SERVER-SIDE (count/avg/
+            # max/min plus q1/median/q3 via Postgres percentile_cont) instead of
+            # pulling every mean_db row into Python and grouping it there. Memory
+            # and transfer are now bounded by the number of GROUPS, not the row
+            # count. The precomputed box statistics use percentile_cont with the
+            # SAME linear-interpolation method as the frontend / widget_composer
+            # _quartile, so the rendered box plot is numerically identical to the
+            # previous "materialize every row" approach.
             if "distribution" in query_lower and group_by:
                 if group_by == "category":
-                    rows = queryset.filter(
-                        category__name__isnull=False,
-                        noise_analysis__mean_db__isnull=False,
-                    ).values("category__name", "noise_analysis__mean_db")
-
-                    grouped = {}
-                    for row in rows:
-                        name = row["category__name"]
-                        grouped.setdefault(name, []).append(
-                            float(row["noise_analysis__mean_db"])
-                        )
-
-                    distribution_data = {
-                        name: {
-                            "decibel_values": values,
-                            "count": len(values),
-                            "avg": sum(values) / len(values),
-                            "max": max(values),
-                            "min": min(values),
-                        }
-                        for name, values in grouped.items()
-                    }
-
+                    distribution_data = self._decibel_distribution_by_group(
+                        queryset, "category__name"
+                    )
                     return {
                         "analysis_type": "statistical_distribution",
                         "grouped_by": group_by,
@@ -1363,29 +1472,9 @@ class AudioAnalysisTool(BaseTool):
                     }
 
                 elif group_by == "region":
-                    rows = queryset.filter(
-                        region__name__isnull=False,
-                        noise_analysis__mean_db__isnull=False,
-                    ).values("region__name", "noise_analysis__mean_db")
-
-                    grouped = {}
-                    for row in rows:
-                        name = row["region__name"]
-                        grouped.setdefault(name, []).append(
-                            float(row["noise_analysis__mean_db"])
-                        )
-
-                    distribution_data = {
-                        name: {
-                            "decibel_values": values,
-                            "count": len(values),
-                            "avg": sum(values) / len(values),
-                            "max": max(values),
-                            "min": min(values),
-                        }
-                        for name, values in grouped.items()
-                    }
-
+                    distribution_data = self._decibel_distribution_by_group(
+                        queryset, "region__name"
+                    )
                     return {
                         "analysis_type": "statistical_distribution",
                         "grouped_by": group_by,

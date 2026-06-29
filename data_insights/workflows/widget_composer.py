@@ -772,25 +772,39 @@ def _decompose_statistical(result: Dict[str, Any]) -> Dict[str, Any]:
         chart_labels = []
         box_plot_data: List[List[float]] = []
         for name, data in distribution_data.items():
-            if isinstance(data, dict) and data.get("decibel_values"):
-                vals = data["decibel_values"]
+            if not isinstance(data, dict):
+                continue
+            # P6-4: prefer the exact server-computed five-number summary
+            # (box_stats, via percentile_cont) when the tool provides it, so the
+            # box plot is drawn from precise quartiles instead of being
+            # recomputed from a (now bounded) raw-value sample. Fall back to
+            # computing from decibel_values for any producer that omits box_stats.
+            precomputed = data.get("box_stats")
+            vals = data.get("decibel_values") or []
+            if isinstance(precomputed, dict) and all(
+                k in precomputed for k in ("min", "q1", "median", "q3", "max")
+            ):
+                box = precomputed
+            elif vals:
                 box = _box_stats(vals)
-                if box is None:
-                    continue
-                chart_labels.append(name)
-                box_plot_data.append(
-                    [box["min"], box["q1"], box["median"], box["q3"], box["max"]]
-                )
-                chart_data.append(
-                    {
-                        "label": name,
-                        "data": vals,
-                        "box_stats": box,
-                        "avg": data.get("avg", 0),
-                        "max": data.get("max", 0),
-                        "min": data.get("min", 0),
-                    }
-                )
+            else:
+                box = None
+            if box is None:
+                continue
+            chart_labels.append(name)
+            box_plot_data.append(
+                [box["min"], box["q1"], box["median"], box["q3"], box["max"]]
+            )
+            chart_data.append(
+                {
+                    "label": name,
+                    "data": vals,
+                    "box_stats": box,
+                    "avg": data.get("avg", 0),
+                    "max": data.get("max", 0),
+                    "min": data.get("min", 0),
+                }
+            )
 
         if chart_data:
             widgets.append(

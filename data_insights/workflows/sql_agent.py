@@ -161,6 +161,13 @@ def create_readonly_engine(
     collectors — it is only writes that are blocked. The Django ORM connection
     and the LangGraph PostgresSaver checkpointer use SEPARATE connections and
     remain writable; this only affects the SQL-agent engine.
+
+    NOTE (P6-2/P6-3): a fresh engine means a fresh connection pool. Prefer
+    ``get_readonly_engine(...)`` (below), which memoizes one engine per
+    (user, host, port, name) target so repeated agent / pagination requests
+    share a single pool instead of churning new pools (and leaking connections).
+    This function still builds a NEW engine on each call and is kept for callers
+    that explicitly need an isolated engine (and for the cache to delegate to).
     """
     ro_user, ro_password = _resolve_readonly_db_credentials(db_user, db_password)
     timeout_ms = max(1, _get_statement_timeout_seconds()) * 1000
@@ -180,6 +187,41 @@ def create_readonly_engine(
         finally:
             cursor.close()
 
+    return engine
+
+
+# Module-level cache of read-only engines keyed by the RESOLVED read-only
+# target (ro_user, host, port, name). One SQLAlchemy engine == one connection
+# pool, so memoizing here means repeated TextToSQLAgent construction and
+# pagination re-execution reuse a single pool instead of creating (and, in the
+# pagination path, leaking) a new pool per request (P6-2/P6-3). Engines are
+# never shared across different credentials/targets — the resolved read-only
+# username is part of the key, so a credentials change yields a distinct engine.
+_READONLY_ENGINE_CACHE: Dict[tuple, Engine] = {}
+
+
+def get_readonly_engine(
+    db_user: str,
+    db_password: str,
+    db_host: str,
+    db_port: int,
+    db_name: str,
+) -> Engine:
+    """Return a cached strictly read-only engine for the given DB target.
+
+    Reuses one engine (one connection pool) per (resolved-read-only-user, host,
+    port, name) so repeated callers don't churn pools. The per-connection
+    read-only + statement_timeout enforcement (Phase 2) is fully preserved — it
+    lives on the engine built by ``create_readonly_engine`` and therefore applies
+    to every connection drawn from the cached pool. Distinct credentials/targets
+    get distinct engines (never shared).
+    """
+    ro_user, _ro_password = _resolve_readonly_db_credentials(db_user, db_password)
+    key = (ro_user, db_host, int(db_port), db_name)
+    engine = _READONLY_ENGINE_CACHE.get(key)
+    if engine is None:
+        engine = create_readonly_engine(db_user, db_password, db_host, db_port, db_name)
+        _READONLY_ENGINE_CACHE[key] = engine
     return engine
 
 
@@ -251,6 +293,12 @@ class SQLDatabaseWrapper(SQLDatabase):
         self._cached_table_names = None
         self._cached_dialect = self._engine.dialect.name
         self._cached_sample_rows = {}
+        # P6-1: memoize the fully-formatted table_info string per resolved
+        # table-name set. For a fixed schema + allowed-table set the rendered
+        # CREATE TABLE + sample-row block is static, so call_llm can stop
+        # reflecting tables and running a sample SELECT per table on every LLM
+        # turn. Keyed by the sorted tuple of requested table names (None -> all).
+        self._cached_table_info: Dict[tuple, str] = {}
 
         self._dialect_schema_param = self._get_dialect_schema_param()
 
@@ -296,6 +344,16 @@ class SQLDatabaseWrapper(SQLDatabase):
     def get_table_info(self, table_names: Optional[List[str]] = None) -> str:
         all_table_names = self.get_usable_table_names()
         table_names = table_names or list(all_table_names)
+
+        # P6-1: serve the memoized formatted schema when caching is enabled and
+        # this exact table-name set was already rendered. This avoids
+        # re-reflecting tables and re-running a sample SELECT per table on every
+        # LLM turn; the rendered content (including Phase 3 audio-column masking)
+        # is byte-identical to recomputing it.
+        cache_key = tuple(sorted(table_names))
+        if self._enable_cache and cache_key in self._cached_table_info:
+            return self._cached_table_info[cache_key]
+
         needs_reflection = [t for t in table_names if t not in self._reflected_tables]
         if needs_reflection:
             self.reflect_tables(needs_reflection)
@@ -352,6 +410,8 @@ class SQLDatabaseWrapper(SQLDatabase):
             tables.append(table_info)
         tables.sort()
         final_str = "\n\n".join(tables)
+        if self._enable_cache:
+            self._cached_table_info[cache_key] = final_str
         return final_str
 
     def _get_sample_rows(self, table: Table) -> str:
@@ -609,7 +669,13 @@ class TextToSQLAgent:
         # regex/SELECT-only guard (P2-1). Uses dedicated read-only credentials
         # when configured. Does NOT affect the Django ORM or the LangGraph
         # checkpointer, which use separate (writable) connections.
-        engine = create_readonly_engine(db_user, db_password, db_host, db_port, db_name)
+        #
+        # P6-2: reuse a single cached engine (one connection pool) per DB target
+        # so repeated agent construction shares one pool instead of building a
+        # fresh pool every time. The Phase 2 read-only + statement_timeout
+        # listener lives on the cached engine and still fires for every pooled
+        # connection.
+        engine = get_readonly_engine(db_user, db_password, db_host, db_port, db_name)
 
         self.llm = llm.bind_tools([PostgresSQLInput])
         self.system_prompt = system_prompt
@@ -812,6 +878,9 @@ class TextToSQLAgent:
         return filtered_messages
 
     def call_llm(self, state: AgentState):
+        # P6-1: self.db.get_table_info() is now memoized on the wrapper, so the
+        # schema is reflected + sampled once and reused across every LLM turn in
+        # this agent rather than recomputed per tool round-trip.
         system_msg = SystemMessage(
             content=self.system_prompt.format(
                 top_k=self.top_k, table_info=self.db.get_table_info()

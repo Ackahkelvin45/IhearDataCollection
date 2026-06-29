@@ -55,7 +55,7 @@ from data_insights.workflows.tools import (
 from data_insights.workflows.sql_agent import (
     SQLDatabaseWrapper,
     TextToSQLAgent,
-    create_readonly_engine,
+    get_readonly_engine,
 )
 from data_insights.workflows.prompt import SYSTEM_TEMPLATE
 from rest_framework.response import Response
@@ -1084,7 +1084,14 @@ class ChatSessionView(ModelViewSet):
                 # Re-executes agent-generated SQL, so it must use the same
                 # strictly read-only engine as the NL->SQL agent (P2-1):
                 # writes/DDL rejected, statement_timeout enforced.
-                engine = create_readonly_engine(
+                #
+                # P6-3: reuse the single cached read-only engine (shared
+                # connection pool) instead of constructing — and never disposing
+                # — a fresh engine per pagination / clarification re-execution,
+                # which leaked a connection pool each request. The Phase 2
+                # read-only + statement_timeout listener is on the cached engine
+                # and still applies to every connection.
+                engine = get_readonly_engine(
                     DB_CONFIG.get("USER", "postgres"),
                     DB_CONFIG.get("PASSWORD", ""),
                     DB_CONFIG.get("HOST", "localhost"),
