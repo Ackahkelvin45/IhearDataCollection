@@ -15,6 +15,7 @@ from .chart_builder import (
     ChartDecision,
     unit_for_column,
     label_with_unit,
+    _humanise,
 )
 
 
@@ -205,13 +206,6 @@ def wrap_as_artifact(
 # ── Phase 2: Multi-widget decomposition ──────────────────────────────────────────
 
 
-def _humanise(col_name: Optional[str]) -> str:
-    """Convert snake_case column name to Title Case label."""
-    if not col_name:
-        return ""
-    return col_name.replace("_", " ").title()
-
-
 def _quartile(sorted_values: List[float], q: float) -> float:
     """Linear-interpolation quantile, matching the frontend calculateQuartile."""
     n = len(sorted_values)
@@ -297,6 +291,13 @@ def _build_table_widget(
     }
 
 
+def _fallback_single_chart(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Fall back to a single flat chart for results we can't decompose."""
+    return wrap_as_artifact(
+        resolve_chart(result), analysis_type=result.get("analysis_type") or None
+    )
+
+
 def decompose(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Decompose a tool result into multiple widgets based on analysis_type."""
     analysis_type = result.get("analysis_type", "")
@@ -331,8 +332,7 @@ def decompose(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return _decompose_feature_importance(result)
 
     # Flat tool — fall back to single chart
-    chart = resolve_chart(result)
-    return wrap_as_artifact(chart, analysis_type=analysis_type or None)
+    return _fallback_single_chart(result)
 
 
 def _decompose_overview(result: Dict[str, Any]) -> Dict[str, Any]:
@@ -576,9 +576,14 @@ def _rows_to_widget(
 # ── New decompose functions ─────────────────────────────────────────────────
 
 
-def _decompose_grouped(result: Dict[str, Any]) -> Dict[str, Any]:
+def _decompose_grouped(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Decompose grouped results (avg_decibel_by_*, group_count)."""
-    rows = result["rows"]
+    rows = result.get("rows")
+    if not rows:
+        # A routed analysis_type whose result lacks rows would otherwise raise
+        # KeyError outside the post_process guard and crash the request. Fall
+        # through to the single-chart / flat path instead.
+        return _fallback_single_chart(result)
     hint = result.get("chart_hint", {})
     y_key = hint.get("y", "")
     n = len(rows)
@@ -675,9 +680,13 @@ def _decompose_grouped(result: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _decompose_ranked(result: Dict[str, Any]) -> Dict[str, Any]:
+def _decompose_ranked(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Decompose ranked results (highest_decibel, lowest_decibel)."""
-    rows = result["rows"]
+    rows = result.get("rows")
+    if not rows:
+        # No rows to rank — fall through to the single-chart / flat path rather
+        # than raising KeyError outside the post_process guard.
+        return _fallback_single_chart(result)
     hint = result.get("chart_hint", {})
     y_key = hint.get("y", "")
     x_key = hint.get("x", "")

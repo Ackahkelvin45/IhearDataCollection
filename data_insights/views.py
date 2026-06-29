@@ -46,7 +46,6 @@ from django.conf import settings
 
 from data_insights.workflows.agent_workflow import create_data_insights_agent
 from data_insights.workflows.chart_builder import auto_detect_axes, select_chart_type
-from data_insights.workflows.clarification_gate import get_pending_clarification
 from data_insights.workflows.tools import (
     get_tool_by_name,
     allowed_tables,
@@ -259,13 +258,11 @@ class ChatSessionView(ModelViewSet):
         """Sync entry point.  The inner stream generator stays sync while a thin
         async adapter wraps it so Django's ASGI handler sees a native async iterator."""
         try:
-            message.mark_processing()
             start_time = time.time()
 
             agent = self._create_ai_agent(False, mode=session.mode)
             llm_response = ""
             tool_call = None
-            _current_user_id.set(session.user.id)
 
             def stream():
                 nonlocal llm_response, tool_call
@@ -274,7 +271,14 @@ class ChatSessionView(ModelViewSet):
                 pending_chart = None
                 pending_artifact = None
 
+                # P7-1: set the user-id ContextVar inside the generator (same
+                # execution context the tools read it from) and reset in finally.
+                user_id_token = _current_user_id.set(session.user.id)
                 try:
+                    # P7-2: mark PROCESSING at the first yield, inside the
+                    # generator, not before returning the response.
+                    message.mark_processing()
+
                     yield self._format_stream_message(
                         "thinking", {"message": "Thinking..."}
                     )
@@ -405,13 +409,26 @@ class ChatSessionView(ModelViewSet):
                         pass
 
                 except GeneratorExit:
+                    # P7-2: client disconnect. Only mark FAILED when the answer was
+                    # NOT already completed and no assistant text was produced, so a
+                    # disconnect after a full answer cannot clobber a COMPLETED
+                    # message back to FAILED.
                     try:
-                        message.status = ChatMessage.MessageStatus.FAILED
-                        message.assistant_response = llm_response or ""
-                        message.tool_called = (
-                            self._sanitize_data(tool_call) if tool_call else None
+                        message.refresh_from_db(fields=["status", "assistant_response"])
+                        already_done = (
+                            message.status == ChatMessage.MessageStatus.COMPLETED
                         )
-                        message.save()
+                        produced_answer = bool(
+                            (llm_response or "").strip()
+                            or (message.assistant_response or "").strip()
+                        )
+                        if not already_done and not produced_answer:
+                            message.status = ChatMessage.MessageStatus.FAILED
+                            message.assistant_response = llm_response or ""
+                            message.tool_called = (
+                                self._sanitize_data(tool_call) if tool_call else None
+                            )
+                            message.save()
                     except Exception as ge_save_err:
                         logger.error(
                             f"Failed to save message on disconnect: {ge_save_err}"
@@ -432,6 +449,12 @@ class ChatSessionView(ModelViewSet):
                         )
                         logger.error(f"Full traceback: {traceback.format_exc()}")
                         stream_errored = True
+
+                finally:
+                    # P7-1: reset the ContextVar once the streaming loop (the only
+                    # consumer, via tools.py) is done, so the value can never leak
+                    # across requests on a reused worker thread.
+                    _current_user_id.reset(user_id_token)
 
                 # --- Read pending_chart / pending_artifact from final state ---
                 try:
@@ -576,15 +599,12 @@ class ChatSessionView(ModelViewSet):
         ORM call) while Django's ASGI handler sees a native async iterator and
         iterates it without the per-chunk ``sync_to_async`` penalty."""
         try:
-            message.mark_processing()
             start_time = time.time()
 
             agent = self._create_ai_agent(ai_answer, mode=session.mode)
 
             llm_response = ""
             tool_call = None
-
-            _current_user_id.set(session.user.id)
 
             def stream():
                 nonlocal llm_response, tool_call
@@ -594,7 +614,17 @@ class ChatSessionView(ModelViewSet):
                 pending_chart = None
                 pending_artifact = None
 
+                # P7-1: set the user-id ContextVar inside the generator — the same
+                # execution context the tools read it from (the generator can run on
+                # a different worker thread than the request thread). Reset in finally
+                # so it never leaks across requests on a reused thread.
+                user_id_token = _current_user_id.set(session.user.id)
                 try:
+                    # P7-2: mark PROCESSING at the first yield, inside the generator,
+                    # so a stream the client never consumes does not strand the
+                    # message in PROCESSING forever.
+                    message.mark_processing()
+
                     yield self._format_stream_message(
                         "thinking", {"message": "Thinking..."}
                     )
@@ -719,13 +749,26 @@ class ChatSessionView(ModelViewSet):
                                     )
 
                 except GeneratorExit:
+                    # P7-2: client disconnect. Only mark FAILED when the answer was
+                    # NOT already completed and no assistant text was produced — a
+                    # disconnect AFTER a full answer must not clobber a COMPLETED
+                    # message back to FAILED.
                     try:
-                        message.status = ChatMessage.MessageStatus.FAILED
-                        message.assistant_response = llm_response or ""
-                        message.tool_called = (
-                            self._sanitize_data(tool_call) if tool_call else None
+                        message.refresh_from_db(fields=["status", "assistant_response"])
+                        already_done = (
+                            message.status == ChatMessage.MessageStatus.COMPLETED
                         )
-                        message.save()
+                        produced_answer = bool(
+                            (llm_response or "").strip()
+                            or (message.assistant_response or "").strip()
+                        )
+                        if not already_done and not produced_answer:
+                            message.status = ChatMessage.MessageStatus.FAILED
+                            message.assistant_response = llm_response or ""
+                            message.tool_called = (
+                                self._sanitize_data(tool_call) if tool_call else None
+                            )
+                            message.save()
                     except Exception as ge_save_err:
                         logger.error(
                             f"Failed to save message {message.id} on disconnect: {ge_save_err}"
@@ -746,6 +789,12 @@ class ChatSessionView(ModelViewSet):
                         )
                         logger.error(f"Full traceback: {traceback.format_exc()}")
                         stream_errored = True
+
+                finally:
+                    # P7-1: reset the ContextVar once the streaming loop (the only
+                    # consumer, via tools.py) is done, so the value can never leak
+                    # across requests on a reused worker thread.
+                    _current_user_id.reset(user_id_token)
 
                 # --- Read pending_chart / pending_artifact / clarification from final state ---
                 try:

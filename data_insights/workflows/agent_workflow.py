@@ -311,9 +311,8 @@ class DataAgent:
 
             response = self.llm_with_tools.invoke(messages)
 
-            # Ensure response is an AIMessage, not HumanMessage
-            if hasattr(response, "tool_calls") and response.tool_calls:
-                self._update_query_handles(state, response.tool_calls)
+            # Query handles are extracted from tool results in post_process_tools;
+            # nothing to do here on the LLM response itself.
 
             # Phase 2 observability: detect LLM free-text clarifications.
             # When the LLM asks a clarification question instead of calling a tool,
@@ -345,19 +344,6 @@ class DataAgent:
             logger.error(f"Error calling model: {error_str}")
             error_msg = AIMessage(content="I encountered an error. Please try again.")
             return {"messages": [error_msg]}
-
-    def _update_query_handles(self, state: AgentState, tool_calls: List[Any]) -> None:
-        current_handles = state.get("current_query_handles", [])
-
-        for tool_call in tool_calls:
-            # Check if this is a search tool that might create handles
-            if tool_call["name"] in [
-                "search_customers",
-                "search_dormant_accounts",
-                "search_by_segmentation",
-            ]:
-                # We'll update this after tool execution in post_process_tools
-                pass
 
     def post_process_tools(self, state: AgentState) -> Dict[str, Any]:
         """Post-process tool results to extract query handles and compute visualization."""

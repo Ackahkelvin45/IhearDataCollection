@@ -34,8 +34,13 @@ class ChatSession(models.Model):
         self.save()
 
     def increment_total_messages(self):
-        self.total_messages += 1
-        self.save()
+        # Atomic read-modify-write so concurrent messages in the same session
+        # don't lose increments. F() pushes the +1 into the UPDATE, and we
+        # refresh_from_db so the in-memory instance reflects the new value.
+        ChatSession.objects.filter(pk=self.pk).update(
+            total_messages=models.F("total_messages") + 1
+        )
+        self.refresh_from_db(fields=["total_messages"])
 
     def generate_title_from_message(self, user_input: str) -> str:
         """Generate a title from the first user message"""

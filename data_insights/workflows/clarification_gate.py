@@ -839,15 +839,6 @@ def clarification_resolver_node(state: Dict[str, Any]) -> Dict[str, Any]:
 # ── Emit clarification node ─────────────────────────────────────────
 
 
-def get_pending_clarification(thread_id: str) -> Optional[Dict[str, Any]]:
-    """DEPRECATED: use checkpointer state (views.py reads pending_clarification_payload).
-
-    Kept for backward compatibility — returns None, directing callers to the
-    checkpointer-based path.
-    """
-    return None
-
-
 def emit_clarification_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """Node that yields the clarification payload to the frontend.
 
